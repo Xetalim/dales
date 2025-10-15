@@ -29,7 +29,8 @@ module modlsm
 contains
 
 subroutine lsm
-  use modglobal, only : ldrydep
+  use modglobal, only : ldrydep, ntrun
+  use modslurb, only : slurb_radiation_model, slurb_canyon_model, slurb_energy_balance_model, slurb_swap_timelevel, calc_canyon_resistances, calc_urban_resistances, slurb_urban_aggregation_model, slurb_update_external_vars
   implicit none
 
     if (.not. llsm) return
@@ -44,6 +45,7 @@ subroutine lsm
 
     ! Calculate root fraction weighted mean soil water content.
     do ilu=1,nlu
+      if (tile(ilu)%lushort == "slb") then; cycle; endif
       if (tile(ilu)%lveg) then
         call calc_theta_mean(tile(ilu))
       end if
@@ -58,6 +60,21 @@ subroutine lsm
 
     ! Calculate aerodynamic resistance (and u*, obuk).
     call calc_stability
+
+    call slurb_update_external_vars
+
+    call slurb_radiation_model
+
+    call calc_urban_resistances
+
+    call calc_canyon_resistances
+
+    call slurb_energy_balance_model
+
+    CALL slurb_canyon_model
+
+    CALL slurb_urban_aggregation_model
+
 
     ! Set grid point averaged boundary conditions (thls, qts, gradients, ..)
     call calc_bulk_bcs
@@ -77,6 +94,15 @@ subroutine lsm
     call calc_liquid_reservoir
     ! Solve diffusion equation:
     call integrate_theta_soil
+
+    
+
+    ! CALL slurb_atmospheric_model_coupler
+    
+    call slurb_swap_timelevel(mod(ntrun, 2))
+
+    ! call do_slurb
+
 end subroutine lsm
 
 !
@@ -94,6 +120,7 @@ subroutine calc_tile_fractions
 
     ! Water tile fraction is not variable
     do ilu=1,nlu
+        if (tile(ilu)%lushort == "slb") then; cycle; endif
       if (tile(ilu)%laqu) then
         tile(ilu)%frac(:,:) = tile(ilu)%base_frac(:,:)
       end if
@@ -104,6 +131,7 @@ subroutine calc_tile_fractions
         c_liq = min(1., wl(i,j)/wl_max(i,j))
         base_frac_sum = 0
         do ilu=1,nlu
+            if (tile(ilu)%lushort == "slb") then; cycle; endif
           if (tile(ilu)%laqu) then
             cycle
           else if (ilu == ilu_ws) then
@@ -121,6 +149,7 @@ subroutine calc_tile_fractions
         sum_basefrac=0
         sum_frac=0
         do ilu=1,nlu
+            if (tile(ilu)%lushort == "slb") then; cycle; endif
           sum_basefrac = sum_basefrac + tile(ilu)%base_frac(i,j)
           sum_frac = sum_frac + tile(ilu)%frac(i,j)
         end do
@@ -167,6 +196,7 @@ subroutine calc_liquid_reservoir
             wl_tend_max = (wl_max(i,j) - wlm(i,j)) / rk3coef
 
             do ilu=1,nlu
+                if (tile(ilu)%lushort == "slb") then; cycle; endif
               if (tile(ilu)%laqu) then
                 cycle
               end if
@@ -269,6 +299,7 @@ subroutine calc_canopy_resistance_js
 
             ! f2: reduction vegetation resistance as f(theta):
             do ilu=1,nlu
+                if (tile(ilu)%lushort == "slb") then; cycle; endif
               if (tile(ilu)%lveg) then
                 tile(ilu)%f2(i,j) = 1./min(1., max(1.e-9, tile(ilu)%phiw_mean(i,j)))
               endif
@@ -280,6 +311,7 @@ subroutine calc_canopy_resistance_js
             e    = qt0(i,j,1) * presf(1) / 0.622
 
             do ilu=1,nlu
+                if (tile(ilu)%lushort == "slb") then; cycle; endif
               if (tile(ilu)%lveg) then
                 tile(ilu)%f3(i,j) = 1./exp(-tile(ilu)%gD(i,j) * (esat-e))
               endif
@@ -292,6 +324,7 @@ subroutine calc_canopy_resistance_js
 
             ! Calculate canopy and soil resistance
             do ilu=1,nlu
+                if (tile(ilu)%lushort == "slb") then; cycle; endif
               if (tile(ilu)%lveg) then
                 tile(ilu)%rs(i,j) = tile(ilu)%rs_min(i,j) / tile(ilu)%lai(i,j) * tile(ilu)%f2(i,j) * tile(ilu)%f3(i,j) * f1(i,j)
               else if (trim(tile(ilu)%lushort) == 'bs' .or. trim(tile(ilu)%lushort) == 'brn') then !TODO; special function for bare soil
@@ -464,6 +497,7 @@ subroutine calc_canopy_resistance_ags
             
             ! Loop over land use types
             do ilu = 1, nlu
+                if (tile(ilu)%lushort == "slb") then; cycle; endif
                
                if  (tile(ilu)%lveg .and. trim(tile(ilu)%lushort) /= 'aqu') then
                ! For vegetation tiles only, excluding aquatic
@@ -722,6 +756,7 @@ subroutine calc_stability
   end do
 
   do ilu=1, nlu
+    if (tile(ilu)%lushort == "slb") then; cycle; endif
     call calc_obuk_ustar_ra(tile(ilu))
   end do
 end subroutine calc_stability
@@ -914,6 +949,8 @@ subroutine calc_bulk_bcs
     use modsurfdata, only : &
         H, LE, G0, tskin, qskin, thlflux, qtflux, dthldz, dqtdz, &
         dudz, dvdz, ustar, obl, cliq, ra, rsveg, rssoil
+    use modslurb, only : fraction_slurb
+    use modslurbdata, only : slurb_tile
     implicit none
 
     integer :: i, j
@@ -926,6 +963,7 @@ subroutine calc_bulk_bcs
     ! Calculate surface temperature for each tile, and calculate
     ! surface fluxes (H, LE, G0, wthl, wqt) and values (thlskin, qtskin)
     do ilu=1,nlu
+        if (tile(ilu)%lushort == "slb") then; cycle; endif
       if (tile(ilu)%laqu) then
         call calc_water_bcs(tile(ilu))
       else
@@ -944,6 +982,7 @@ subroutine calc_bulk_bcs
             rsveg(i,j) = 0
             rssoil(i,j) = 0
             do ilu=1,nlu
+                if (tile(ilu)%lushort == "slb") then; cycle; endif
               H(i,j)      = H(i,j)     + tile(ilu)%frac(i,j) * tile(ilu)%H(i,j)
               LE(i,j)     = LE(i,j)    + tile(ilu)%frac(i,j) * tile(ilu)%LE(i,j)
               G0(i,j)     = G0(i,j)    + tile(ilu)%frac(i,j) * tile(ilu)%G(i,j)
@@ -951,6 +990,12 @@ subroutine calc_bulk_bcs
               tskin(i,j)  = tskin(i,j) + tile(ilu)%frac(i,j) * tile(ilu)%thlskin(i,j)
               qskin(i,j)  = qskin(i,j) + tile(ilu)%frac(i,j) * tile(ilu)%qtskin(i,j)
             enddo
+            H(i,j)      = H(i,j)     + fraction_slurb(i,j) * slurb_tile%shf_urb(i,j)
+            LE(i,j)     = LE(i,j)    + fraction_slurb(i,j) * slurb_tile%qsws_urb(i,j)
+            ! G0(i,j)     = G0(i,j)    + tile(ilu)%frac(i,j) * tile(ilu)%G(i,j)
+            ustar(i,j)  = ustar(i,j) + fraction_slurb(i,j) * slurb_tile%us_urb(i,j)
+            tskin(i,j)  = tskin(i,j) + fraction_slurb(i,j) * slurb_tile%thlskin(i,j)
+            qskin(i,j)  = qskin(i,j) + fraction_slurb(i,j) * slurb_tile%qtskin(i,j)
 
             ! Kinematic surface fluxes
             thlflux(i,j) =  H(i,j)  * rhocp_i
@@ -974,6 +1019,7 @@ subroutine calc_bulk_bcs
 
             ! Just for diagnostics (modlsmcrosssection)
             do ilu=1,nlu
+                if (tile(ilu)%lushort == "slb") then; cycle; endif
               !if (trim(tile(ilu)%lushort) == 'ws') then
               if (ilu == ilu_ws) then
                 cliq(i,j) = tile(ilu)%frac(i,j) / land_frac(i,j)
@@ -985,6 +1031,7 @@ subroutine calc_bulk_bcs
 
             if (cveg(i,j) > 0) then
                 do ilu=1,nlu
+                    if (tile(ilu)%lushort == "slb") then; cycle; endif
                   if (tile(ilu)%lveg) then
                     rsveg(i,j) = rsveg(i,j) + tile(ilu)%frac(i,j) * tile(ilu)%rs(i,j)
                     ! if ( tile(ilu)%frac(i,j) <= 0.0 ) then
@@ -998,6 +1045,7 @@ subroutine calc_bulk_bcs
                 rsveg(i,j) = 0.
             end if
             do ilu=1,nlu
+                if (tile(ilu)%lushort == "slb") then; cycle; endif
             ! TODO: flexible solution for LU types with soil resistance
               if ( .not. (tile(ilu)%lveg .or. tile(ilu)%laqu .or. (ilu == ilu_ws) ) ) then
                   rssoil(i,j) = rssoil(i,j) + tile(ilu)%rs(i,j) * tile(ilu)%frac(i,j)
@@ -1181,6 +1229,7 @@ subroutine calc_root_water_extraction
     do j=2, j1
       do i=2, i1
         do ilu=1,nlu
+            if (tile(ilu)%lushort == "slb") then; cycle; endif
           if (.not. tile(ilu)%lveg) then
             cycle
           else
@@ -1280,6 +1329,7 @@ subroutine integrate_theta_soil
     do j=2,j1
         do i=2,i1
           do ilu=1,nlu
+            if (tile(ilu)%lushort == "slb") then; cycle; endif
             !if (trim(tile(ilu)%lushort) == 'bs') then
             if (trim(tile(ilu)%lushort) == 'bs' .or. trim(tile(ilu)%lushort) == 'brn') then !TODO; special function for bare soil
               flux_top = tile(ilu)%frac(i,j) * tile(ilu)%LE(i,j) * fac + throughfall(i,j)
@@ -2263,6 +2313,7 @@ subroutine init_heterogeneous_nc
     tile(ilu_ws)%lambda_unstable(:,:) = 0
 
     do ilu=1,nlu
+        if (tile(ilu)%lushort == "slb") then; cycle; endif
       if (tile(ilu)%laqu) then
         cycle
       else
@@ -2276,6 +2327,7 @@ subroutine init_heterogeneous_nc
     ! Calculate vegetation fraction, and limit to prevent div/0's
     cveg = 0
     do ilu=1,nlu
+        if (tile(ilu)%lushort == "slb") then; cycle; endif
       if (tile(ilu)%lveg) then
         cveg(:,:) = cveg(:,:) + tile(ilu)%base_frac(:,:)
       end if
@@ -2294,6 +2346,7 @@ subroutine init_heterogeneous_nc
     ! Max liquid water per grid point, accounting for LAI
     wl_max = 0
     do ilu=1,nlu
+        if (tile(ilu)%lushort == "slb") then; cycle; endif
       if (tile(ilu)%laqu) then
         cycle
       endif
@@ -2310,6 +2363,7 @@ subroutine init_heterogeneous_nc
     ! initialize tskin
     tskin(:,:) = 0
     do ilu=1,nlu
+        if (tile(ilu)%lushort == "slb") then; cycle; endif
        tskin(:,:) = tskin(:,:) + tile(ilu)%base_frac(:,:) * tile(ilu)%tskin(:,:)
     end do
 
@@ -2475,6 +2529,7 @@ subroutine calc_root_fractions
         root_sum = 0
         do k=2, kmax_soil
           do ilu=1,nlu
+            if (tile(ilu)%lushort == "slb") then; cycle; endif
             if (tile(ilu)%lveg) then
               tile(ilu)%root_frac(i,j,k) = 0.5 * (&
                   exp(tile(ilu)%a_r(i,j) * zh_soil(k+1)) + &
@@ -2488,6 +2543,7 @@ subroutine calc_root_fractions
 
         ! Make sure that the fractions sum to one.
         do ilu=1,nlu
+            if (tile(ilu)%lushort == "slb") then; cycle; endif
           if (tile(ilu)%lveg) then
             tile(ilu)%root_frac(i,j,1) = 1. - root_sum(ilu)
           end if
