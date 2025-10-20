@@ -263,6 +263,15 @@ module modslurb
 
     REAL(field_r) ::  tsc(10) = (/ 1.0_field_r, 1.0_field_r, 0.0_field_r, 0.0_field_r, &    !< array used for controlling time-integration at different substeps
                  0.0_field_r, 0.0_field_r, 0.0_field_r, 0.0_field_r, 0.0_field_r, 0.0_field_r /)
+
+    real(field_r) :: namemiss_road = -9999
+    real(field_r) :: namemiss_wall = -9999
+    real(field_r) :: namemiss_win = -9999
+    real(field_r) :: namemiss_roof = -9999
+    real(field_r) :: namalbedo_road = -9999
+    real(field_r) :: namalbedo_wall = -9999
+    real(field_r) :: namalbedo_win = -9999
+    real(field_r) :: namalbedo_roof = -9999
     
 
 contains
@@ -325,6 +334,43 @@ subroutine slurb_read_namelist
     call D_MPI_BCAST(shf_external, 1, 0, comm3d, mpierr)
     call D_MPI_BCAST(qsws_external, 1, 0, comm3d, mpierr)
 end subroutine slurb_read_namelist
+
+subroutine slurb_read_RADnamelist
+    use modglobal,   only : ifnamopt, fname_options, checknamelisterror
+    use modmpi,      only : myid, comm3d, mpierr, D_MPI_BCAST
+
+    
+    implicit none
+
+    integer :: ierr
+
+    real(field_r), allocatable :: canyon_orientation_tmp(:,:)
+
+    ! Namelist definition
+    namelist /NAMSLURBRAD/ &
+        namemiss_road, namemiss_wall, namemiss_win, namemiss_roof, namalbedo_road, namalbedo_wall, namalbedo_win, namalbedo_roof
+
+
+    ! Read namelist
+    if (myid == 0) then
+        open(ifnamopt, file=fname_options, status='old', iostat=ierr)
+        read(ifnamopt, NAMSLURBRAD, iostat=ierr)
+        call checknamelisterror(ierr, ifnamopt, 'NAMSLURBRAD')
+        write(6, NAMSLURBRAD)
+        close(ifnamopt)
+    end if
+
+
+    ! Broadcast namelist values to all MPI tasks
+    call D_MPI_BCAST(namemiss_road,  1, 0, comm3d, mpierr)
+    call D_MPI_BCAST(namemiss_wall,  1, 0, comm3d, mpierr)
+    call D_MPI_BCAST(namemiss_win,  1, 0, comm3d, mpierr)
+    call D_MPI_BCAST(namemiss_roof,  1, 0, comm3d, mpierr)
+    call D_MPI_BCAST(namalbedo_road,  1, 0, comm3d, mpierr)
+    call D_MPI_BCAST(namalbedo_wall,  1, 0, comm3d, mpierr)
+    call D_MPI_BCAST(namalbedo_win,  1, 0, comm3d, mpierr)
+    call D_MPI_BCAST(namalbedo_roof,  1, 0, comm3d, mpierr)
+end subroutine slurb_read_RADnamelist
 subroutine slurb_bulk_allocations
     use modglobal, only: i2, j2
     use, intrinsic :: IEEE_ARITHMETIC
@@ -899,6 +945,9 @@ subroutine initslurb
     IF ( anisotropic_street_canyons )  THEN
        ALLOCATE( canyon_orientation_tmp(i2,j2) )
        canyon_orientation_tmp(:,:) = -9999.0_field_r
+        IF ( street_canyon_orientation /= -9999.0_field_r  )  THEN
+            canyon_orientation_tmp(:,:) = street_canyon_orientation
+        ENDIF
     !    CALL get_grid_variable_1d_real( 'street_canyon_orientation', canyon_orientation_tmp,        &
     !                                    street_canyon_orientation )
     !
@@ -2598,6 +2647,35 @@ end subroutine slurb_update_external_vars
     !                                   TINY( 1.0_field_r ), HUGE( 1.0_field_r )  )
 !
 !-- Compute weighted wall-window albedo.
+
+
+    call slurb_read_RADnamelist
+    if ( namemiss_road /= -9999 ) THEN
+        surf%emiss_road(:,:) = namemiss_road
+    ENDIF 
+    if ( namemiss_wall /= -9999 ) THEN
+        surf%emiss_wall(:,:) = namemiss_wall
+    ENDIF
+    if ( namemiss_win /= -9999 ) THEN
+        surf%emiss_win(:,:) = namemiss_win
+    ENDIF
+    if ( namemiss_roof /= -9999 ) THEN
+        surf%emiss_roof(:,:) = namemiss_roof
+    ENDIF
+    if ( namalbedo_road /= -9999 ) THEN
+        surf%albedo_road(:,:) = namalbedo_road
+    ENDIF
+    if ( namalbedo_wall /= -9999 ) THEN
+        surf%albedo_wall(:,:) = namalbedo_wall
+    ENDIF
+    if ( namalbedo_win /= -9999 ) THEN
+        surf%albedo_win(:,:) = namalbedo_win
+    ENDIF
+    if ( namalbedo_roof /= -9999 ) THEN
+        surf%albedo_roof(:,:) = namalbedo_roof
+    ENDIF
+
+
     do j=2,j1
       do i=2,i1
        surf%albedo_wall_win(i,j) = ( 1.0_field_r - surf%f_win(i,j) ) * surf%albedo_wall(i,j) +                &
@@ -4877,7 +4955,8 @@ SUBROUTINE slurb_canyon_model
        RETURN
     ENDIF
 
-    surf%rad_sw_in_urb(i,j) = swdir(i,j,1) + swdif(i,j,1)
+    ! whatever radiation model we use, shortwave DOWN will always be positive, so we ensure that by taking absolute value.
+    surf%rad_sw_in_urb(i,j) = abs(swdir(i,j,1)) + abs(swdif(i,j,1))
 
 !
 !-- Compute the net shortwave radiation for roofs, which is the simplest case.
@@ -4908,12 +4987,12 @@ SUBROUTINE slurb_canyon_model
 !--    @note There is an error in this equation in the article. It should be that
 !--    the direct radiation on road should decrease when difference between the sun azimuth
 !--    angles increase, not vice versa.
-       rad_sw_dir_road = swdir(i,j,1) * MAX( 0.0_field_r, 1.0_field_r - surf%hw_can(i,j) *               &
+       rad_sw_dir_road = abs(swdir(i,j,1)) * MAX( 0.0_field_r, 1.0_field_r - surf%hw_can(i,j) *               &
                          tan_zenith *  SIN( ABS( azimuth - surf%theta_can(i,j) ) ) )
 
 !
 !--    Lemonsu et al. (2012) Eqs. (A2-A4)
-       rad_sw_dir_wall_a = ( swdir(i,j,1) - rad_sw_dir_road ) * 0.5_field_r / surf%hw_can(i,j)
+       rad_sw_dir_wall_a = ( abs(swdir(i,j,1)) - rad_sw_dir_road ) * 0.5_field_r / surf%hw_can(i,j)
 
        IF ( SIN( azimuth - surf%theta_can(i,j) ) > 0.0_field_r )  THEN
           rad_sw_dir_wall_a = 2.0_field_r * rad_sw_dir_wall_a
@@ -4932,10 +5011,10 @@ SUBROUTINE slurb_canyon_model
 
 !
 !--    Masson (2000) Eqs. (13-15)
-       rad_sw_dir_road = swdir(i,j,1) * ( 2.0_field_r * theta0 / pi -                             &
+       rad_sw_dir_road = abs(swdir(i,j,1)) * ( 2.0_field_r * theta0 / pi -                             &
                          2.0_field_r * tan_zenith / pi * surf%hw_can(i,j) * ( 1.0_field_r - COS( theta0 ) ) )
 
-       rad_sw_dir_wall_a = ( swdir(i,j,1) - rad_sw_dir_road ) * 0.5_field_r / surf%hw_can(i,j)
+       rad_sw_dir_wall_a = ( abs(swdir(i,j,1)) - rad_sw_dir_road ) * 0.5_field_r / surf%hw_can(i,j)
 
        rad_sw_dir_wall_b = rad_sw_dir_wall_a
 
@@ -4943,8 +5022,8 @@ SUBROUTINE slurb_canyon_model
 
 !
 !-- Diffuse (from sky) solar radiation received by the surfaces.
-    rad_sw_diff_road   = swdif(i,j,1) * surf%svf_road(i,j)
-    rad_sw_diff_wall_a = swdif(i,j,1) * surf%svf_wall(i,j)
+    rad_sw_diff_road   = abs(swdif(i,j,1)) * surf%svf_road(i,j)
+    rad_sw_diff_wall_a = abs(swdif(i,j,1)) * surf%svf_wall(i,j)
     rad_sw_diff_wall_b = rad_sw_diff_wall_a
 
 !
