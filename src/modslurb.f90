@@ -4904,7 +4904,7 @@ SUBROUTINE slurb_canyon_model
                                    slurb_tile%lw_wall_coef(6,i,j) * slurb_tile%t_road(nzt_road,i,j)**4
 
        IF ( slurb_tile%f_win(i,j) > 0.0_field_r )  THEN
-          slurb_tile%rad_lw_net_win_a(i,j) = slurb_tile%rad_lw_net_win_a(i,j) *                                    &
+          slurb_tile%rad_lw_net_win_a(i,j) = slurb_tile%rad_lw_net_win_a(i,j) +                                    &
                                      slurb_tile%lw_win_coef(3,i,j) * slurb_tile%t_win_b(nzt_win,i,j)**4
 
           slurb_tile%rad_lw_net_win_b(i,j) = slurb_tile%lw_win_coef(2,i,j) * slurb_tile%rad_lw_in_urb(i,j) +               &
