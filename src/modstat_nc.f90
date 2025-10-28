@@ -230,7 +230,7 @@ contains
     integer, save ::  dim_mttt(4) = 0, dim_tmtt(4) = 0, dim_ttmt(4) = 0, dim_tttt(4) = 0, &
                       dim_tt(2)= 0, dim_mt(2)= 0,dim_t0tt(3)=0,dim_m0tt(3)=0,dim_t0mt(3)=0,dim_tt0t(3)=0, &
                       dim_mt0t(3)=0,dim_tm0t(3)=0,dim_0ttt(3)=0,dim_0mtt(3)=0,dim_0tmt(3)=0,&
-                      dim_tts(2)=0,dim_t0tts(3)=0,dim_0ttts(3)=0,dim_tttts(4)=0,dim_qt(2)=0
+                      dim_tts(2)=0,dim_t0tts(3)=0,dim_0ttts(3)=0,dim_tttts(4)=0,dim_qt(2)=0,dim_tttts_slurb(4)=0
 
     integer :: iret, n, VarID
     ! These calls are allowed to fail - not all files have all dimensions
@@ -266,6 +266,7 @@ contains
     dim_t0tts= (/xtID,ztsID,timeId/)! thermo soil point
     dim_0ttts= (/ytID,ztsID,timeId/)! thermo point
     dim_tttts= (/xtID,ytID,ztsID,timeId/)! thermo point
+    dim_tttts_slurb= (/ztsID,xtID,ytID,timeId/)! thermo point
 
     dim_qt = (/zqId,timeId/)
 
@@ -316,6 +317,8 @@ contains
           iret=nf90_def_var(ncID,sx(n,1),NF90_FLOAT,dim_0ttts,VarID)
         case ('tttts')
           iret=nf90_def_var(ncID,sx(n,1),NF90_FLOAT,dim_tttts,VarID)
+        case ('tttts_slurb')
+          iret=nf90_def_var(ncID,sx(n,1),NF90_FLOAT,dim_tttts_slurb,VarID)
 
 !Quadrant analysis fields
         case('qt')

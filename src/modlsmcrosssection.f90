@@ -40,6 +40,7 @@ save
   integer,parameter :: nvar=2
   integer :: nvar3
   integer :: nvar4
+  integer :: nvars3d4
   integer :: ncid1 = 0
   integer :: ncid2 = 0
   integer :: ncid3 = 0
@@ -212,7 +213,8 @@ contains
         fname4(11:18) = cmyid
         fname4(20:22) = cexpnr
         
-        nvar4 = 141
+        nvar4 = 156
+        nvars3d4 = 15
         nrec4=0
 
         allocate(ncname4(nvar4,4))
@@ -361,8 +363,26 @@ contains
             call ncinfo(ncname4( 140,:),'z_mo', 'reference height for MOST for the atmosphere', '', 'tt0t')
             call ncinfo(ncname4( 141,:),'z_mo_can', 'canyon reference height for MOST ', 'canyon half-height', 'tt0t')
 
+            call ncinfo(ncname4( 142,:),'tt_wall_a', 'tendency wall a ', 'tt_wall_a', 'tttts_slurb')
+            call ncinfo(ncname4( 143,:),'tt_wall_b', 'tendency wall b ', 'tt_wall_b', 'tttts_slurb')
+            call ncinfo(ncname4( 144,:),'tt_roof', 'tendency roof a ', 'tt_roof', 'tttts_slurb')
+            ! call ncinfo(ncname4( 145,:),'tt_roof_b', 'tendency roof b ', 'tt_roof_b', 'tt0t')
+            call ncinfo(ncname4( 145,:),'tt_win_a', 'tendency win a ', 'tt_win_a', 'tttts_slurb')
+            call ncinfo(ncname4( 146,:),'tt_win_b', 'tendency win b ', 'tt_win_b', 'tttts_slurb')
+            call ncinfo(ncname4( 147,:),'tt_road', 'tendency road a ', 'tt_road', 'tttts_slurb')
+            ! call ncinfo(ncname4( 149,:),'tt_road_b', 'tendency road b ', 'tt_road_b', 'tt0t')
+            call ncinfo(ncname4( 148,:),'c_wall', 'c_wall ', 'c_wall', 'tttts_slurb')
+            call ncinfo(ncname4( 149,:),'c_roof', 'c_roof ', 'c_roof', 'tttts_slurb')
+            call ncinfo(ncname4( 150,:),'c_win', 'c_win ', 'c_win', 'tttts_slurb')
+            call ncinfo(ncname4( 151,:),'c_road', 'c_road ', 'c_road', 'tttts_slurb')
+            call ncinfo(ncname4( 152,:),'absorption_win', 'absorption_win ', 'absorption_win', 'tttts_slurb')
+            call ncinfo(ncname4( 153,:),'dz_wall', 'dz_wall ', 'dz_wall', 'tttts_slurb')
+            call ncinfo(ncname4( 154,:),'dz_roof', 'dz_roof ', 'dz_roof', 'tttts_slurb')
+            call ncinfo(ncname4( 155,:),'dz_win', 'dz_win ', 'dz_win', 'tttts_slurb')
+            call ncinfo(ncname4( 156,:),'dz_road', 'dz_road ', 'dz_road', 'tttts_slurb')
 
-            call open_nc(trim(output_prefix)//fname4,  ncid4,nrec4,n1=imax,n2=jmax)
+
+            call open_nc(trim(output_prefix)//fname4,  ncid4,nrec4,n1=imax,n2=jmax,ns=4)
             if (nrec4==0) then
               call define_nc(ncid4, 1, tncname4)
               call writestat_dims_nc(ncid4)
@@ -566,7 +586,8 @@ contains
   end subroutine wrtsurf
   
   subroutine wrtslurb
-      use modglobal, only : imax,jmax,i1,j1,cexpnr,ifoutput,rtimee
+    use modglobal, only : imax,jmax,i1,j1,cexpnr,ifoutput,rtimee,rlv,cp
+    use modfields, only : rhof
     use modslurbdata, only : slurb_tile
     use modslurb, only : facade_rah_doe
     use modstat_nc, only : lnetcdf, writestat_nc
@@ -575,21 +596,23 @@ contains
     ! LOCAL
     integer i,j
     real, allocatable :: vars(:,:,:)
+    real, allocatable :: vars3d(:,:,:,:)
 
     if (lnetcdf) then
-        allocate(vars(1:imax,1:jmax,nvar4))
+        allocate(vars(1:imax,1:jmax,nvar4-nvars3d4))
+        allocate(vars3d(4,1:imax,1:jmax,nvars3d4))
 
         vars(:,:,1) = slurb_tile%albedo_urb(2:i1,2:j1)
         vars(:,:,2) = slurb_tile%emiss_urb(2:i1,2:j1)
         vars(:,:,3) = slurb_tile%ol_urb(2:i1,2:j1)
-        vars(:,:,4) = slurb_tile%qsws_urb(2:i1,2:j1)
+        vars(:,:,4) = slurb_tile%qsws_urb(2:i1,2:j1)*rlv
         vars(:,:,5) = slurb_tile%rad_lw_in_urb(2:i1,2:j1)
         vars(:,:,6) = slurb_tile%rad_lw_out_urb(2:i1,2:j1)
         vars(:,:,7) = slurb_tile%rad_sw_in_urb(2:i1,2:j1)
         vars(:,:,8) = slurb_tile%rad_sw_out_urb(2:i1,2:j1)
         vars(:,:,9) = slurb_tile%ram_urb(2:i1,2:j1)
         vars(:,:,10) = slurb_tile%rib_urb(2:i1,2:j1)
-        vars(:,:,11) = slurb_tile%shf_urb(2:i1,2:j1)
+        vars(:,:,11) = slurb_tile%shf_urb(2:i1,2:j1)* cp
         vars(:,:,12) = slurb_tile%t_2m_urb(2:i1,2:j1)
         vars(:,:,13) = slurb_tile%t_c_urb(2:i1,2:j1)
         vars(:,:,14) = slurb_tile%t_h_urb(2:i1,2:j1)
@@ -609,7 +632,7 @@ contains
         vars(:,:,28) = slurb_tile%tm_liq_road(2:i1,2:j1)
         vars(:,:,29) = slurb_tile%tm_liq_roof(2:i1,2:j1)
         vars(:,:,30) = slurb_tile%tq_can(2:i1,2:j1)
-        vars(:,:,31) = slurb_tile%tt_can(2:i1,2:j1)
+        vars(:,:,31) = slurb_tile%tt_can(2:i1,2:j1) * cp * rhof(1)
         vars(:,:,32) = slurb_tile%pt_road(2:i1,2:j1)
         vars(:,:,33) = slurb_tile%pt_roof(2:i1,2:j1)
         vars(:,:,34) = slurb_tile%pt_wall_a(2:i1,2:j1)
@@ -622,21 +645,21 @@ contains
         vars(:,:,41) = slurb_tile%qs_roof(2:i1,2:j1)
         vars(:,:,42) = slurb_tile%vpt_road(2:i1,2:j1)
         vars(:,:,43) = slurb_tile%vpt_roof(2:i1,2:j1)
-        vars(:,:,43) = slurb_tile%shf_can(2:i1,2:j1)
-        vars(:,:,44) = slurb_tile%shf_external(2:i1,2:j1)
-        vars(:,:,45) = slurb_tile%shf_road(2:i1,2:j1)
-        vars(:,:,46) = slurb_tile%shf_roof(2:i1,2:j1)
+        vars(:,:,43) = slurb_tile%shf_can(2:i1,2:j1) * cp
+        vars(:,:,44) = slurb_tile%shf_external(2:i1,2:j1)* cp
+        vars(:,:,45) = slurb_tile%shf_road(2:i1,2:j1)* cp
+        vars(:,:,46) = slurb_tile%shf_roof(2:i1,2:j1)* cp
         vars(:,:,47) = 0!slurb_tile%shf_traffic(2:i1,2:j1)
-        vars(:,:,48) = slurb_tile%shf_wall_a(2:i1,2:j1)
-        vars(:,:,49) = slurb_tile%shf_wall_b(2:i1,2:j1)
-        vars(:,:,50) = slurb_tile%shf_win_a(2:i1,2:j1)
-        vars(:,:,51) = slurb_tile%shf_win_b(2:i1,2:j1)
-        vars(:,:,52) = slurb_tile%qsws_can(2:i1,2:j1)
-        vars(:,:,53) = slurb_tile%qsws_external(2:i1,2:j1)
+        vars(:,:,48) = slurb_tile%shf_wall_a(2:i1,2:j1)* cp
+        vars(:,:,49) = slurb_tile%shf_wall_b(2:i1,2:j1)* cp
+        vars(:,:,50) = slurb_tile%shf_win_a(2:i1,2:j1)* cp
+        vars(:,:,51) = slurb_tile%shf_win_b(2:i1,2:j1)* cp
+        vars(:,:,52) = slurb_tile%qsws_can(2:i1,2:j1)*rlv
+        vars(:,:,53) = slurb_tile%qsws_external(2:i1,2:j1)*rlv
         vars(:,:,54) = slurb_tile%qsws_liq_road(2:i1,2:j1)
-        vars(:,:,55) = slurb_tile%qsws_liq_roof(2:i1,2:j1)
-        vars(:,:,56) = slurb_tile%qsws_road(2:i1,2:j1)
-        vars(:,:,57) = slurb_tile%qsws_roof(2:i1,2:j1)
+        vars(:,:,55) = slurb_tile%qsws_liq_roof(2:i1,2:j1)*rlv
+        vars(:,:,56) = slurb_tile%qsws_road(2:i1,2:j1)*rlv
+        vars(:,:,57) = slurb_tile%qsws_roof(2:i1,2:j1)*rlv
         vars(:,:,58) = slurb_tile%c_liq_road(2:i1,2:j1)
         vars(:,:,59) = slurb_tile%c_liq_roof(2:i1,2:j1)
         vars(:,:,60) = slurb_tile%ghf_road(2:i1,2:j1)
@@ -730,12 +753,32 @@ contains
         vars(:,:,140) = slurb_tile%z_mo(2:i1,2:j1)
         vars(:,:,141) = slurb_tile%z_mo_can(2:i1,2:j1)
 
+        vars3d(:,:,:,1) = slurb_tile%tt_wall_a(:,2:i1,2:j1)
+        vars3d(:,:,:,2) = slurb_tile%tt_wall_b(:,2:i1,2:j1)
+        vars3d(:,:,:,3) = slurb_tile%tt_roof(:,2:i1,2:j1)
+        ! vars(:,:,145) = slurb_tile%tt_roof_b(1,2:i1,2:j1)
+        vars3d(:,:,:,4) = slurb_tile%tt_win_a(:,2:i1,2:j1)
+        vars3d(:,:,:,5) = slurb_tile%tt_win_b(:,2:i1,2:j1)
+        vars3d(:,:,:,6) = slurb_tile%tt_road(:,2:i1,2:j1)
+        ! vars(:,:,149) = slurb_tile%tt_road_b(1,2:i1,2:j1)
+        vars3d(:,:,:,7) = slurb_tile%c_wall(:,2:i1,2:j1)
+        vars3d(:,:,:,8) = slurb_tile%c_roof(:,2:i1,2:j1)
+        vars3d(:,:,:,9) = slurb_tile%c_win(:,2:i1,2:j1)
+        vars3d(:,:,:,10) = slurb_tile%c_road(:,2:i1,2:j1)
+        vars3d(:,:,:,11) = slurb_tile%absorption_win(:,2:i1,2:j1)
+        vars3d(:,:,:,12) = slurb_tile%dz_wall(:,2:i1,2:j1)
+        vars3d(:,:,:,13) = slurb_tile%dz_roof(:,2:i1,2:j1)
+        vars3d(:,:,:,14) = slurb_tile%dz_win(:,2:i1,2:j1)
+        vars3d(:,:,:,15) = slurb_tile%dz_road(:,2:i1,2:j1)
+
 
 
         call writestat_nc(ncid4, 1, tncname4, (/rtimee/), nrec4, .true.)
-        call writestat_nc(ncid4, nvar4, ncname4(1:nvar4,:), vars, nrec4, imax, jmax)
+        call writestat_nc(ncid4, nvar4-nvars3d4, ncname4(1:nvar4-nvars3d4,:), vars, nrec4, imax, jmax)
+        call writestat_nc(ncid4, nvars3d4, ncname4(nvar4-nvars3d4+1:nvar4,:), vars3d, nrec4, 4, imax, jmax)
 
         deallocate(vars)
+        deallocate(vars3d)
     end if
   end subroutine wrtslurb
 !> Clean up when leaving the run

@@ -291,7 +291,7 @@ subroutine slurb_read_namelist
     ! Namelist definition
     namelist /NAMSLURB/ &
         urban_fraction, urban_roughness_length, building_plan_area_fraction, building_frontal_area_fraction, building_height, window_fraction,&
-        street_canyon_aspect_ratio, building_type, pavement_type, anisotropic_street_canyons, street_canyon_orientation, deep_soil_temperature,shf_external,qsws_external
+        street_canyon_aspect_ratio, building_type, pavement_type, anisotropic_street_canyons, street_canyon_orientation, deep_soil_temperature,building_indoor_temperature,shf_external,qsws_external
 
 
     ! Read namelist
@@ -331,6 +331,7 @@ subroutine slurb_read_namelist
     call D_MPI_BCAST(anisotropic_street_canyons, 1, 0, comm3d, mpierr)
     call D_MPI_BCAST(street_canyon_orientation, 1, 0, comm3d, mpierr)
     call D_MPI_BCAST(deep_soil_temperature, 1, 0, comm3d, mpierr)
+    call D_MPI_BCAST(building_indoor_temperature, 1, 0, comm3d, mpierr)
     call D_MPI_BCAST(shf_external, 1, 0, comm3d, mpierr)
     call D_MPI_BCAST(qsws_external, 1, 0, comm3d, mpierr)
 end subroutine slurb_read_namelist
@@ -1388,12 +1389,17 @@ end subroutine slurb_update_external_vars
                 pt_surface(i,j) = slurb_tile%f_bld(i,j)              * slurb_tile%pt_roof(i,j) +                           &
                                 ( 1.0_field_r - slurb_tile%f_bld(i,j) ) * slurb_tile%pt_can(i,j)
                 CALL calc_rib( slurb_tile%pt1(i,j), pt_surface(i,j), slurb_tile%rib_urb(i,j), slurb_tile%uv_eff1(i,j), slurb_tile%z_mo(i,j) )
-                CALL calc_ol( ln_z_z0_urb(i,j), ln_z_z0_urb(i,j), slurb_tile%ol_urb(i,j), slurb_tile%rib_urb(i,j), slurb_tile%z0_urb(i,j),       &
-                  slurb_tile%z0_urb(i,j), slurb_tile%z_mo(i,j) )
             enddo
         enddo
 
     ENDIF
+
+    do j=2,j1
+        do i=2,i1
+            CALL calc_ol( ln_z_z0_urb(i,j), ln_z_z0_urb(i,j), slurb_tile%ol_urb(i,j), slurb_tile%rib_urb(i,j), slurb_tile%z0_urb(i,j),       &
+                  slurb_tile%z0_urb(i,j), slurb_tile%z_mo(i,j) )
+        enddo
+    enddo
 
 
 
@@ -1459,13 +1465,13 @@ end subroutine slurb_update_external_vars
     ENDIF
     do j=2,j1
         do i=2, i1
-    ! write(*,*), "now_ol"
-    CALL calc_ol( ln_z_z0_roof(i,j), ln_z_z0h_roof(i,j), slurb_tile%ol_roof(i,j), slurb_tile%rib_roof(i,j), slurb_tile%z0_roof(i,j), &
-                  slurb_tile%z0h_roof(i,j), slurb_tile%z_mo(i,j) )
-    ! write(*,*), i,j
-    CALL calc_ol( ln_z_z0_urb(i,j), ln_z_z0_urb(i,j), slurb_tile%ol_can(i,j), slurb_tile%rib_can(i,j), slurb_tile%z0_urb(i,j),       &
-                  slurb_tile%z0_urb(i,j), slurb_tile%z_mo(i,j) )
-    ! write(*,*), "alldone"
+            ! write(*,*), "now_ol"
+            CALL calc_ol( ln_z_z0_roof(i,j), ln_z_z0h_roof(i,j), slurb_tile%ol_roof(i,j), slurb_tile%rib_roof(i,j), slurb_tile%z0_roof(i,j), &
+                        slurb_tile%z0h_roof(i,j), slurb_tile%z_mo(i,j) )
+            ! write(*,*), i,j
+            CALL calc_ol( ln_z_z0_urb(i,j), ln_z_z0_urb(i,j), slurb_tile%ol_can(i,j), slurb_tile%rib_can(i,j), slurb_tile%z0_urb(i,j),       &
+                        slurb_tile%z0_urb(i,j), slurb_tile%z_mo(i,j) )
+            ! write(*,*), "alldone"
         enddo
     enddo
     ! calc_obuk_dirichlet( &
@@ -3542,7 +3548,7 @@ end subroutine slurb_update_external_vars
     ENDDO
 !
 !-- Consider a pre-factor (1/8) for the diffusion criterion.
-    dt_slurb_individual = MINVAL( slurb_tile%dt_max(1:i1,1:j1) ) * 0.125_field_r
+    dt_slurb_individual = MINVAL( slurb_tile%dt_max(2:i1,2:j1) ) * 0.125_field_r
     ! IF ( collective_wait )  CALL MPI_BARRIER( comm2d, ierr )
     CALL D_MPI_ALLREDUCE( dt_slurb, dt_slurb_individual, 1, mpi_min, comm3d, mpierr )
     write(*,*) 'max_dt for slurb'
@@ -4849,7 +4855,7 @@ SUBROUTINE slurb_canyon_model
 
 !
 !-- Compute the effective radiative temperature of the incoming LW radiation.
-    slurb_tile%rad_lw_in_urb(i,j) = -lwd(i,j,1) !TODOSELF
+    slurb_tile%rad_lw_in_urb(i,j) = abs(lwd(i,j,1)) !TODOSELF
     ! lwd is positive in DALES
     t_rad_sky = SQRT( SQRT( slurb_tile%rad_lw_in_urb(i,j) / boltz ) )
 
