@@ -27,146 +27,146 @@ module modslurb
     implicit none
     save   
     
-    real(field_r), allocatable ::  ln_z_z0_roof(:,:)   !< temporary array to store logarithm ZELFTODO
-    real(field_r), allocatable ::  ln_z_z0h_roof(:,:)  !< temporary array to store logarithm
-    real(field_r), allocatable ::  ln_z_z0_urb(:,:)    !< temporary array to store logarithm
-    real(field_r), allocatable ::  pt_surface(:,:)     !< temporary array to store weighted temperature
+    real(field_r), allocatable ::  ln_z_z0_roof(:,:)   !< temporary array to store logarithm ZELFTODO (.)
+    real(field_r), allocatable ::  ln_z_z0h_roof(:,:)  !< temporary array to store logarithm (.)
+    real(field_r), allocatable ::  ln_z_z0_urb(:,:)    !< temporary array to store logarithm (.)
+    real(field_r), allocatable ::  pt_surface(:,:)     !< temporary array to store weighted temperature (K)
     
-    real(field_r), allocatable ::  ln_z_z0_road(:,:)   !< temporary array to store logarithm ZELFTODO
-    real(field_r), allocatable ::  ln_z_z0h_road(:,:)  !< temporary array to store logarithm
+    real(field_r), allocatable ::  ln_z_z0_road(:,:)   !< temporary array to store logarithm ZELFTODO (.)
+    real(field_r), allocatable ::  ln_z_z0h_road(:,:)  !< temporary array to store logarithm (.)
 
 
     !
     !-- Target arrays for timelevel switching.
-    REAL(field_r), DIMENSION(:,:), TARGET, ALLOCATABLE ::  m_liq_road_1  !< target array for liquid water reservoir on roads
-    REAL(field_r), DIMENSION(:,:), TARGET, ALLOCATABLE ::  m_liq_road_2  !< target array for liquid water reservoir on roads
-    REAL(field_r), DIMENSION(:,:), TARGET, ALLOCATABLE ::  m_liq_roof_1  !< target array for liquid water reservoir on roofs
-    REAL(field_r), DIMENSION(:,:), TARGET, ALLOCATABLE ::  m_liq_roof_2  !< target array for liquid water reservoir on roofs
-    REAL(field_r), DIMENSION(:,:), TARGET, ALLOCATABLE ::  q_can_1       !< target array for canyon water mixing ratio
-    REAL(field_r), DIMENSION(:,:), TARGET, ALLOCATABLE ::  q_can_2       !< target array for canyon water mixing ratio
-    REAL(field_r), DIMENSION(:,:), TARGET, ALLOCATABLE ::  t_can_1  !< target array for canyon temperature used to change timelevels
-    REAL(field_r), DIMENSION(:,:), TARGET, ALLOCATABLE ::  t_can_2  !< target array for canyon temperature
+    REAL(field_r), DIMENSION(:,:), TARGET, ALLOCATABLE ::  m_liq_road_1  !< target array for liquid water reservoir on roads (m^3 m^-2)
+    REAL(field_r), DIMENSION(:,:), TARGET, ALLOCATABLE ::  m_liq_road_2  !< target array for liquid water reservoir on roads (m^3 m^-2)
+    REAL(field_r), DIMENSION(:,:), TARGET, ALLOCATABLE ::  m_liq_roof_1  !< target array for liquid water reservoir on roofs (m^3 m^-2)
+    REAL(field_r), DIMENSION(:,:), TARGET, ALLOCATABLE ::  m_liq_roof_2  !< target array for liquid water reservoir on roofs (m^3 m^-2)
+    REAL(field_r), DIMENSION(:,:), TARGET, ALLOCATABLE ::  q_can_1       !< target array for canyon water mixing ratio (kg kg**-1)
+    REAL(field_r), DIMENSION(:,:), TARGET, ALLOCATABLE ::  q_can_2       !< target array for canyon water mixing ratio (kg kg**-1)
+    REAL(field_r), DIMENSION(:,:), TARGET, ALLOCATABLE ::  t_can_1  !< target array for canyon temperature used to change timelevels (K)
+    REAL(field_r), DIMENSION(:,:), TARGET, ALLOCATABLE ::  t_can_2  !< target array for canyon temperature (K)
 
-    REAL(field_r), DIMENSION(:,:,:), TARGET, ALLOCATABLE ::  t_road_1    !< target array for road temperature
-    REAL(field_r), DIMENSION(:,:,:), TARGET, ALLOCATABLE ::  t_road_2    !< target array for road temperature
-    REAL(field_r), DIMENSION(:,:,:), TARGET, ALLOCATABLE ::  t_roof_1    !< target array for roof temperature
-    REAL(field_r), DIMENSION(:,:,:), TARGET, ALLOCATABLE ::  t_roof_2    !< target array for roof temperature
-    REAL(field_r), DIMENSION(:,:,:), TARGET, ALLOCATABLE ::  t_wall_a_1  !< target array for wall A temperature
-    REAL(field_r), DIMENSION(:,:,:), TARGET, ALLOCATABLE ::  t_wall_a_2  !< target array for wall A temperature
-    REAL(field_r), DIMENSION(:,:,:), TARGET, ALLOCATABLE ::  t_wall_b_1  !< target array for wall B temperature
-    REAL(field_r), DIMENSION(:,:,:), TARGET, ALLOCATABLE ::  t_wall_b_2  !< target array for wall B temperature
-    REAL(field_r), DIMENSION(:,:,:), TARGET, ALLOCATABLE ::  t_win_a_1   !< target array for window A temperature
-    REAL(field_r), DIMENSION(:,:,:), TARGET, ALLOCATABLE ::  t_win_a_2   !< target array for window A temperature
-    REAL(field_r), DIMENSION(:,:,:), TARGET, ALLOCATABLE ::  t_win_b_1   !< target array for window B temperature
-    REAL(field_r), DIMENSION(:,:,:), TARGET, ALLOCATABLE ::  t_win_b_2   !< target array for window B temperature
+    REAL(field_r), DIMENSION(:,:,:), TARGET, ALLOCATABLE ::  t_road_1    !< target array for road temperature (K)
+    REAL(field_r), DIMENSION(:,:,:), TARGET, ALLOCATABLE ::  t_road_2    !< target array for road temperature (K)
+    REAL(field_r), DIMENSION(:,:,:), TARGET, ALLOCATABLE ::  t_roof_1    !< target array for roof temperature (K)
+    REAL(field_r), DIMENSION(:,:,:), TARGET, ALLOCATABLE ::  t_roof_2    !< target array for roof temperature (K)
+    REAL(field_r), DIMENSION(:,:,:), TARGET, ALLOCATABLE ::  t_wall_a_1  !< target array for wall A temperature (K)
+    REAL(field_r), DIMENSION(:,:,:), TARGET, ALLOCATABLE ::  t_wall_a_2  !< target array for wall A temperature (K)
+    REAL(field_r), DIMENSION(:,:,:), TARGET, ALLOCATABLE ::  t_wall_b_1  !< target array for wall B temperature (K)
+    REAL(field_r), DIMENSION(:,:,:), TARGET, ALLOCATABLE ::  t_wall_b_2  !< target array for wall B temperature (K)
+    REAL(field_r), DIMENSION(:,:,:), TARGET, ALLOCATABLE ::  t_win_a_1   !< target array for window A temperature (K)
+    REAL(field_r), DIMENSION(:,:,:), TARGET, ALLOCATABLE ::  t_win_a_2   !< target array for window A temperature (K)
+    REAL(field_r), DIMENSION(:,:,:), TARGET, ALLOCATABLE ::  t_win_b_1   !< target array for window B temperature (K)
+    REAL(field_r), DIMENSION(:,:,:), TARGET, ALLOCATABLE ::  t_win_b_2   !< target array for window B temperature (K)
     !
     !-- Arrays for output temporal averaging.
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  albedo_urb_av         !< road liquid water coverage
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  c_liq_road_av         !< road liquid water coverage
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  c_liq_roof_av         !< roof liquid water coverage
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  emiss_urb_av          !< road liquid water coverage
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  ghf_road_av           !< heat flux between the road bottom layer and soil
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  ghf_roof_av           !< heat flux between the roof bottom layer and indoor air
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  ghf_wall_a_av         !< heat flux between the wall a bottom layer and indoor air
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  ghf_wall_b_av         !< heat flux between the wall b bottom layer and indoor air
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  ghf_win_a_av          !< heat flux between the window a bottom layer and indoor air
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  ghf_win_b_av          !< heat flux between the window b bottom layer and indoor air
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  m_liq_road_av         !< liquid water reservoir on roads
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  m_liq_roof_av         !< liquid water reservoir on roofs
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  ol_can_av             !< street canyon top obukhov length
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  ol_road_av            !< road obukhov length
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  ol_roof_av            !< roof obukhov length
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  ol_urb_av             !< urban obukhov length for momentum flux
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  pt_can_av             !< street canyon air potential temperature
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  pt_road_av            !< road surface potential temperature
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  pt_roof_av            !< roof surface potential temperature
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  pt_wall_a_av          !< wall a surface potential temperature
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  pt_wall_b_av          !< wall b surface potential temperature
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  pt_win_a_av           !< window a surface potential temperature
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  pt_win_b_av           !< window b surface potential temperature
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  q_can_av              !< street canyon water vapour mixing ratio
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  q_road_av             !< road surface mixing ratio
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  q_roof_av             !< roof surface mixing ratio
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  qs_road_av            !< road surface saturation mixing ratio
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  qs_roof_av            !< roof surface saturation mixing ratio
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  qsws_can_av           !< latent heat flux between the street canyon and the atmosphere
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  qsws_external_av      !< latent heat flux external to the model (e.g. from industry)
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  qsws_road_av          !< latent heat flux between the road and the street canyon air
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  qsws_roof_av          !< latent heat flux between the roof and the atmosphere
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  qsws_urb_av           !< urban aggregated latent heat flux
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  rad_lw_net_road_av    !< road surface net longwave radiative flux
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  rad_lw_net_roof_av    !< roof surface net longwave radiative flux
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  rad_lw_net_urb_av     !< urban aggergated net longwave radiative flux
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  rad_lw_net_wall_a_av  !< wall a surface net longwave radiative flux
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  rad_lw_net_wall_b_av  !< wall b surface net longwave radiative flux
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  rad_lw_net_win_a_av   !< window a surface net longwave radiative flux
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  rad_lw_net_win_b_av   !< window b surface net longwave radiative flux
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  rad_sw_net_road_av    !< road surface net shortwave radiative flux
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  rad_sw_net_roof_av    !< roof surface net shortwave radiative flux
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  rad_sw_net_urb_av     !< aggegated urban surface net shortwave radiative flux
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  rad_sw_net_wall_a_av  !< wall a surface net shortwave radiative flux
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  rad_sw_net_wall_b_av  !< wall b surface net shortwave radiative flux
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  rad_sw_net_win_a_av   !< window a surface net shortwave radiative flux
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  rad_sw_net_win_b_av   !< window b surface net shortwave radiative flux
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  rad_sw_tr_win_a_av    !< window a surface transmitted shortwave radiative flux
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  rad_sw_tr_win_b_av    !< window b surface transmitted shortwave radiative flux
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  rah_can_av            !< street canyon aerodynamic resistance for heat
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  rah_road_av           !< road aerodynamic resistance for heat
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  rah_roof_av           !< roof aerodynamic resistance for heat
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  rah_wall_a_av         !< wall A aerodynamic resistance for heat (DOE-2)
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  rah_wall_b_av         !< wall B aerodynamic resistance for heat (DOE-2)
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  rah_win_a_av          !< window A aerodynamic resistance for heat (DOE-2)
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  rah_win_b_av          !< window B aerodynamic resistance for heat (DOE-2)
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  rah_facade_av         !< wall and window aerodynamic resistance for heat (combined)
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  ram_urb_av            !< urban aerodynamic resistance for momentum
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  rib_can_av            !< street canyon top bulk richardson number
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  rib_road_av           !< road bulk richardson number
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  rib_roof_av           !< roof bulk richardson number
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  shf_can_av            !< sensible heat flux between the street canyon and the atmosphere
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  shf_external_av       !< sensible heat flux external to the model (e.g. from industry)
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  shf_road_av           !< sensible heat flux between the road and the street canyon air
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  shf_roof_av           !< sensible heat flux between the roof and the atmosphere
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  shf_traffic_av        !< sensible heat flux from traffic to the canyon air
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  shf_urb_av            !< urban aggregated sensible heat flux
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  shf_wall_a_av         !< sensible heat flux between the wall a and the canyon air
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  shf_wall_b_av         !< sensible heat flux between the wall b and the canyon air
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  shf_win_a_av          !< sensible heat flux between the window a and the canyon air
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  shf_win_b_av          !< sensible heat flux between the window b and the canyon air
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  t_2m_urb_av           !< extrapolated 2-metre urban surface temperature
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  t_c_urb_av            !< complete urban surface temperature
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  t_can_av              !< street canyon air temperature
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  t_h_urb_av            !< effective urban surface temperature
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  t_rad_urb_av          !< effective urban surface radiative temperature
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  t_surf_road_av        !< road surface temperature
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  t_surf_roof_av        !< roof surface temperature
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  t_surf_wall_a_av      !< wall a surface temperature
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  t_surf_wall_b_av      !< wall b surface temperature
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  t_surf_win_a_av       !< window a surface temperature
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  t_surf_win_b_av       !< window b surface temperature
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  us_can_av             !< friction velocity for street canyons
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  us_road_av            !< friction velocity for roads
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  us_roof_av            !< friction velocity for roofs
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  us_urb_av             !< urban friction velocity
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  usws_urb_av           !< urban momentum flux (u-component)
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  uv_abs_can_av         !< street canyon wind speed
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  uv_eff_can_av         !< street canyon effective wind speed
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  vpt_can_av            !< street canyon air virtual potential temperature
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  vpt_road_av           !< road surface virtual potential temperature
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  vpt_roof_av           !< roof surface virtual potential temperature
-    REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  vsws_urb_av           !< urban momentum flux (v-component
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  albedo_urb_av         !< road liquid water coverage 
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  c_liq_road_av         !< road liquid water coverage
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  c_liq_roof_av         !< roof liquid water coverage
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  emiss_urb_av          !< road liquid water coverage
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  ghf_road_av           !< heat flux between the road bottom layer and soil
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  ghf_roof_av           !< heat flux between the roof bottom layer and indoor air
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  ghf_wall_a_av         !< heat flux between the wall a bottom layer and indoor air
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  ghf_wall_b_av         !< heat flux between the wall b bottom layer and indoor air
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  ghf_win_a_av          !< heat flux between the window a bottom layer and indoor air
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  ghf_win_b_av          !< heat flux between the window b bottom layer and indoor air
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  m_liq_road_av         !< liquid water reservoir on roads
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  m_liq_roof_av         !< liquid water reservoir on roofs
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  ol_can_av             !< street canyon top obukhov length
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  ol_road_av            !< road obukhov length
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  ol_roof_av            !< roof obukhov length
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  ol_urb_av             !< urban obukhov length for momentum flux
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  pt_can_av             !< street canyon air potential temperature
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  pt_road_av            !< road surface potential temperature
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  pt_roof_av            !< roof surface potential temperature
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  pt_wall_a_av          !< wall a surface potential temperature
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  pt_wall_b_av          !< wall b surface potential temperature
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  pt_win_a_av           !< window a surface potential temperature
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  pt_win_b_av           !< window b surface potential temperature
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  q_can_av              !< street canyon water vapour mixing ratio
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  q_road_av             !< road surface mixing ratio
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  q_roof_av             !< roof surface mixing ratio
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  qs_road_av            !< road surface saturation mixing ratio
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  qs_roof_av            !< roof surface saturation mixing ratio
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  qsws_can_av           !< latent heat flux between the street canyon and the atmosphere
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  qsws_external_av      !< latent heat flux external to the model (e.g. from industry)
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  qsws_road_av          !< latent heat flux between the road and the street canyon air
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  qsws_roof_av          !< latent heat flux between the roof and the atmosphere
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  qsws_urb_av           !< urban aggregated latent heat flux
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  rad_lw_net_road_av    !< road surface net longwave radiative flux
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  rad_lw_net_roof_av    !< roof surface net longwave radiative flux
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  rad_lw_net_urb_av     !< urban aggergated net longwave radiative flux
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  rad_lw_net_wall_a_av  !< wall a surface net longwave radiative flux
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  rad_lw_net_wall_b_av  !< wall b surface net longwave radiative flux
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  rad_lw_net_win_a_av   !< window a surface net longwave radiative flux
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  rad_lw_net_win_b_av   !< window b surface net longwave radiative flux
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  rad_sw_net_road_av    !< road surface net shortwave radiative flux
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  rad_sw_net_roof_av    !< roof surface net shortwave radiative flux
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  rad_sw_net_urb_av     !< aggegated urban surface net shortwave radiative flux
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  rad_sw_net_wall_a_av  !< wall a surface net shortwave radiative flux
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  rad_sw_net_wall_b_av  !< wall b surface net shortwave radiative flux
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  rad_sw_net_win_a_av   !< window a surface net shortwave radiative flux
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  rad_sw_net_win_b_av   !< window b surface net shortwave radiative flux
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  rad_sw_tr_win_a_av    !< window a surface transmitted shortwave radiative flux
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  rad_sw_tr_win_b_av    !< window b surface transmitted shortwave radiative flux
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  rah_can_av            !< street canyon aerodynamic resistance for heat
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  rah_road_av           !< road aerodynamic resistance for heat
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  rah_roof_av           !< roof aerodynamic resistance for heat
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  rah_wall_a_av         !< wall A aerodynamic resistance for heat (DOE-2)
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  rah_wall_b_av         !< wall B aerodynamic resistance for heat (DOE-2)
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  rah_win_a_av          !< window A aerodynamic resistance for heat (DOE-2)
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  rah_win_b_av          !< window B aerodynamic resistance for heat (DOE-2)
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  rah_facade_av         !< wall and window aerodynamic resistance for heat (combined)
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  ram_urb_av            !< urban aerodynamic resistance for momentum
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  rib_can_av            !< street canyon top bulk richardson number
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  rib_road_av           !< road bulk richardson number
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  rib_roof_av           !< roof bulk richardson number
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  shf_can_av            !< sensible heat flux between the street canyon and the atmosphere
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  shf_external_av       !< sensible heat flux external to the model (e.g. from industry)
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  shf_road_av           !< sensible heat flux between the road and the street canyon air
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  shf_roof_av           !< sensible heat flux between the roof and the atmosphere
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  shf_traffic_av        !< sensible heat flux from traffic to the canyon air
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  shf_urb_av            !< urban aggregated sensible heat flux
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  shf_wall_a_av         !< sensible heat flux between the wall a and the canyon air
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  shf_wall_b_av         !< sensible heat flux between the wall b and the canyon air
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  shf_win_a_av          !< sensible heat flux between the window a and the canyon air
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  shf_win_b_av          !< sensible heat flux between the window b and the canyon air
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  t_2m_urb_av           !< extrapolated 2-metre urban surface temperature
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  t_c_urb_av            !< complete urban surface temperature
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  t_can_av              !< street canyon air temperature
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  t_h_urb_av            !< effective urban surface temperature
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  t_rad_urb_av          !< effective urban surface radiative temperature
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  t_surf_road_av        !< road surface temperature
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  t_surf_roof_av        !< roof surface temperature
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  t_surf_wall_a_av      !< wall a surface temperature
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  t_surf_wall_b_av      !< wall b surface temperature
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  t_surf_win_a_av       !< window a surface temperature
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  t_surf_win_b_av       !< window b surface temperature
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  us_can_av             !< friction velocity for street canyons
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  us_road_av            !< friction velocity for roads
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  us_roof_av            !< friction velocity for roofs
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  us_urb_av             !< urban friction velocity
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  usws_urb_av           !< urban momentum flux (u-component)
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  uv_abs_can_av         !< street canyon wind speed
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  uv_eff_can_av         !< street canyon effective wind speed
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  vpt_can_av            !< street canyon air virtual potential temperature
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  vpt_road_av           !< road surface virtual potential temperature
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  vpt_roof_av           !< roof surface virtual potential temperature
+    ! REAL(field_r), DIMENSION(:,:), ALLOCATABLE ::  vsws_urb_av           !< urban momentum flux (v-component
     !
     !-- Arrays for output of unmodified LSM fluxes (2D).
-    REAL(field_r), DIMENSION(:,:,:), ALLOCATABLE ::  shf_lsm_av   !< sensible heat flux from lsm surfaces
-    REAL(field_r), DIMENSION(:,:,:), ALLOCATABLE ::  qsws_lsm_av  !< latent heat flux from lsm surfaces
+    ! REAL(field_r), DIMENSION(:,:,:), ALLOCATABLE ::  shf_lsm_av   !< sensible heat flux from lsm surfaces
+    ! REAL(field_r), DIMENSION(:,:,:), ALLOCATABLE ::  qsws_lsm_av  !< latent heat flux from lsm surfaces
 
     !
     !-- Arrays for output temporal averaging (2D).
-    REAL(field_r), DIMENSION(:,:,:), ALLOCATABLE ::  t_road_av    !< road temperature (all layers)
-    REAL(field_r), DIMENSION(:,:,:), ALLOCATABLE ::  t_roof_av    !< roof temperature (all layers)
-    REAL(field_r), DIMENSION(:,:,:), ALLOCATABLE ::  t_wall_a_av  !< wall a temperature (all layers)
-    REAL(field_r), DIMENSION(:,:,:), ALLOCATABLE ::  t_wall_b_av  !< wall b temperature (all layers)
-    REAL(field_r), DIMENSION(:,:,:), ALLOCATABLE ::  t_win_a_av   !< window a temperature (all layers)
-    REAL(field_r), DIMENSION(:,:,:), ALLOCATABLE ::  t_win_b_av   !< window b temperature (all layers)
+    ! REAL(field_r), DIMENSION(:,:,:), ALLOCATABLE ::  t_road_av    !< road temperature (all layers)
+    ! REAL(field_r), DIMENSION(:,:,:), ALLOCATABLE ::  t_roof_av    !< roof temperature (all layers)
+    ! REAL(field_r), DIMENSION(:,:,:), ALLOCATABLE ::  t_wall_a_av  !< wall a temperature (all layers)
+    ! REAL(field_r), DIMENSION(:,:,:), ALLOCATABLE ::  t_wall_b_av  !< wall b temperature (all layers)
+    ! REAL(field_r), DIMENSION(:,:,:), ALLOCATABLE ::  t_win_a_av   !< window a temperature (all layers)
+    ! REAL(field_r), DIMENSION(:,:,:), ALLOCATABLE ::  t_win_b_av   !< window b temperature (all layers)
 
     REAL(field_r) ::  dt_slurb = HUGE( 1.0_field_r )  !< maximum allowed timestep of SLUrb
 
@@ -177,14 +177,14 @@ module modslurb
 
     !
     !-- Parameter defaults.
-    REAL(field_r), PARAMETER ::  m_liq_max_road = 1.0E-3_field_r  !< maximum capacity of the liquid water reservoir on roads (i,j)
-    REAL(field_r), PARAMETER ::  m_liq_max_roof = 1.0E-3_field_r  !< maximum capacity of the liquid water reservoir on roofs (i,j)
-    REAL(field_r), PARAMETER ::  rah_max   = 1.0E6_field_r        !< maximum aerodynamic resistance for scalars
-    REAL(field_r), PARAMETER ::  rah_min   = 1.0_field_r          !< minimum aerodynamic resistance for scalars
-    REAL(field_r), PARAMETER ::  ram_min   = 1.0_field_r          !< minimum aerodynamic resistance for momentum
-    REAL(field_r), PARAMETER ::  urb_thres = 1.0E-2_field_r       !< minimum urban fraction to consider (1%)
-    REAL(field_r), PARAMETER ::  us_min    = 1.0E-8_field_r       !< minimum friction velocity
-    REAL(field_r), PARAMETER ::  zeta_min  = 1.0E-3_field_r       !< minimum stability parameter absolute value (neutral limit)
+    REAL(field_r), PARAMETER ::  m_liq_max_road = 1.0E-3_field_r  !< maximum capacity of the liquid water reservoir on roads (i,j) (m^3 m^-2)
+    REAL(field_r), PARAMETER ::  m_liq_max_roof = 1.0E-3_field_r  !< maximum capacity of the liquid water reservoir on roofs (i,j) (m^3 m^-2)
+    REAL(field_r), PARAMETER ::  rah_max   = 1.0E6_field_r        !< maximum aerodynamic resistance for scalars (s m^-1)
+    REAL(field_r), PARAMETER ::  rah_min   = 1.0_field_r          !< minimum aerodynamic resistance for scalars (s m^-1)
+    REAL(field_r), PARAMETER ::  ram_min   = 1.0_field_r          !< minimum aerodynamic resistance for momentum (s m^-1) (TODOSELF)
+    REAL(field_r), PARAMETER ::  urb_thres = 1.0E-2_field_r       !< minimum urban fraction to consider (1%) (.)
+    REAL(field_r), PARAMETER ::  us_min    = 1.0E-8_field_r       !< minimum friction velocity (m s^-1)
+    REAL(field_r), PARAMETER ::  zeta_min  = 1.0E-3_field_r       !< minimum stability parameter absolute value (neutral limit) (.)
     !
     !-- slurb_parameters namelist defaults.
     CHARACTER(LEN=20) ::  aero_roughness_heat = 'kanda'                !< SLURrb namelist parameter
@@ -201,25 +201,25 @@ module modslurb
     LOGICAL ::  anisotropic_street_canyons = .FALSE.  !< SLURrb namelist parameter
     LOGICAL ::  moist_physics = .TRUE.                !< SLURrb namelist parameter
 
-    REAL(field_r) ::  building_frontal_area_fraction = -9999.0_field_r  !< SLURrb namelist parameter
-    REAL(field_r) ::  building_height = -9999.0_field_r                 !< SLURrb namelist parameter
-    REAL(field_r) ::  building_indoor_temperature = 295.15_field_r      !< SLURrb namelist parameter
-    REAL(field_r) ::  building_plan_area_fraction = -9999.0_field_r     !< SLURrb namelist parameter
-    REAl(field_r) ::  deep_soil_temperature = -9999.0_field_r           !< SLURrb namelist parameter
-    REAL(field_r) ::  qsws_external = 0.0_field_r                       !< SLURrb namelist parameter
-    REAL(field_r) ::  shf_external = 0.0_field_r                        !< SLURrb namelist parameter
-    REAL(field_r) ::  shf_traffic = 0.0_field_r                         !< SLURrb namelist parameter
-    REAL(field_r) ::  street_canyon_aspect_ratio = -9999.0_field_r      !< SLURrb namelist parameter
-    REAL(field_r) ::  street_canyon_orientation = -9999.0_field_r       !< SLURrb namelist parameter
-    REAL(field_r) ::  urban_fraction = -9999.0_field_r                  !< SLURrb namelist parameter
-    REAL(field_r) ::  urban_roughness_length = -9999.0_field_r          !< SLURrb namelist parameter
-    REAL(field_r) ::  window_fraction = -9999.0_field_r                 !< SLURrb namelist parameter
+    REAL(field_r) ::  building_frontal_area_fraction = -9999.0_field_r  !< SLURrb namelist parameter (.)
+    REAL(field_r) ::  building_height = -9999.0_field_r                 !< SLURrb namelist parameter (m)
+    REAL(field_r) ::  building_indoor_temperature =  -9999.0_field_r    !< SLURrb namelist parameter (K)
+    REAL(field_r) ::  building_plan_area_fraction = -9999.0_field_r     !< SLURrb namelist parameter (.)
+    REAl(field_r) ::  deep_soil_temperature = -9999.0_field_r           !< SLURrb namelist parameter (K)
+    REAL(field_r) ::  qsws_external = 0.0_field_r                       !< SLURrb namelist parameter (W m^-2 s^-1)
+    REAL(field_r) ::  shf_external = 0.0_field_r                        !< SLURrb namelist parameter (W m^-2 s^-1)
+    REAL(field_r) ::  shf_traffic = 0.0_field_r                         !< SLURrb namelist parameter (W m^-2 s^-1)
+    REAL(field_r) ::  street_canyon_aspect_ratio = -9999.0_field_r      !< SLURrb namelist parameter (.)
+    REAL(field_r) ::  street_canyon_orientation = -9999.0_field_r       !< SLURrb namelist parameter (.)
+    REAL(field_r) ::  urban_fraction = -9999.0_field_r                  !< SLURrb namelist parameter (.)
+    REAL(field_r) ::  urban_roughness_length = -9999.0_field_r          !< SLURrb namelist parameter (m)
+    REAL(field_r) ::  window_fraction = -9999.0_field_r                 !< SLURrb namelist parameter (.)
 
 
-    REAL(field_r), PARAMETER ::  ol_max   = 1.0E6_field_r   !< allowed absolute maximum value Obukhov length
-    REAL(field_r), PARAMETER ::  ol_min   = 1.0E-6_field_r  !< allowed absolute minimum value Obukhov length
-    REAL(field_r), PARAMETER ::  ol_tol   = 1.0E-4_field_r  !< convergence limit for Obukhov length, relative tolerance
-    REAL(field_r), PARAMETER ::  rib_max  = 1.0E1_field_r   !< maximum bulk Richardson number (absolute value)
+    REAL(field_r), PARAMETER ::  ol_max   = 1.0E6_field_r   !< allowed absolute maximum value Obukhov length (m)
+    REAL(field_r), PARAMETER ::  ol_min   = 1.0E-6_field_r  !< allowed absolute minimum value Obukhov length (m)
+    REAL(field_r), PARAMETER ::  ol_tol   = 1.0E-4_field_r  !< convergence limit for Obukhov length, relative tolerance (m)
+    REAL(field_r), PARAMETER ::  rib_max  = 1.0E1_field_r   !< maximum bulk Richardson number (absolute value) (.)
 
     integer :: ibc_pt_b = 0 ! indicates dirichlet bc
     !SELFTODO NU 0 OM OL BETER TE BEREKENEN
@@ -248,7 +248,7 @@ module modslurb
     INTEGER ::  nzt_road  !< top of the road model
     INTEGER ::  nzb_road  !< bottom of the road model
 
-    real(field_r), allocatable :: fraction_slurb(:,:)
+    real(field_r), allocatable :: fraction_slurb(:,:) !< (.)
 
     !-- Default surface description.
     REAL(field_r), DIMENSION(0:45,1:6) ::  building_pars_slurb  !< building default parameters derived from USM
@@ -272,6 +272,10 @@ module modslurb
     real(field_r) :: namalbedo_wall = -9999
     real(field_r) :: namalbedo_win = -9999
     real(field_r) :: namalbedo_roof = -9999
+    real(field_r) :: namlambda_road = -9999
+    real(field_r) :: namlambda_wall = -9999
+    real(field_r) :: namlambda_win = -9999
+    real(field_r) :: namlambda_roof = -9999
     
 
 contains
@@ -349,7 +353,7 @@ subroutine slurb_read_RADnamelist
 
     ! Namelist definition
     namelist /NAMSLURBRAD/ &
-        namemiss_road, namemiss_wall, namemiss_win, namemiss_roof, namalbedo_road, namalbedo_wall, namalbedo_win, namalbedo_roof
+        namemiss_road, namemiss_wall, namemiss_win, namemiss_roof, namalbedo_road, namalbedo_wall, namalbedo_win, namalbedo_roof, namlambda_road,namlambda_wall,namlambda_win,namlambda_roof
 
 
     ! Read namelist
@@ -371,6 +375,10 @@ subroutine slurb_read_RADnamelist
     call D_MPI_BCAST(namalbedo_wall,  1, 0, comm3d, mpierr)
     call D_MPI_BCAST(namalbedo_win,  1, 0, comm3d, mpierr)
     call D_MPI_BCAST(namalbedo_roof,  1, 0, comm3d, mpierr)
+    call D_MPI_BCAST(namlambda_road,  1, 0, comm3d, mpierr)
+    call D_MPI_BCAST(namlambda_wall,  1, 0, comm3d, mpierr)
+    call D_MPI_BCAST(namlambda_win,  1, 0, comm3d, mpierr)
+    call D_MPI_BCAST(namlambda_roof,  1, 0, comm3d, mpierr)
 end subroutine slurb_read_RADnamelist
 subroutine slurb_bulk_allocations
     use modglobal, only: i2, j2
@@ -884,7 +892,7 @@ subroutine initslurb
         if (tile(ilu)%lushort == "slb") then
             do j=2,j1
                 do i=2,i1
-                    fraction_slurb(i,j) = tile(ilu)%frac(i,j)
+                    fraction_slurb(i,j) = tile(ilu)%frac(i,j) ! (.)
                 enddo
             enddo
         endif
@@ -927,7 +935,7 @@ subroutine initslurb
     !                                   0.0_field_r, HUGE( 1.0_field_r ) )
 
     slurb_tile%h_bld(:,:) = -9999.0_field_r
-    slurb_tile%h_bld(:,:) = building_height !TODOSELF even vastgezet
+    slurb_tile%h_bld(:,:) = building_height !TODOSELF even vastgezet (m)
     ! CALL get_grid_variable_1d_real( 'building_height', slurb_tile%h_bld, building_height )
     ! CALL check_grid_variable_1d_real( 'building_height', slurb_tile%h_bld, 0.0_field_r, 1000.0_field_r )
 
@@ -935,9 +943,9 @@ subroutine initslurb
     !-- Urban surface and street canyon MOST heights.
     do j=2,j1
       do i=2,i1
-       slurb_tile%z_mo(i,j) = 0.5_field_r * (zf(2) - zf(1))
+       slurb_tile%z_mo(i,j) = 0.5_field_r * (zf(2) - zf(1)) ! (m)
     !    slurb_tile%z_mo(i,j) = 0.5_field_r *  dzw(topo_top_ind(j,i,0)+1)
-       slurb_tile%z_mo_can(i,j) = 0.5_field_r * building_height
+       slurb_tile%z_mo_can(i,j) = 0.5_field_r * building_height ! (m)
     !    slurb_tile%z_mo_can(i,j) = 0.5_field_r * slurb_tile%h_bld(i,j)
       enddo
     enddo
@@ -986,7 +994,7 @@ subroutine initslurb
 
     do j=2,j1
         do i=2,i1
-            slurb_tile%z0_urb(i,j) = urban_roughness_length
+            slurb_tile%z0_urb(i,j) = urban_roughness_length ! (m)
         enddo
     enddo
     ! do j=2,j1
@@ -994,7 +1002,7 @@ subroutine initslurb
     !         slurb_tile%dt_max(i,j) = HUGE( 1.0_field_r )
     !     enddo
     ! enddo
-    slurb_tile%dt_max(:,:) = HUGE( 1.0_field_r )
+    slurb_tile%dt_max(:,:) = HUGE( 1.0_field_r ) ! (s)
 
     call slurb_swap_timelevel(0)
 
@@ -1279,7 +1287,7 @@ end subroutine do_slurb
  SUBROUTINE slurb_update_external_vars
 
     use modglobal, only : cp, rlv, cu, cv, i1, j1, ep
-    use modfields, only : ql0, u0, v0, qt0, exnf, thl0
+    use modfields, only : ql0, u0, v0, qt0, exnf, thl0, rhobf
     implicit none
     INTEGER ::  i      !< loop index
     INTEGER::  j      !< loop index
@@ -1289,63 +1297,70 @@ end subroutine do_slurb
     INTEGER ::  tm     !< previous timestep index
 
     REAL(field_r) ::  fac_dt  !< factor for linear interpolation between timesteps
-    REAL(field_r) ::  vtws    !< buoyancy flux
+    REAL(field_r) ::  vtws    !< buoyancy flux (m K s^-1)
     REAL(field_r) ::  ws      !< free convection velocity scale
 
     real(field_r) :: du, dv
 
+    real :: rho_cp !< cp * rho (J m^-3 K^-1)
+    rho_cp = cp * rho_air_zw(1) !TODOSELF
 
 
     do j=2,j1
       do i=2,i1
         k_atm = 1
-!        i = slurb_tile%i(m)
-!        j = slurb_tile%j(m)
-!        k_atm = topo_top_ind(j,i,0) + 1
-! !
-! !--    Calculate the pt, vpt and q for atmosphere depending on what modules are enabled.
-!        IF ( bulk_cloud_model )  THEN
-!           slurb_tile%pt1(m) = pt(k_atm,j,i) + lv_d_cp * (1 / exnf(k_atm)) * ql(k_atm,j,i)
-!           slurb_tile%q1(m) = q(k_atm,j,i) - ql(k_atm,j,i)
-!           slurb_tile%vpt1(m) = slurb_tile%pt1(m) * ( 1.0_field_r + 0.61_field_r * slurb_tile%q1(m) )
-!        ELSEIF ( cloud_droplets )  THEN
-!           slurb_tile%pt1(m) = pt(k_atm,j,i) + lv_d_cp * (1 / exnf(k_atm)) * ql(k_atm,j,i)
-!           slurb_tile%q1(m) = q(k_atm,j,i)
-!           slurb_tile%vpt1(m) = slurb_tile%pt1(m) * ( 1.0_field_r + 0.61_field_r * slurb_tile%q1(m) )
-!        ELSE
-!           slurb_tile%pt1(m) = pt(k_atm,j,i)
-!           IF ( moist_physics )  THEN
-!              slurb_tile%q1(m) = q(k_atm,j,i)
-!              slurb_tile%vpt1(m) = slurb_tile%pt1(m) * ( 1.0_field_r + 0.61_field_r * slurb_tile%q1(m) )
-!           ENDIF
-!        ENDIF
+    !        i = slurb_tile%i(m)
+    !        j = slurb_tile%j(m)
+    !        k_atm = topo_top_ind(j,i,0) + 1
+    ! !
+    ! !--    Calculate the pt, vpt and q for atmosphere depending on what modules are enabled.
+    !        IF ( bulk_cloud_model )  THEN
+    !           slurb_tile%pt1(m) = pt(k_atm,j,i) + lv_d_cp * (1 / exnf(k_atm)) * ql(k_atm,j,i)
+    !           slurb_tile%q1(m) = q(k_atm,j,i) - ql(k_atm,j,i)
+    !           slurb_tile%vpt1(m) = slurb_tile%pt1(m) * ( 1.0_field_r + 0.61_field_r * slurb_tile%q1(m) )
+    !        ELSEIF ( cloud_droplets )  THEN
+    !           slurb_tile%pt1(m) = pt(k_atm,j,i) + lv_d_cp * (1 / exnf(k_atm)) * ql(k_atm,j,i)
+    !           slurb_tile%q1(m) = q(k_atm,j,i)
+    !           slurb_tile%vpt1(m) = slurb_tile%pt1(m) * ( 1.0_field_r + 0.61_field_r * slurb_tile%q1(m) )
+    !        ELSE
+    !           slurb_tile%pt1(m) = pt(k_atm,j,i)
+    !           IF ( moist_physics )  THEN
+    !              slurb_tile%q1(m) = q(k_atm,j,i)
+    !              slurb_tile%vpt1(m) = slurb_tile%pt1(m) * ( 1.0_field_r + 0.61_field_r * slurb_tile%q1(m) )
+    !           ENDIF
+    !        ENDIF
 
-!        slurb_tile%uv_abs1(m) = SQRT( ( 0.5 * ( u(k_atm,j,i) + u(k_atm,j,i+1) ) )**2 +                    &
-!                                ( 0.5 * ( v(k_atm,j,i) + v(k_atm,j+1,i) ) )**2 )
+    !        slurb_tile%uv_abs1(m) = SQRT( ( 0.5 * ( u(k_atm,j,i) + u(k_atm,j,i+1) ) )**2 +                    &
+    !                                ( 0.5 * ( v(k_atm,j,i) + v(k_atm,j+1,i) ) )**2 )
 
-        slurb_tile%pt1(i,j)  = thl0(i, j, k_atm) + (rlv/(cp * exnf(k_atm)))  * ql0(i,j,k_atm)
-        slurb_tile%q1(i,j)   = qt0(i, j, k_atm) - ql0(i, j, k_atm)
-        slurb_tile%vpt1(i,j) = slurb_tile%pt1(i,j) * ( 1.0_field_r + 0.61_field_r * slurb_tile%q1(i,j) )
+            ! K = K + J/kg /(J/kg K^-1) * (kg/kg)
+            slurb_tile%pt1(i,j)  = thl0(i, j, k_atm) + (rlv/(cp * exnf(k_atm)))  * ql0(i,j,k_atm)
+            slurb_tile%q1(i,j)   = qt0(i, j, k_atm) - ql0(i, j, k_atm) !TODOSELF BUG
+            slurb_tile%vpt1(i,j) = slurb_tile%pt1(i,j) * ( 1.0_field_r + 0.61_field_r * slurb_tile%q1(i,j) )
 
-        du = 0.5*(u0(i,j,1) + u0(i+1,j,1)) + cu
-        dv = 0.5*(v0(i,j,1) + v0(i,j+1,1)) + cv
-        slurb_tile%uv_abs1(i,j) = sqrt(du**2 + dv**2)
-        ! slurb_tile%uv_abs1(i,j) = max(0.1, sqrt(du**2 + dv**2)) DALES VERSION
+            du = 0.5*(u0(i,j,1) + u0(i+1,j,1)) + cu
+            dv = 0.5*(v0(i,j,1) + v0(i,j+1,1)) + cv
+            slurb_tile%uv_abs1(i,j) = sqrt(du**2 + dv**2)
+            ! slurb_tile%uv_abs1(i,j) = max(0.1, sqrt(du**2 + dv**2)) DALES VERSION
 
 
 
 
-!--    Calculate surface-parallel absolute velocity uv_eff1 at cell center using
-!--    free convection scale (w_star, for unstable cases).
-       vtws = slurb_tile%shf_urb(i,j) + (rlv / cp) * slurb_tile%qsws_urb(i,j) 
-!
-!--    No scaling for stable cases:
-       vtws = MERGE( vtws, 0.0_field_r, vtws > 0.0_field_r )
-       ws = ( g / slurb_tile%pt1(i,j) * slurb_tile%z_mo(i,j) * vtws )**( 1.0_field_r / 3.0_field_r )
+            !--    Calculate surface-parallel absolute velocity uv_eff1 at cell center using
+            !--    free convection scale (w_star, for unstable cases).
+            ! m K s^-1 = (J^-1 kg K)(kg^-1 m^3) J s^-1 m^-2 + (J/kg)/(J/kg/K)*W/m^2
+            vtws = (1/(rho_cp)) * slurb_tile%shf_urb(i,j) + (rlv / cp) * slurb_tile%qsws_urb(i,j) ! (m K s^-1)
+            !
+            !--    No scaling for stable cases:
+            vtws = MERGE( vtws, 0.0_field_r, vtws > 0.0_field_r )
+            ! m/s = (m s^-2 K^-1 m ?)^(1/3)
+            ! m/s = (m^2 s^-2 K^-1 (m K s^-1))^(1/3)
+            ! m/s = (m^3 s^-3)^(1/3)
+            ws = ( g / slurb_tile%pt1(i,j) * slurb_tile%z_mo(i,j) * vtws )**( 1.0_field_r / 3.0_field_r )  ! (m s^-1)
 
-    !    slurb_tile%uv_eff1(m) = SQRT( ( 0.5 * ( u(k_atm,j,i) + u(k_atm,j,i+1) ) )**2 +                    &
-    !                            ( 0.5 * ( v(k_atm,j,i) + v(k_atm,j+1,i) ) )**2 + ws**2 )
-        slurb_tile%uv_eff1(i, j) = sqrt(du**2 + dv**2 + ws**2)
+            !    slurb_tile%uv_eff1(m) = SQRT( ( 0.5 * ( u(k_atm,j,i) + u(k_atm,j,i+1) ) )**2 +                    &
+            !                            ( 0.5 * ( v(k_atm,j,i) + v(k_atm,j+1,i) ) )**2 + ws**2 )
+            slurb_tile%uv_eff1(i, j) = sqrt(du**2 + dv**2 + ws**2)
         enddo
     enddo
 
@@ -2680,6 +2695,18 @@ end subroutine slurb_update_external_vars
     if ( namalbedo_roof /= -9999 ) THEN
         slurb_tile%albedo_roof(:,:) = namalbedo_roof
     ENDIF
+    if ( namlambda_road /= -9999 ) THEN
+        slurb_tile%lambda_road(:,:,:) = namlambda_road
+    ENDIF
+    if ( namlambda_wall /= -9999 ) THEN
+        slurb_tile%lambda_wall(:,:,:) = namlambda_wall
+    ENDIF
+    if ( namlambda_win /= -9999 ) THEN
+        slurb_tile%lambda_win(:,:,:) = namlambda_win
+    ENDIF
+    if ( namlambda_roof /= -9999 ) THEN
+        slurb_tile%lambda_roof(:,:,:) = namlambda_roof
+    ENDIF
 
 
     do j=2,j1
@@ -3578,7 +3605,7 @@ end subroutine slurb_update_external_vars
 
     LOGICAL ::  runge_l  !< flag to vectorize timestep scheme switch
 
-    real :: rho_cp
+    real :: rho_cp !< cp * rho (J m^-3 K^-1)
 
 
     ! IF ( debug_output_timestep )  THEN
@@ -3621,20 +3648,21 @@ end subroutine slurb_update_external_vars
 !--------------------------------------------------------------------------------------------------!
  SUBROUTINE calc_surf_t_p ( t, t_p, tt_current, coef_1, coef_2, c )
 
-    REAL(field_r), INTENT(IN) ::  c       !< total layer heat capacity
-    REAL(field_r), INTENT(IN) ::  coef_1  !< coefficient A in the prognostic equation
-    REAL(field_r), INTENT(IN) ::  coef_2  !< coefficient B in the prognostic equation
-    REAL(field_r), INTENT(IN) ::  t       !< current layer temperature
+    REAL(field_r), INTENT(IN) ::  c       !< total layer heat capacity (J m^-2 K^-1)
+    REAL(field_r), INTENT(IN) ::  coef_1  !< coefficient A in the prognostic equation (W m^-2)
+    REAL(field_r), INTENT(IN) ::  coef_2  !< coefficient B in the prognostic equation (W m^-2 K^-1)
+    REAL(field_r), INTENT(IN) ::  t       !< current layer temperature (K)
 
-    REAL(field_r), INTENT(OUT) ::  t_p  !< new layer temperature
+    REAL(field_r), INTENT(OUT) ::  t_p  !< new layer temperature (K)
 
-    REAL(field_r), INTENT(INOUT) ::  tt_current  !< current temperature tendency
+    REAL(field_r), INTENT(INOUT) ::  tt_current  !< current temperature tendency (K s^-1)
 
-    REAL(field_r) ::  tt_new  !< new temperature tendency
-
+    REAL(field_r) ::  tt_new  !< new temperature tendency (K s^-1)
 
 !
 !-- Compute the prognostic temperature without RK weighting.
+    !K = (W m^-2 s + J m^-2 K^-1 K) / (J m^-2 K^-1 + W m^-2 K^-1 s)
+    !K = (J m^-2 + J m^-2) / (J m^-2 K^-1 + J m^-2 K^-1)
     t_p = ( coef_1 * rdt * tsc(2) + c * t )  / ( c + coef_2 * rdt * tsc(2) )
 
 !
@@ -3658,23 +3686,23 @@ end subroutine slurb_update_external_vars
 !--------------------------------------------------------------------------------------------------!
  SUBROUTINE calc_heat_diffusion ( t, t_p, tt_current, c, lambda, t_bc, sw_in, phi )
 
-    REAL(field_r), INTENT(IN) ::  t_bc  !< temperature boundary condition
+    REAL(field_r), INTENT(IN) ::  t_bc  !< temperature boundary condition (K)
 
     REAL(field_r), INTENT(IN), OPTIONAL ::  sw_in  !< incoming shortwave radiation for windows
 
-    REAL(field_r), DIMENSION(:), INTENT(IN) ::  c       !< total heat capacity of the layer
-    REAL(field_r), DIMENSION(:), INTENT(IN) ::  lambda  !< total heat conductivity between layers
-    REAL(field_r), DIMENSION(:), INTENT(IN) ::  t       !< current time level temperature
+    REAL(field_r), DIMENSION(:), INTENT(IN) ::  c       !< total heat capacity of the layer (J m^-2 K^-1)
+    REAL(field_r), DIMENSION(:), INTENT(IN) ::  lambda  !< total heat conductivity between layers (W m^-2 K^-1)
+    REAL(field_r), DIMENSION(:), INTENT(IN) ::  t       !< current time level temperature (K)
 
     REAL(field_r), DIMENSION(:), INTENT(IN), OPTIONAL ::  phi  !< fraction of incoming shortwave radiation absorbed at window layer
 
-    REAL(field_r), DIMENSION(:), INTENT(OUT) ::  t_p  !< new layer temperature
+    REAL(field_r), DIMENSION(:), INTENT(OUT) ::  t_p  !< new layer temperature (K)
 
-    REAL(field_r), DIMENSION(:), INTENT(INOUT) ::  tt_current  !< current temperature tendency
+    REAL(field_r), DIMENSION(:), INTENT(INOUT) ::  tt_current  !< current temperature tendency (K s^-1)
 
     INTEGER ::  k  !< material layer loop index
 
-    REAL(field_r) ::  tt_new  !<  new temperature tendency
+    REAL(field_r) ::  tt_new  !<  new temperature tendency (K s^-1)
 
 
 !
@@ -3690,6 +3718,8 @@ end subroutine slurb_update_external_vars
        ELSE
 !
 !--    Use a constant value boundary condition (skin temperature) for the innermost layer.
+            ! (J^-1 m^2 K) (J s^-1 m^-2 K^-1) * K
+            ! K s^-1
           tt_new = ( 1.0_field_r / c(k) ) * ( lambda(k) * ( t_bc - t(k) ) +                             &
                    lambda(k-1) * ( t(k-1) - t(k) ) )
        ENDIF
@@ -3743,7 +3773,7 @@ end subroutine slurb_update_external_vars
     REAL(field_r) ::  dq_s_dt     !< water vapour mixing ratio tendency
     REAL(field_r) ::  e_s         !< saturation water vapour pressure
     REAL(field_r) ::  e_s_dt      !< saturation water vapour pressure tendency
-    REAL(field_r) ::  f_shf       !< factor for the roof sensible heat flux
+    REAL(field_r) ::  f_shf       !< factor for the roof sensible heat flux (W m^-2 K^-1)
     REAL(field_r) ::  f_qsws_liq  !< factor for the latent heat flux from/to liquid water reservoir
     REAL(field_r) ::  tm_new      !< new liquid water reservoir tendency
 
@@ -3819,7 +3849,7 @@ end subroutine slurb_update_external_vars
 
     slurb_tile%pt_roof(i,j) = slurb_tile%t_roof_p(nzt_roof,i,j) * (1 / exnf(k_topo))
 
-    slurb_tile%shf_roof(i,j) = -f_shf * ( slurb_tile%pt1(i,j) - slurb_tile%pt_roof(i,j) ) / cp
+    slurb_tile%shf_roof(i,j) = -f_shf * ( slurb_tile%pt1(i,j) - slurb_tile%pt_roof(i,j) )
 
 !
 !-- Update longwave radiative flux following linearization.
@@ -3900,7 +3930,7 @@ end subroutine slurb_update_external_vars
     REAL(field_r) ::  dq_s_dt     !< water vapour mixing ratio tendency
     REAL(field_r) ::  e_s         !< saturation water vapour pressure
     REAL(field_r) ::  e_s_dt      !< saturation water vapour pressure tendency
-    REAL(field_r) ::  f_shf       !< factor for the sensible heat flux from roads
+    REAL(field_r) ::  f_shf       !< factor for the sensible heat flux from roads (W m^-2 K^-1)
     REAL(field_r) ::  f_qsws_liq  !< factor for the latent heat flux from/to liquid water reservoir
     REAL(field_r) ::  tm_new      !< new liquid water reservoir tendency
 
@@ -3976,7 +4006,7 @@ end subroutine slurb_update_external_vars
     ! write (*,*) i,j,slurb_tile%t_road_p(nzt_road,i,j)
     ! write(*,*) "slurb_tile%t_can(i,j)"
     ! write (*,*) i,j,slurb_tile%t_can(i,j)
-    slurb_tile%shf_road(i,j) = -f_shf * ( slurb_tile%t_can(i,j) - slurb_tile%t_road_p(nzt_road,i,j) ) / cp
+    slurb_tile%shf_road(i,j) = -f_shf * ( slurb_tile%t_can(i,j) - slurb_tile%t_road_p(nzt_road,i,j) )
 
     slurb_tile%pt_road(i,j)  = slurb_tile%t_road_p(nzt_road,i,j) * (1 / exnf(k_topo))
 
@@ -4061,8 +4091,8 @@ end subroutine slurb_update_external_vars
 
    REAL(field_r) ::  coef_1   !< coefficient A of the prognostic equation
    REAL(field_r) ::  coef_2   !< coefficient B of the prognostic equation
-   REAL(field_r) ::  f_shf_a  !< factor for the wall surface heat flux
-   REAL(field_r) ::  f_shf_b  !< factor for the wall surface heat flux
+   REAL(field_r) ::  f_shf_a  !< factor for the wall surface heat flux (W m^-2 K^-1)
+   REAL(field_r) ::  f_shf_b  !< factor for the wall surface heat flux (W m^-2 K^-1)
 
 
     IF ( facade_rah_doe )  THEN
@@ -4124,7 +4154,7 @@ end subroutine slurb_update_external_vars
     ENDIF
 
     slurb_tile%pt_wall_a(i,j)  = slurb_tile%t_wall_a_p(nzt_wall,i,j) * (1 / exnf(k_topo))
-    slurb_tile%shf_wall_a(i,j) = -f_shf_a * ( slurb_tile%t_can(i,j) - slurb_tile%t_wall_a_p(nzt_wall,i,j) ) / cp
+    slurb_tile%shf_wall_a(i,j) = -f_shf_a * ( slurb_tile%t_can(i,j) - slurb_tile%t_wall_a_p(nzt_wall,i,j) )
 
 !
 !-- Heat diffusion through subsurface layers.
@@ -4138,7 +4168,7 @@ end subroutine slurb_update_external_vars
 !-- Same treatment for wall B if this is an anisotropic canyon, otherwise copy.
     IF ( slurb_tile%anisotropic_canyon(i,j) )  THEN
        slurb_tile%pt_wall_b(i,j)  = slurb_tile%t_wall_b_p(nzt_wall,i,j) * (1 / exnf(k_topo))
-       slurb_tile%shf_wall_b(i,j) = -f_shf_b * ( slurb_tile%t_can(i,j) - slurb_tile%t_wall_b_p(nzt_wall,i,j) ) / cp
+       slurb_tile%shf_wall_b(i,j) = -f_shf_b * ( slurb_tile%t_can(i,j) - slurb_tile%t_wall_b_p(nzt_wall,i,j) )
 
        CALL calc_heat_diffusion( slurb_tile%t_wall_b(:,i,j), slurb_tile%t_wall_b_p(:,i,j), slurb_tile%tt_wall_b(:,i,j),    &
                                  slurb_tile%c_wall(:,i,j), slurb_tile%conductivity_wall(:,i,j), slurb_tile%t_indoor(i,j) )
@@ -4256,7 +4286,7 @@ end subroutine slurb_update_external_vars
     ENDIF
 
     slurb_tile%pt_win_a(i,j)  = slurb_tile%t_win_a_p(nzt_win,i,j) * (1 / exnf(k_topo))
-    slurb_tile%shf_win_a(i,j) = -f_shf_a * ( slurb_tile%t_can(i,j) - slurb_tile%t_win_a_p(nzt_win,i,j) ) / cp
+    slurb_tile%shf_win_a(i,j) = -f_shf_a * ( slurb_tile%t_can(i,j) - slurb_tile%t_win_a_p(nzt_win,i,j) )
 
 !
 !-- The transmitted shortwave radiation is included also in the prognostic equations for material
@@ -4271,7 +4301,7 @@ end subroutine slurb_update_external_vars
 
     IF ( slurb_tile%anisotropic_canyon(i,j) )  THEN
        slurb_tile%pt_win_b(i,j)  = slurb_tile%t_win_b_p(nzt_win,i,j) * (1 / exnf(k_topo))
-       slurb_tile%shf_win_b(i,j) = -f_shf_b * ( slurb_tile%t_can(i,j) - slurb_tile%t_win_b_p(nzt_win,i,j) ) / cp
+       slurb_tile%shf_win_b(i,j) = -f_shf_b * ( slurb_tile%t_can(i,j) - slurb_tile%t_win_b_p(nzt_win,i,j) )
 
        CALL calc_heat_diffusion( slurb_tile%t_win_b(:,i,j), slurb_tile%t_win_b_p(:,i,j),                           &
                                  slurb_tile%tt_win_b(:,i,j), slurb_tile%c_win(:,i,j),                              &
@@ -4358,18 +4388,18 @@ SUBROUTINE slurb_canyon_model
 
     LOGICAL  ::  runge_l  !< timestep scheme switch for vectorization
 
-    REAL(field_r) ::  c          !< total heat capacity of canyon air column per square metre
-    REAL(field_r) ::  coef_1     !< coefficient A for the prognostic equation
-    REAL(field_r) ::  coef_2     !< coefficient B for the prognostic equation
-    REAL(field_r) ::  f_shf      !< factor for the sensible heat flux
+    REAL(field_r) ::  c          !< total heat capacity of canyon air column per square metre (J K^-1 m^-2)
+    REAL(field_r) ::  coef_1     !< coefficient A for the prognostic equation (W m^-2)
+    REAL(field_r) ::  coef_2     !< coefficient B for the prognostic equation (W m^-2 K^-1)
+    REAL(field_r) ::  f_shf      !< factor for the sensible heat flux  (W m^-2 K^-1)
     REAL(field_r) ::  f_qsws     !< factor for the latent heat flux
-    REAL(field_r) ::  qsws_surf  !< aggregated latent heat flux from canyon surfaces per unit area
-    REAL(field_r) ::  shf_surf   !< aggregated sensible heat flux from canyon surfaces per unit area
+    REAL(field_r) ::  qsws_surf  !< aggregated latent heat flux from canyon surfaces per unit area (W m^-2)
+    REAL(field_r) ::  shf_surf   !< aggregated sensible heat flux from canyon surfaces per unit area (W m^-2)
     REAL(field_r) ::  tq_new     !< mixing ratio tendency for the new RK3 time step
     REAL(field_r) ::  tt_new     !< temperature tendency for the new RK3 time step
-    REAL(field_r) ::  vtws       !< buoyancy flux
-    REAL(field_r) ::  ws         !< free-convection scale
-    real :: rho_cp
+    REAL(field_r) ::  vtws       !< buoyancy flux (m K s^-1)
+    REAL(field_r) ::  ws         !< free-convection scale (m/s)
+    real :: rho_cp !< cp * rho (J m^-3 K^-1)
     k_topo = 1
     k_atm = 1
     rho_cp = cp * rho_air_zw(k_topo)
@@ -4421,7 +4451,7 @@ SUBROUTINE slurb_canyon_model
                                     ) + slurb_tile%shf_road(i,j)
    !
    !--    Aggregated flux doesn't contain c_p yet.
-         shf_surf = shf_surf * cp
+         shf_surf = shf_surf
 
         !  write(*,*) "f_shf"
         !  write (*,*) i,j,f_shf
@@ -4431,14 +4461,15 @@ SUBROUTINE slurb_canyon_model
         !  write (*,*) i,j,shf_surf
    !
    !--    Coefficients for the prognostic equation of street canyon temperature.
-         coef_1 = f_shf * slurb_tile%pt1(i,j) + shf_surf
+         coef_1 = f_shf * slurb_tile%pt1(i,j) + (shf_surf)
          coef_2 = f_shf * (1 / exnf(k_topo))
 
         !  write(*,*) "coef_1"
         !  write (*,*) i,j,coef_1
         !  write(*,*) "coef_2"
         !  write (*,*) i,j,coef_2
-
+        ! K = (w m^-2 s + J k^-1 m^-2 K) / (J K^-1 m^-2 + W m^-2 K^-1 s)
+        ! K = (J m^-2 + J m^-2) / (J K^-1 m^-2 + J m^-2 K^-1)
          slurb_tile%t_can_p(i,j) = ( coef_1 * rdt * tsc(2) + c * slurb_tile%t_can(i,j) ) /                         &
                            ( c + coef_2 * rdt * tsc(2) )
 
@@ -4467,7 +4498,7 @@ SUBROUTINE slurb_canyon_model
          !
          !--    Calculate new pt and shf from canyon to atmosphere.
          slurb_tile%pt_can(i,j) = slurb_tile%t_can_p(i,j) * (1 / exnf(k_topo))
-         slurb_tile%shf_can(i,j) = -f_shf * ( slurb_tile%pt1(i,j) - slurb_tile%pt_can(i,j) ) / cp
+         slurb_tile%shf_can(i,j) = -f_shf * ( slurb_tile%pt1(i,j) - slurb_tile%pt_can(i,j) )
          
         !  write(*,*) "pt_can"
         !  write (*,*) i,j,slurb_tile%pt_can(i,j)
@@ -4534,9 +4565,9 @@ SUBROUTINE slurb_canyon_model
         !  write(*,*) "qsws_can"
         !  write (*,*) i,j,slurb_tile%qsws_can(i,j)
          IF ( moist_physics )  THEN
-            vtws = slurb_tile%shf_can(i,j) + (rlv/cp) * slurb_tile%qsws_can(i,j)
+            vtws =  (1/(rho_cp)) * slurb_tile%shf_can(i,j) + (rlv/cp) * slurb_tile%qsws_can(i,j)
          ELSE
-            vtws = slurb_tile%shf_can(i,j)
+            vtws =  (1/(rho_cp)) * slurb_tile%shf_can(i,j)
          ENDIF
    !
    !--    No scaling for stable cases:
@@ -4591,8 +4622,9 @@ SUBROUTINE slurb_canyon_model
        k_topo = 1
        k_atm = 1
 
-!
-!--    For shf and qsws, use direct aggregation.
+        !
+        !--    For shf and qsws, use direct aggregation.
+       ! must be W m^-2
        slurb_tile%shf_urb(i,j) = slurb_tile%f_bld(i,j) * slurb_tile%shf_roof(i,j) +                                        &
                          ( 1.0_field_r - slurb_tile%f_bld(i,j) ) * slurb_tile%shf_can(i,j) + slurb_tile%shf_external(i,j)
 
@@ -4660,36 +4692,38 @@ SUBROUTINE slurb_canyon_model
 !--------------------------------------------------------------------------------------------------!
  SUBROUTINE calc_urban_aggregated_temperatures
     use modglobal, only : boltz, rlv, cp
-    REAL(field_r) ::  c_h_roof    !< bulk heat transfer coefficient for roof
-    REAL(field_r) ::  c_h_wall_a  !< bulk heat transfer coefficient for wall a
-    REAL(field_r) ::  c_h_wall_b  !< bulk heat transfer coefficient for wall b
-    REAL(field_r) ::  c_h_win_a   !< bulk heat transfer coefficient for window a
-    REAL(field_r) ::  c_h_win_b   !< bulk heat transfer coefficient for window b
-    REAL(field_r) ::  c_h_road    !< bulk heat transfer coefficient for road
-    REAL(field_r) ::  ts          !< scaling temperature
-    REAL(field_r) ::  vtws        !< virtual potential temperature flux (buoyancy flux)
-    real :: rho_cp
+    REAL(field_r) ::  c_h_roof    !< bulk heat transfer coefficient for roof (J kg^-1 K^-1)
+    REAL(field_r) ::  c_h_wall_a  !< bulk heat transfer coefficient for wall a (J kg^-1 K^-1)
+    REAL(field_r) ::  c_h_wall_b  !< bulk heat transfer coefficient for wall b (J kg^-1 K^-1)
+    REAL(field_r) ::  c_h_win_a   !< bulk heat transfer coefficient for window a (J kg^-1 K^-1)
+    REAL(field_r) ::  c_h_win_b   !< bulk heat transfer coefficient for window b (J kg^-1 K^-1)
+    REAL(field_r) ::  c_h_road    !< bulk heat transfer coefficient for road (J kg^-1 K^-1)
+    REAL(field_r) ::  ts          !< scaling temperature (K)
+    REAL(field_r) ::  vtws        !< virtual potential temperature flux (buoyancy flux) (m K s^-1)
+    real :: rho_cp !< (J m^-3 K^-1)
+    real :: rho !< (kg m^-3)
     rho_cp = cp * rho_air_zw(k_topo)
+    rho = rho_air_zw(k_topo)
 !
 !-- 1) Effective surface temperature T_H.
 !-- First, compute the bulk heat transfer coefficients.
     IF ( calc_t_h )  THEN
-       c_h_roof = ABS( slurb_tile%shf_roof(i,j) / ( rho_cp * slurb_tile%uv_eff1(i,j) *                             &
+       c_h_roof = ABS( slurb_tile%shf_roof(i,j) / ( rho * slurb_tile%uv_eff1(i,j) *                             &
                        ( slurb_tile%t_roof_p(nzt_roof,i,j) - slurb_tile%pt1(i,j) * exnf(k_atm) ) ) )
 
-       c_h_wall_a = ABS( slurb_tile%shf_wall_a(i,j) / ( rho_cp * slurb_tile%uv_eff1(i,j) *                         &
+       c_h_wall_a = ABS( slurb_tile%shf_wall_a(i,j) / ( rho * slurb_tile%uv_eff1(i,j) *                         &
                          ( slurb_tile%t_wall_a_p(nzt_wall,i,j) - slurb_tile%pt1(i,j) * exnf(k_atm) ) ) )
 
-       c_h_wall_b = ABS( slurb_tile%shf_wall_b(i,j) / ( rho_cp * slurb_tile%uv_eff1(i,j) *                         &
+       c_h_wall_b = ABS( slurb_tile%shf_wall_b(i,j) / ( rho * slurb_tile%uv_eff1(i,j) *                         &
                          ( slurb_tile%t_wall_b_p(nzt_wall,i,j) - slurb_tile%pt1(i,j) * exnf(k_atm) ) ) )
 
-       c_h_win_a = ABS( slurb_tile%shf_win_a(i,j) / ( rho_cp * slurb_tile%uv_eff1(i,j) *                           &
+       c_h_win_a = ABS( slurb_tile%shf_win_a(i,j) / ( rho * slurb_tile%uv_eff1(i,j) *                           &
                         ( slurb_tile%t_win_a_p(nzt_win,i,j) - slurb_tile%pt1(i,j) * exnf(k_atm) ) ) )
 
-       c_h_win_b = ABS( slurb_tile%shf_win_b(i,j) / ( rho_cp * slurb_tile%uv_eff1(i,j) *                           &
+       c_h_win_b = ABS( slurb_tile%shf_win_b(i,j) / ( rho * slurb_tile%uv_eff1(i,j) *                           &
                         ( slurb_tile%t_win_b_p(nzt_win,i,j) - slurb_tile%pt1(i,j) * exnf(k_atm) ) ) )
 
-       c_h_road = ABS( slurb_tile%shf_road(i,j) / ( rho_cp * slurb_tile%uv_eff1(i,j) *                             &
+       c_h_road = ABS( slurb_tile%shf_road(i,j) / ( rho * slurb_tile%uv_eff1(i,j) *                             &
                        ( slurb_tile%t_road_p(nzt_road,i,j) - slurb_tile%pt1(i,j) * exnf(k_atm) ) ) )
 
        slurb_tile%t_h_urb(i,j) = ( ( 1.0_field_r - slurb_tile%f_bld(i,j) ) *                                            &
@@ -4744,9 +4778,9 @@ SUBROUTINE slurb_canyon_model
 !-- 4) Theoretical 2 m temperature extrapolated using MOST.
     IF ( calc_t_2m )  THEN
        IF ( moist_physics )  THEN
-          vtws = slurb_tile%shf_can(i,j) + (rlv/cp) * slurb_tile%qsws_can(i,j)
+          vtws =  (1/(rho*cp)) * slurb_tile%shf_can(i,j) + (rlv/cp) * slurb_tile%qsws_can(i,j)
        ELSE
-          vtws = slurb_tile%shf_can(i,j)
+          vtws =  (1/(rho*cp)) * slurb_tile%shf_can(i,j)
        ENDIF
        ts = -vtws * (1 / rhof(k_atm)) / slurb_tile%us_urb(i,j)
 

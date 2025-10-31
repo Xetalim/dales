@@ -586,7 +586,7 @@ subroutine calc_canopy_resistance_ags
                if  (tile(ilu)%lveg .and. trim(tile(ilu)%lushort) /= 'aqu') then
                ! For vegetation tiles only, excluding aquatic
 
-                  select case (trim(tile(ilu)%lushort))
+                select case (trim(tile(ilu)%lushort))
                 !C3 and C4 types  
                 ! C3 type:
                   case ('fbd', 'fce', 'sem', 'urb', 'brn', 'crp', 'ara')

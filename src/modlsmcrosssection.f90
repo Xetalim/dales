@@ -218,8 +218,8 @@ contains
         fname4(11:18) = cmyid
         fname4(20:22) = cexpnr
         
-        nvar4 = 156
-        nvars3d4 = 15
+        nvar4 = 162
+        nvars3d4 = 21
         nrec4=0
 
         allocate(ncname4(nvar4,4))
@@ -385,6 +385,13 @@ contains
             call ncinfo(ncname4( 154,:),'dz_roof', 'dz_roof ', 'dz_roof', 'tttts_slurb')
             call ncinfo(ncname4( 155,:),'dz_win', 'dz_win ', 'dz_win', 'tttts_slurb')
             call ncinfo(ncname4( 156,:),'dz_road', 'dz_road ', 'dz_road', 'tttts_slurb')
+            call ncinfo(ncname4( 157,:),'t_wall_a', 'temperature wall a ', 't_wall_a', 'tttts_slurb')
+            call ncinfo(ncname4( 158,:),'t_wall_b', 'temperature wall b ', 't_wall_b', 'tttts_slurb')
+            call ncinfo(ncname4( 159,:),'t_roof', 'temperature roof a ', 't_roof', 'tttts_slurb')
+            ! call ncinfo(ncname4( 145,:),'tt_roof_b', 'tendency roof b ', 'tt_roof_b', 'tt0t')
+            call ncinfo(ncname4( 160,:),'t_win_a', 'temperature win a ', 't_win_a', 'tttts_slurb')
+            call ncinfo(ncname4( 161,:),'t_win_b', 'temperature win b ', 't_win_b', 'tttts_slurb')
+            call ncinfo(ncname4( 162,:),'t_road', 'temperature road a ', 't_road', 'tttts_slurb')
 
 
             call open_nc(trim(output_prefix)//fname4,  ncid4,nrec4,n1=imax,n2=jmax,ns=4)
@@ -619,7 +626,7 @@ contains
         vars(:,:,8) = slurb_tile%rad_sw_out_urb(2:i1,2:j1)
         vars(:,:,9) = slurb_tile%ram_urb(2:i1,2:j1)
         vars(:,:,10) = slurb_tile%rib_urb(2:i1,2:j1)
-        vars(:,:,11) = slurb_tile%shf_urb(2:i1,2:j1)* cp
+        vars(:,:,11) = slurb_tile%shf_urb(2:i1,2:j1)
         vars(:,:,12) = slurb_tile%t_2m_urb(2:i1,2:j1)
         vars(:,:,13) = slurb_tile%t_c_urb(2:i1,2:j1)
         vars(:,:,14) = slurb_tile%t_h_urb(2:i1,2:j1)
@@ -639,6 +646,8 @@ contains
         vars(:,:,28) = slurb_tile%tm_liq_road(2:i1,2:j1)
         vars(:,:,29) = slurb_tile%tm_liq_roof(2:i1,2:j1)
         vars(:,:,30) = slurb_tile%tq_can(2:i1,2:j1)
+        ! K s^-1 * J K^-1 kg^-1 * kg m^-3
+        !  W m^-3
         vars(:,:,31) = slurb_tile%tt_can(2:i1,2:j1) * cp * rhof(1)
         vars(:,:,32) = slurb_tile%pt_road(2:i1,2:j1)
         vars(:,:,33) = slurb_tile%pt_roof(2:i1,2:j1)
@@ -652,15 +661,15 @@ contains
         vars(:,:,41) = slurb_tile%qs_roof(2:i1,2:j1)
         vars(:,:,42) = slurb_tile%vpt_road(2:i1,2:j1)
         vars(:,:,43) = slurb_tile%vpt_roof(2:i1,2:j1)
-        vars(:,:,43) = slurb_tile%shf_can(2:i1,2:j1) * cp
-        vars(:,:,44) = slurb_tile%shf_external(2:i1,2:j1)* cp
-        vars(:,:,45) = slurb_tile%shf_road(2:i1,2:j1)* cp
-        vars(:,:,46) = slurb_tile%shf_roof(2:i1,2:j1)* cp
+        vars(:,:,43) = slurb_tile%shf_can(2:i1,2:j1)
+        vars(:,:,44) = slurb_tile%shf_external(2:i1,2:j1)
+        vars(:,:,45) = slurb_tile%shf_road(2:i1,2:j1)
+        vars(:,:,46) = slurb_tile%shf_roof(2:i1,2:j1)
         vars(:,:,47) = 0!slurb_tile%shf_traffic(2:i1,2:j1)
-        vars(:,:,48) = slurb_tile%shf_wall_a(2:i1,2:j1)* cp
-        vars(:,:,49) = slurb_tile%shf_wall_b(2:i1,2:j1)* cp
-        vars(:,:,50) = slurb_tile%shf_win_a(2:i1,2:j1)* cp
-        vars(:,:,51) = slurb_tile%shf_win_b(2:i1,2:j1)* cp
+        vars(:,:,48) = slurb_tile%shf_wall_a(2:i1,2:j1)
+        vars(:,:,49) = slurb_tile%shf_wall_b(2:i1,2:j1)
+        vars(:,:,50) = slurb_tile%shf_win_a(2:i1,2:j1)
+        vars(:,:,51) = slurb_tile%shf_win_b(2:i1,2:j1)
         vars(:,:,52) = slurb_tile%qsws_can(2:i1,2:j1)*rlv
         vars(:,:,53) = slurb_tile%qsws_external(2:i1,2:j1)*rlv
         vars(:,:,54) = slurb_tile%qsws_liq_road(2:i1,2:j1)
@@ -777,6 +786,13 @@ contains
         vars3d(:,:,:,13) = slurb_tile%dz_roof(:,2:i1,2:j1)
         vars3d(:,:,:,14) = slurb_tile%dz_win(:,2:i1,2:j1)
         vars3d(:,:,:,15) = slurb_tile%dz_road(:,2:i1,2:j1)
+        vars3d(:,:,:,16) = slurb_tile%t_wall_a(:,2:i1,2:j1)
+        vars3d(:,:,:,17) = slurb_tile%t_wall_b(:,2:i1,2:j1)
+        vars3d(:,:,:,18) = slurb_tile%t_roof(:,2:i1,2:j1)
+        ! vars(:,:,145) = slurb_tile%tt_roof_b(1,2:i1,2:j1)
+        vars3d(:,:,:,19) = slurb_tile%t_win_a(:,2:i1,2:j1)
+        vars3d(:,:,:,20) = slurb_tile%t_win_b(:,2:i1,2:j1)
+        vars3d(:,:,:,21) = slurb_tile%t_road(:,2:i1,2:j1)
 
 
 
