@@ -502,7 +502,7 @@ subroutine calc_canopy_resistance_ags
                if  (tile(ilu)%lveg .and. trim(tile(ilu)%lushort) /= 'aqu') then
                ! For vegetation tiles only, excluding aquatic
 
-                  select case (trim(tile(ilu)%lushort))
+                select case (trim(tile(ilu)%lushort))
                 !C3 and C4 types  
                 ! C3 type:
                   case ('fbd', 'fce', 'sem', 'urb', 'brn', 'crp', 'ara')
@@ -990,7 +990,7 @@ subroutine calc_bulk_bcs
               tskin(i,j)  = tskin(i,j) + tile(ilu)%frac(i,j) * tile(ilu)%thlskin(i,j)
               qskin(i,j)  = qskin(i,j) + tile(ilu)%frac(i,j) * tile(ilu)%qtskin(i,j)
             enddo
-            H(i,j)      = H(i,j)     + fraction_slurb(i,j) * slurb_tile%shf_urb(i,j) * cp ! in SLURB the internal SHF is calculated without cp
+            H(i,j)      = H(i,j)     + fraction_slurb(i,j) * slurb_tile%shf_urb(i,j)
             LE(i,j)     = LE(i,j)    + fraction_slurb(i,j) * slurb_tile%qsws_urb(i,j) * rlv ! in SLURB the internal SHF is calculated without rlv
             ! G0(i,j)     = G0(i,j)    + tile(ilu)%frac(i,j) * tile(ilu)%G(i,j)
             ustar(i,j)  = ustar(i,j) + fraction_slurb(i,j) * slurb_tile%us_urb(i,j)
