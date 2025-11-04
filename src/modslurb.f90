@@ -883,6 +883,8 @@ subroutine initslurb
 
     call slurb_bulk_allocations
 
+    call slurb_swap_timelevel(0)
+
     ! do j=2,j1
     !   do i=2,i1
     !    fraction_slurb(i,j) = 1
@@ -1004,7 +1006,7 @@ subroutine initslurb
     ! enddo
     slurb_tile%dt_max(:,:) = HUGE( 1.0_field_r ) ! (s)
 
-    call slurb_swap_timelevel(0)
+    
 
     call process_surface_parameters
 
@@ -3647,7 +3649,7 @@ end subroutine slurb_update_external_vars
 !> Computes the new surface prognostic temperature for current time step using RK3.
 !--------------------------------------------------------------------------------------------------!
  SUBROUTINE calc_surf_t_p ( t, t_p, tt_current, coef_1, coef_2, c )
-
+    use modglobal, only : rk3step
     REAL(field_r), INTENT(IN) ::  c       !< total layer heat capacity (J m^-2 K^-1)
     REAL(field_r), INTENT(IN) ::  coef_1  !< coefficient A in the prognostic equation (W m^-2)
     REAL(field_r), INTENT(IN) ::  coef_2  !< coefficient B in the prognostic equation (W m^-2 K^-1)
@@ -3663,14 +3665,14 @@ end subroutine slurb_update_external_vars
 !-- Compute the prognostic temperature without RK weighting.
     !K = (W m^-2 s + J m^-2 K^-1 K) / (J m^-2 K^-1 + W m^-2 K^-1 s)
     !K = (J m^-2 + J m^-2) / (J m^-2 K^-1 + J m^-2 K^-1)
-    t_p = ( coef_1 * rdt * tsc(2) + c * t )  / ( c + coef_2 * rdt * tsc(2) )
+    t_p = ( coef_1 * (rdt/3) * tsc(2) + c * t )  / ( c + coef_2 * (rdt/3) * tsc(2) )
 
 !
 !-- Compute the RK3 tendency for next time step.
     IF ( c /= 0.0_field_r )  THEN
 
-       t_p    = t_p + rdt * tsc(3) * tt_current
-       tt_new = ( t_p - t - rdt * tsc(3) * tt_current ) / ( rdt  * tsc(2) )
+       t_p    = t_p + (rdt/3) * tsc(3) * tt_current
+       tt_new = ( t_p - t - (rdt/3) * tsc(3) * tt_current ) / ( (rdt/3)  * tsc(2) )
 
        CALL calc_rk3_tend( tt_current, tt_new )
 
@@ -3730,7 +3732,7 @@ end subroutine slurb_update_external_vars
        ENDIF
 !
 !--    Compute the prognostic temperature and RK3 tendency for next time step.
-       t_p(k) = t(k) + rdt * ( tsc(2) * tt_new + tsc(3) * tt_current(k) )
+       t_p(k) = t(k) + (rdt / 3) * ( tsc(2) * tt_new + tsc(3) * tt_current(k) )
 
        CALL calc_rk3_tend( tt_current(k), tt_new )
     ENDDO
@@ -3890,7 +3892,7 @@ end subroutine slurb_update_external_vars
 !--    Compute the prognostic liquid water reservoir.
        tm_new = - slurb_tile%qsws_liq_roof(i,j) * drho_l_lv
        slurb_tile%m_liq_roof_p(i,j) = slurb_tile%m_liq_roof(i,j) +                                                 &
-                              rdt * ( tsc(2) * tm_new + tsc(3) * slurb_tile%tm_liq_roof(i,j) )
+                              (rdt / 3) * ( tsc(2) * tm_new + tsc(3) * slurb_tile%tm_liq_roof(i,j) )
 !
 !--    Check if the liquid water reservoir is overfull. If so, drain excess to the
 !--    assumed drainage system (water is not conserved here).
@@ -4054,7 +4056,7 @@ end subroutine slurb_update_external_vars
 !--    Compute the prognostic liquid water reservoir.
        tm_new = - slurb_tile%qsws_liq_road(i,j) * drho_l_lv
        slurb_tile%m_liq_road_p(i,j) = slurb_tile%m_liq_road(i,j) +                                                 &
-                              rdt * ( tsc(2) * tm_new + tsc(3) * slurb_tile%tm_liq_road(i,j) )
+                              (rdt / 3) * ( tsc(2) * tm_new + tsc(3) * slurb_tile%tm_liq_road(i,j) )
 !
 !--    Check if the liquid water reservoir is overfull. If so, drain excess to the
 !--    assumed drainage system (water is not conserved here).
@@ -4470,13 +4472,13 @@ SUBROUTINE slurb_canyon_model
         !  write (*,*) i,j,coef_2
         ! K = (w m^-2 s + J k^-1 m^-2 K) / (J K^-1 m^-2 + W m^-2 K^-1 s)
         ! K = (J m^-2 + J m^-2) / (J K^-1 m^-2 + J m^-2 K^-1)
-         slurb_tile%t_can_p(i,j) = ( coef_1 * rdt * tsc(2) + c * slurb_tile%t_can(i,j) ) /                         &
-                           ( c + coef_2 * rdt * tsc(2) )
+         slurb_tile%t_can_p(i,j) = ( coef_1 * (rdt / 3) * tsc(2) + c * slurb_tile%t_can(i,j) ) /                         &
+                           ( c + coef_2 * (rdt / 3) * tsc(2) )
 
-         slurb_tile%t_can_p(i,j) = slurb_tile%t_can_p(i,j) + rdt * tsc(3) * slurb_tile%tt_can(i,j)
+         slurb_tile%t_can_p(i,j) = slurb_tile%t_can_p(i,j) + (rdt / 3) * tsc(3) * slurb_tile%tt_can(i,j)
 
-         tt_new = ( slurb_tile%t_can_p(i,j) - slurb_tile%t_can(i,j) - rdt * tsc(3) * slurb_tile%tt_can(i,j) ) /            &
-                  ( rdt  * tsc(2) )
+         tt_new = ( slurb_tile%t_can_p(i,j) - slurb_tile%t_can(i,j) - (rdt / 3) * tsc(3) * slurb_tile%tt_can(i,j) ) /            &
+                  ( (rdt / 3)  * tsc(2) )
    !
    !--    Compute the weighted RK3 tendency to be used in next time step.
          IF ( runge_l )  THEN
@@ -4523,10 +4525,10 @@ SUBROUTINE slurb_canyon_model
             coef_1 = f_qsws * slurb_tile%q1(i,j) + qsws_surf
             coef_2 = f_qsws
 
-            slurb_tile%q_can_p(i,j) = ( coef_1 * rdt * tsc(2) + c * slurb_tile%q_can(i,j) ) /                      &
-                              ( c + coef_2 * rdt * tsc(2) )
+            slurb_tile%q_can_p(i,j) = ( coef_1 * (rdt / 3) * tsc(2) + c * slurb_tile%q_can(i,j) ) /                      &
+                              ( c + coef_2 * (rdt / 3) * tsc(2) )
 
-            slurb_tile%q_can_p(i,j) = slurb_tile%q_can_p(i,j) + rdt * tsc(3) * slurb_tile%tq_can(i,j)
+            slurb_tile%q_can_p(i,j) = slurb_tile%q_can_p(i,j) + (rdt / 3) * tsc(3) * slurb_tile%tq_can(i,j)
    !
    !--       Prevent negative mixing ratios due to temporal discretization. This is done before
    !--       the computation of tq_new in order to conserve energy.
@@ -4534,8 +4536,8 @@ SUBROUTINE slurb_canyon_model
             ! write(*,*) i,j,slurb_tile%q_can_p(i,j)
             IF ( slurb_tile%q_can_p(i,j) < 0.0_field_r )  slurb_tile%q_can_p(i,j) = 0.0_field_r
 
-            tq_new = ( slurb_tile%q_can_p(i,j) - slurb_tile%q_can(i,j) - rdt * tsc(3) * slurb_tile%tq_can(i,j) ) /         &
-                     ( rdt  * tsc(2) )
+            tq_new = ( slurb_tile%q_can_p(i,j) - slurb_tile%q_can(i,j) - (rdt / 3) * tsc(3) * slurb_tile%tq_can(i,j) ) /         &
+                     ( (rdt / 3)  * tsc(2) )
    !
    !--       Compute the weighted RK3 tendency to be used in next time step.
             IF ( runge_l )  THEN
