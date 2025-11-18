@@ -26,7 +26,7 @@ module modslurb
 
     implicit none
     save   
-    
+    integer :: modcount = 0
     real(field_r), allocatable ::  ln_z_z0_roof(:,:)   !< temporary array to store logarithm ZELFTODO (.)
     real(field_r), allocatable ::  ln_z_z0h_roof(:,:)  !< temporary array to store logarithm (.)
     real(field_r), allocatable ::  ln_z_z0_urb(:,:)    !< temporary array to store logarithm (.)
@@ -172,13 +172,15 @@ module modslurb
 
     !
     !-- Model constants.
-    REAL(field_r) ::  drho_l_lv  !< (rho_l * l_v)**-1
-    REAL(field_r) ::  rho_lv     !< rho_surface * l_v
+    REAL(field_r) ::  drho_l_lv  !< 1/(rho_l * l_v) (J^-1 m^3)
+    REAL(field_r) ::  rho_lv     !< rho_surface * l_v (J m^-3)
 
     !
     !-- Parameter defaults.
     REAL(field_r), PARAMETER ::  m_liq_max_road = 1.0E-3_field_r  !< maximum capacity of the liquid water reservoir on roads (i,j) (m^3 m^-2)
     REAL(field_r), PARAMETER ::  m_liq_max_roof = 1.0E-3_field_r  !< maximum capacity of the liquid water reservoir on roofs (i,j) (m^3 m^-2)
+    ! REAL(field_r), PARAMETER ::  m_liq_max_road = 100_field_r  !< maximum capacity of the liquid water reservoir on roads (i,j) (m^3 m^-2)
+    ! REAL(field_r), PARAMETER ::  m_liq_max_roof = 100_field_r  !< maximum capacity of the liquid water reservoir on roofs (i,j) (m^3 m^-2)
     REAL(field_r), PARAMETER ::  rah_max   = 1.0E6_field_r        !< maximum aerodynamic resistance for scalars (s m^-1)
     REAL(field_r), PARAMETER ::  rah_min   = 1.0_field_r          !< minimum aerodynamic resistance for scalars (s m^-1)
     REAL(field_r), PARAMETER ::  ram_min   = 1.0_field_r          !< minimum aerodynamic resistance for momentum (s m^-1) (TODOSELF)
@@ -199,7 +201,8 @@ module modslurb
     integer ::  pavement_type = 2     !< SLURrb namelist parameter
 
     LOGICAL ::  anisotropic_street_canyons = .FALSE.  !< SLURrb namelist parameter
-    LOGICAL ::  moist_physics = .TRUE.                !< SLURrb namelist parameter
+    LOGICAL ::  moist_physics = .true.                !< SLURrb namelist parameter
+    logical ::  lread_from_netcdf = .true.             !< SLURrb namelist parameter
 
     REAL(field_r) ::  building_frontal_area_fraction = -9999.0_field_r  !< SLURrb namelist parameter (.)
     REAL(field_r) ::  building_height = -9999.0_field_r                 !< SLURrb namelist parameter (m)
@@ -250,9 +253,6 @@ module modslurb
 
     real(field_r), allocatable :: fraction_slurb(:,:) !< (.)
 
-    !-- Default surface description.
-    REAL(field_r), DIMENSION(0:45,1:6) ::  building_pars_slurb  !< building default parameters derived from USM
-    REAL(field_r), DIMENSION(0:14,1:5) ::  pavement_pars_slurb  !< pavement default parameters derived from LSM
 
     real(field_r) :: output_fill_value = -99999.0_field_r
     logical :: data_output_raw = .false.
@@ -264,63 +264,44 @@ module modslurb
     REAL(field_r) ::  tsc(10) = (/ 1.0_field_r, 1.0_field_r, 0.0_field_r, 0.0_field_r, &    !< array used for controlling time-integration at different substeps
                  0.0_field_r, 0.0_field_r, 0.0_field_r, 0.0_field_r, 0.0_field_r, 0.0_field_r /)
 
-    real(field_r) :: namemiss_road = -9999
-    real(field_r) :: namemiss_wall = -9999
-    real(field_r) :: namemiss_win = -9999
-    real(field_r) :: namemiss_roof = -9999
-    real(field_r) :: namalbedo_road = -9999
-    real(field_r) :: namalbedo_wall = -9999
-    real(field_r) :: namalbedo_win = -9999
-    real(field_r) :: namalbedo_roof = -9999
-    real(field_r) :: namlambda_road = -9999
-    real(field_r) :: namlambda_wall = -9999
-    real(field_r) :: namlambda_win = -9999
-    real(field_r) :: namlambda_roof = -9999
     
 
 contains
+subroutine slurb_timestep_control
+    use modglobal, only : rk3step
+    IF ( rk3step == 1 )  THEN
+        tsc(1:5) = (/ 1.0_field_r,  1.0_field_r /  3.0_field_r,          0.0_field_r, 0.0_field_r, 0.0_field_r /)
+    ELSEIF ( rk3step == 2 )  THEN
+        tsc(1:5) = (/ 1.0_field_r, 15.0_field_r / 16.0_field_r, -25.0_field_r/48.0_field_r, 0.0_field_r, 0.0_field_r /)
+    ELSE
+        tsc(1:5) = (/ 1.0_field_r,  8.0_field_r / 15.0_field_r,   1.0_field_r/15.0_field_r, 0.0_field_r, 1.0_field_r /)
+    ENDIF
+end subroutine slurb_timestep_control
 
-
-subroutine slurb_read_namelist
-    use modglobal,   only : ifnamopt, fname_options, checknamelisterror
+subroutine slurb_read_namelist(nml_filename)
+    use modglobal,   only : ifnamopt, checknamelisterror
     use modmpi,      only : myid, comm3d, mpierr, D_MPI_BCAST
-
-    
     implicit none
 
-    integer :: ierr
+    character(len=*), intent(in) :: nml_filename
 
-    real(field_r), allocatable :: canyon_orientation_tmp(:,:)
+
+    integer :: ierr
 
     ! Namelist definition
     namelist /NAMSLURB/ &
         urban_fraction, urban_roughness_length, building_plan_area_fraction, building_frontal_area_fraction, building_height, window_fraction,&
         street_canyon_aspect_ratio, building_type, pavement_type, anisotropic_street_canyons, street_canyon_orientation, deep_soil_temperature,building_indoor_temperature,shf_external,qsws_external
 
-
     ! Read namelist
     if (myid == 0) then
-        open(ifnamopt, file=fname_options, status='old', iostat=ierr)
+        open(ifnamopt, file=nml_filename, status='old', iostat=ierr)
         read(ifnamopt, NAMSLURB, iostat=ierr)
         call checknamelisterror(ierr, ifnamopt, 'NAMSLURB')
         write(6, NAMSLURB)
         close(ifnamopt)
     end if
 
-
-    ! some possible defaults
-    ! urban_fraction = 0.5
-    ! urban_roughness_length = 0.5
-    ! building_plan_area_fraction = 0.3
-    ! building_frontal_area_fraction = 0.11
-    ! building_height = 20.0
-    ! window_fraction = 0.2
-    ! street_canyon_aspect_ratio = 0.5
-    ! building_type = 2
-    ! pavement_type = 2
-    ! anisotropic_street_canyons = .true.
-    ! street_canyon_orientation = 0
-    ! deep_soil_temperature = 288.0
 
     ! Broadcast namelist values to all MPI tasks
     call D_MPI_BCAST(urban_fraction,  1, 0, comm3d, mpierr)
@@ -340,46 +321,6 @@ subroutine slurb_read_namelist
     call D_MPI_BCAST(qsws_external, 1, 0, comm3d, mpierr)
 end subroutine slurb_read_namelist
 
-subroutine slurb_read_RADnamelist
-    use modglobal,   only : ifnamopt, fname_options, checknamelisterror
-    use modmpi,      only : myid, comm3d, mpierr, D_MPI_BCAST
-
-    
-    implicit none
-
-    integer :: ierr
-
-    real(field_r), allocatable :: canyon_orientation_tmp(:,:)
-
-    ! Namelist definition
-    namelist /NAMSLURBRAD/ &
-        namemiss_road, namemiss_wall, namemiss_win, namemiss_roof, namalbedo_road, namalbedo_wall, namalbedo_win, namalbedo_roof, namlambda_road,namlambda_wall,namlambda_win,namlambda_roof
-
-
-    ! Read namelist
-    if (myid == 0) then
-        open(ifnamopt, file=fname_options, status='old', iostat=ierr)
-        read(ifnamopt, NAMSLURBRAD, iostat=ierr)
-        call checknamelisterror(ierr, ifnamopt, 'NAMSLURBRAD')
-        write(6, NAMSLURBRAD)
-        close(ifnamopt)
-    end if
-
-
-    ! Broadcast namelist values to all MPI tasks
-    call D_MPI_BCAST(namemiss_road,  1, 0, comm3d, mpierr)
-    call D_MPI_BCAST(namemiss_wall,  1, 0, comm3d, mpierr)
-    call D_MPI_BCAST(namemiss_win,  1, 0, comm3d, mpierr)
-    call D_MPI_BCAST(namemiss_roof,  1, 0, comm3d, mpierr)
-    call D_MPI_BCAST(namalbedo_road,  1, 0, comm3d, mpierr)
-    call D_MPI_BCAST(namalbedo_wall,  1, 0, comm3d, mpierr)
-    call D_MPI_BCAST(namalbedo_win,  1, 0, comm3d, mpierr)
-    call D_MPI_BCAST(namalbedo_roof,  1, 0, comm3d, mpierr)
-    call D_MPI_BCAST(namlambda_road,  1, 0, comm3d, mpierr)
-    call D_MPI_BCAST(namlambda_wall,  1, 0, comm3d, mpierr)
-    call D_MPI_BCAST(namlambda_win,  1, 0, comm3d, mpierr)
-    call D_MPI_BCAST(namlambda_roof,  1, 0, comm3d, mpierr)
-end subroutine slurb_read_RADnamelist
 subroutine slurb_bulk_allocations
     use modglobal, only: i2, j2
     use, intrinsic :: IEEE_ARITHMETIC
@@ -583,6 +524,10 @@ subroutine slurb_bulk_allocations
        ALLOCATE( slurb_tile%tq_can(i2,j2))
        ALLOCATE( slurb_tile%tm_liq_roof(i2,j2) )
        ALLOCATE( slurb_tile%tm_liq_road(i2,j2) )
+       ALLOCATE( slurb_tile%tm_roof_runoff(i2,j2) )
+       ALLOCATE( slurb_tile%tm_road_runoff(i2,j2) )
+       ALLOCATE( slurb_tile%tm_roof_precep(i2,j2) )
+       ALLOCATE( slurb_tile%tm_road_precep(i2,j2) )
 
        ALLOCATE( slurb_tile%vpt_roof(i2,j2) )
        ALLOCATE( slurb_tile%vpt_road(i2,j2) )
@@ -821,6 +766,10 @@ subroutine slurb_bulk_allocations
        slurb_tile%tq_can(:,:) = ieee_value(slurb_tile%tq_can,ieee_signaling_nan)
        slurb_tile%tm_liq_roof(:,:) = ieee_value(slurb_tile%tm_liq_roof,ieee_signaling_nan)
        slurb_tile%tm_liq_road(:,:) = ieee_value(slurb_tile%tm_liq_road,ieee_signaling_nan)
+       slurb_tile%tm_roof_runoff(:,:) = ieee_value(slurb_tile%tm_roof_runoff,ieee_signaling_nan)
+       slurb_tile%tm_road_runoff(:,:) = ieee_value(slurb_tile%tm_road_runoff,ieee_signaling_nan)
+       slurb_tile%tm_roof_precep(:,:) = ieee_value(slurb_tile%tm_roof_precep,ieee_signaling_nan)
+       slurb_tile%tm_road_precep(:,:) = ieee_value(slurb_tile%tm_road_precep,ieee_signaling_nan)
 
        slurb_tile%vpt_roof(:,:) = ieee_value(slurb_tile%vpt_roof,ieee_signaling_nan)
        slurb_tile%vpt_road(:,:) = ieee_value(slurb_tile%vpt_road,ieee_signaling_nan)
@@ -858,18 +807,11 @@ subroutine slurb_bulk_allocations
     slurb_tile%dt_max(:,:) = ieee_value(slurb_tile%dt_max,ieee_signaling_nan)
 end subroutine slurb_bulk_allocations
 subroutine initslurb
-    use modglobal,   only : i1, j1, i2, j2, zf
+    use modglobal,   only : i1, j1
     use modlsmdata, only : ilu, nlu, tile
     implicit none
 
     integer :: i, j
-
-    real(field_r), allocatable :: canyon_orientation_tmp(:,:)
-
-
-    call slurb_read_namelist
-
-
 
     !-- Initialize bounds for subsurface layers.
     nzt_road = 1
@@ -883,13 +825,19 @@ subroutine initslurb
 
     call slurb_bulk_allocations
 
-    call slurb_swap_timelevel(0)
+    ! initialise pointers
+    slurb_tile%q_can_0 => q_can_2; slurb_tile%q_can_m => q_can_1
+    slurb_tile%t_can_0 => t_can_2; slurb_tile%t_can_m => t_can_1
+    slurb_tile%m_liq_road_m => m_liq_road_2; slurb_tile%m_liq_road_0 => m_liq_road_1
+    slurb_tile%m_liq_roof_m => m_liq_roof_2; slurb_tile%m_liq_roof_0 => m_liq_roof_1
+    slurb_tile%t_wall_a_0 => t_wall_a_2; slurb_tile%t_wall_a_m => t_wall_a_1
+    slurb_tile%t_wall_b_0 => t_wall_b_2; slurb_tile%t_wall_b_m => t_wall_b_1
+    slurb_tile%t_win_a_0 => t_win_a_2; slurb_tile%t_win_a_m => t_win_a_1
+    slurb_tile%t_win_b_0 => t_win_b_2; slurb_tile%t_win_b_m => t_win_b_1
+    slurb_tile%t_roof_0 => t_roof_2; slurb_tile%t_roof_m => t_roof_1
+    slurb_tile%t_road_0 => t_road_2; slurb_tile%t_road_m => t_road_1
+    ! call slurb_swap_timelevel(0)
 
-    ! do j=2,j1
-    !   do i=2,i1
-    !    fraction_slurb(i,j) = 1
-    !   enddo
-    ! enddo
     do ilu=1,nlu
         if (tile(ilu)%lushort == "slb") then
             do j=2,j1
@@ -901,109 +849,6 @@ subroutine initslurb
     end do
 
 
-
-
-    !
-    !-- Process variables related to urban form.
-    !
-    !-- Internally, f_bld refers to building plan area fraction of the urban surface. However, it is
-    !-- more common to report the building plan area fraction as a fraction of the total surface, e.g.
-    !-- in the case of LCZs. We want the user input correspond to the latter, thus the scaling.
-    slurb_tile%f_bld(:,:) = -9999.0_field_r
-    ! CALL get_grid_variable_1d_real( 'building_plan_area_fraction', slurb_tile%f_bld,                     &
-    !                                 building_plan_area_fraction )
-    ! CALL check_grid_variable_1d_real( 'building_plan_area_fraction', slurb_tile%f_bld,                   &
-    !                                   TINY( 1.0_field_r ), 0.99_field_r)
-    slurb_tile%f_bld(:,:) = 0.5_field_r !TODOSELF deze is nu 0.5 voor nu
-    do j=2,j1
-      do i=2,i1
-        ! IF ( slurb_tile%f_bld(i,j) > fr_urb(j,i) ) THEN
-        !     WRITE( message_string, * ) 'building_plan_area_fraction = ', slurb_tile%f_bld(i,j),              &
-        !                                 ' is higher than urban_fraction = ', fr_urb(j,i),             &
-        !                                 ' for grid cell (j,i) = ', j, i, '.'
-        !     CALL message( 'slurb_init', 'SLU1020', 2, 2, 0, 6, 0 )
-        ! ENDIF
-        if ( fraction_slurb(i,j) /= 0) then
-            slurb_tile%f_bld(i, j) = slurb_tile%f_bld(i, j) / fraction_slurb(i, j)
-        endif
-        enddo
-    enddo
-
-    slurb_tile%f_bld_frn(:,:) = -9999.0_field_r
-    slurb_tile%f_bld_frn(:,:) = 0.2_field_r !TODOSELF even vastgezet
-    ! CALL get_grid_variable_1d_real( 'building_frontal_area_fraction', slurb_tile%f_bld_frn,              &
-    !                                 building_frontal_area_fraction )
-    ! CALL check_grid_variable_1d_real( 'building_frontal_area_fraction', slurb_tile%f_bld_frn,            &
-    !                                   0.0_field_r, HUGE( 1.0_field_r ) )
-
-    slurb_tile%h_bld(:,:) = -9999.0_field_r
-    slurb_tile%h_bld(:,:) = building_height !TODOSELF even vastgezet (m)
-    ! CALL get_grid_variable_1d_real( 'building_height', slurb_tile%h_bld, building_height )
-    ! CALL check_grid_variable_1d_real( 'building_height', slurb_tile%h_bld, 0.0_field_r, 1000.0_field_r )
-
-    !
-    !-- Urban surface and street canyon MOST heights.
-    do j=2,j1
-      do i=2,i1
-       slurb_tile%z_mo(i,j) = 0.5_field_r * (zf(2) - zf(1)) ! (m)
-    !    slurb_tile%z_mo(i,j) = 0.5_field_r *  dzw(topo_top_ind(j,i,0)+1)
-       slurb_tile%z_mo_can(i,j) = 0.5_field_r * building_height ! (m)
-    !    slurb_tile%z_mo_can(i,j) = 0.5_field_r * slurb_tile%h_bld(i,j)
-      enddo
-    enddo
-    !
-    !-- Process canyon direction information if anisotropic street canyons are enabled.
-    IF ( anisotropic_street_canyons )  THEN
-       ALLOCATE( canyon_orientation_tmp(i2,j2) )
-       canyon_orientation_tmp(:,:) = -9999.0_field_r
-        IF ( street_canyon_orientation /= -9999.0_field_r  )  THEN
-            canyon_orientation_tmp(:,:) = street_canyon_orientation
-        ENDIF
-    !    CALL get_grid_variable_1d_real( 'street_canyon_orientation', canyon_orientation_tmp,        &
-    !                                    street_canyon_orientation )
-    !
-    !--    In order to make it possible to have a mix of isotropic and anisotropic tiles, use
-    !--    anisotropic canyons only in the case a canyon orientation has been given either for all tiles
-    !--    in the namelist or per-patch basis in input file.
-        do j=2,j1
-            do i=2,i1
-                IF ( canyon_orientation_tmp(i,j) /= -9999.0_field_r )  THEN
-                    slurb_tile%anisotropic_canyon(i,j) = .TRUE.
-                    slurb_tile%theta_can(i,j) = canyon_orientation_tmp(i,j) * ( pi / 180.0_field_r )
-                ELSE
-                    slurb_tile%anisotropic_canyon(i,j) = .FALSE.
-                    slurb_tile%theta_can(i,j) = -9999.0_field_r
-                ENDIF
-            enddo
-        enddo
-       DEALLOCATE( canyon_orientation_tmp )
-    ELSE
-        do j=2,j1
-            do i=2,i1
-                slurb_tile%anisotropic_canyon(i,j) = .FALSE.
-                slurb_tile%theta_can(i,j) = -9999.0_field_r
-            enddo
-        enddo
-    ENDIF
-
-    ! CALL get_grid_variable_1d_real( 'street_canyon_aspect_ratio', slurb_tile%hw_can,                     &
-    !                                 street_canyon_aspect_ratio )
-    ! CALL check_grid_variable_1d_real( 'street_canyon_aspect_ratio', slurb_tile%hw_can,                   &
-    !                                   TINY( 1.0_field_r ), HUGE( 0.0_field_r ) )
-
-    ! CALL get_grid_variable_1d_real( 'z0_urb', slurb_tile%z0_urb, urban_roughness_length )
-    ! CALL check_grid_variable_1d_real( 'z0_urb', slurb_tile%z0_urb, TINY( 1.0_field_r ), MINVAL( slurb_tile%z_mo ) )
-
-    do j=2,j1
-        do i=2,i1
-            slurb_tile%z0_urb(i,j) = urban_roughness_length ! (m)
-        enddo
-    enddo
-    ! do j=2,j1
-    !     do i=2,i1
-    !         slurb_tile%dt_max(i,j) = HUGE( 1.0_field_r )
-    !     enddo
-    ! enddo
     slurb_tile%dt_max(:,:) = HUGE( 1.0_field_r ) ! (s)
 
     
@@ -1224,7 +1069,10 @@ subroutine exitslurb
        DEALLOCATE( slurb_tile%tq_can)
        DEALLOCATE( slurb_tile%tm_liq_roof)
        DEALLOCATE( slurb_tile%tm_liq_road)
-
+       DEALLOCATE( slurb_tile%tm_roof_runoff)
+       DEALLOCATE( slurb_tile%tm_road_runoff)
+       DEALLOCATE( slurb_tile%tm_roof_precep)
+       DEALLOCATE( slurb_tile%tm_road_precep)
        DEALLOCATE( slurb_tile%vpt_roof)
        DEALLOCATE( slurb_tile%vpt_road)
 
@@ -1259,25 +1107,25 @@ subroutine exitslurb
 
 end subroutine exitslurb
 
-subroutine do_slurb
-    use modglobal, only: ntrun
+! subroutine do_slurb
+!     use modglobal, only: ntrun
 
-    call slurb_update_external_vars
+!     call slurb_update_external_vars
 
-    call calc_urban_resistances
+!     call calc_urban_resistances
 
-    call calc_canyon_resistances
+!     call calc_canyon_resistances
 
-    call slurb_energy_balance_model
+!     call slurb_energy_balance_model
 
-    CALL slurb_canyon_model
+!     CALL slurb_canyon_model
 
-    CALL slurb_urban_aggregation_model
+!     CALL slurb_urban_aggregation_model
 
-    ! CALL slurb_atmospheric_model_coupler
+!     ! CALL slurb_atmospheric_model_coupler
 
-    call slurb_swap_timelevel(mod(ntrun, 2))
-end subroutine do_slurb
+!     call slurb_swap_timelevel(mod(ntrun, 2))
+! end subroutine do_slurb
 
 
 !--------------------------------------------------------------------------------------------------!
@@ -1288,17 +1136,16 @@ end subroutine do_slurb
 !--------------------------------------------------------------------------------------------------!
  SUBROUTINE slurb_update_external_vars
 
-    use modglobal, only : cp, rlv, cu, cv, i1, j1, ep
-    use modfields, only : ql0, u0, v0, qt0, exnf, thl0, rhobf
+    use modglobal, only : cp, rlv, cu, cv, i1, j1
+    use modfields, only : ql0, u0, v0, qt0, exnf, thl0
     implicit none
     INTEGER ::  i      !< loop index
     INTEGER::  j      !< loop index
     INTEGER ::  k_atm  !< k index of the first atmospheric level
-    INTEGER ::  m      !< loop index of surface tiles
-    INTEGER ::  t      !< current timestep index
-    INTEGER ::  tm     !< previous timestep index
+    ! INTEGER ::  t      !< current timestep index
+    ! INTEGER ::  tm     !< previous timestep index
 
-    REAL(field_r) ::  fac_dt  !< factor for linear interpolation between timesteps
+    ! REAL(field_r) ::  fac_dt  !< factor for linear interpolation between timesteps
     REAL(field_r) ::  vtws    !< buoyancy flux (m K s^-1)
     REAL(field_r) ::  ws      !< free convection velocity scale
 
@@ -1351,7 +1198,16 @@ end subroutine do_slurb
             !--    Calculate surface-parallel absolute velocity uv_eff1 at cell center using
             !--    free convection scale (w_star, for unstable cases).
             ! m K s^-1 = (J^-1 kg K)(kg^-1 m^3) J s^-1 m^-2 + (J/kg)/(J/kg/K)*W/m^2
-            vtws = (1/(rho_cp)) * slurb_tile%shf_urb(i,j) + (rlv / cp) * slurb_tile%qsws_urb(i,j) ! (m K s^-1)
+            ! m K s^-1 = (J^-1 kg K)(kg^-1 m^3) J s^-1 m^-2 + (J kg^-1) ( J K^-1 kg^-1)^-1 W/m^2
+            ! m K s^-1 = (J^-1 kg K)(kg^-1 m^3) J s^-1 m^-2 + (J kg^-1) J^-1 K kg W/m^2
+            ! m K s^-1 = (J^-1 kg K)(kg^-1 m^3) J s^-1 m^-2 +  K W m^-2
+
+            ! m K s^-1 = (J^-1 kg K)(kg^-1 m^3) J s^-1 m^-2 + (J/kg)/(J kg^-1 K^-1 kg m^-3)*W/m^2
+            ! m K s^-1 = (J^-1 kg K)(kg^-1 m^3) J s^-1 m^-2 + (J K^-1 m^-3)^-1 W/m^2
+            ! m K s^-1 = (J^-1 kg K)(kg^-1 m^3) J s^-1 m^-2 + J^-1 K W m^-2 m^3
+            ! m K s^-1 = (J^-1 kg K)(kg^-1 m^3) J s^-1 m^-2 + K s^-1 m^-2 m^3
+            ! m K s^-1 = (J^-1 kg K)(kg^-1 m^3) J s^-1 m^-2 + K s^-1 m
+            vtws = (1/(rho_cp)) * slurb_tile%shf_urb(i,j) + (1 / rho_cp) * slurb_tile%qsws_urb(i,j) ! (m K s^-1)
             !
             !--    No scaling for stable cases:
             vtws = MERGE( vtws, 0.0_field_r, vtws > 0.0_field_r )
@@ -1628,24 +1484,24 @@ end subroutine slurb_update_external_vars
             do i=2,i1
                 ! k_topo = topo_top_ind(j,i,0)  ! ZELFTODO
                 k_topo = 1
-                slurb_tile%rah_wall_a(i,j) = rah_doe2( k_topo, slurb_tile%t_can(i,j), slurb_tile%t_wall_a(nzt_wall,i,j),         &
+                slurb_tile%rah_wall_a(i,j) = rah_doe2( k_topo, slurb_tile%t_can_0(i,j), slurb_tile%t_wall_a_0(nzt_wall,i,j),         &
                                                 slurb_tile%uv_eff_can(i,j), .TRUE. )
                 IF ( slurb_tile%rah_wall_a(i,j) < rah_min )  slurb_tile%rah_wall_a(i,j) = rah_min
                 IF ( slurb_tile%rah_wall_a(i,j) > rah_max )  slurb_tile%rah_wall_a(i,j) = rah_max
                 IF ( slurb_tile%f_win(i,j) /= 0.0_field_r )  THEN
-                    slurb_tile%rah_win_a(i,j) = rah_doe2( k_topo, slurb_tile%t_can(i,j), slurb_tile%t_win_a(nzt_win,i,j),         &
+                    slurb_tile%rah_win_a(i,j) = rah_doe2( k_topo, slurb_tile%t_can_0(i,j), slurb_tile%t_win_a_0(nzt_win,i,j),         &
                                                 slurb_tile%uv_eff_can(i,j), .FALSE. )
                     IF ( slurb_tile%rah_win_a(i,j) < rah_min )  slurb_tile%rah_win_a(i,j) = rah_min
                     IF ( slurb_tile%rah_win_a(i,j) > rah_max )  slurb_tile%rah_win_a(i,j) = rah_max
                 ENDIF
 
                 IF ( slurb_tile%anisotropic_canyon(i,j) )  THEN
-                    slurb_tile%rah_wall_b(i,j) = rah_doe2( k_topo, slurb_tile%t_can(i,j), slurb_tile%t_wall_b(nzt_wall,i,j),      &
+                    slurb_tile%rah_wall_b(i,j) = rah_doe2( k_topo, slurb_tile%t_can_0(i,j), slurb_tile%t_wall_b_0(nzt_wall,i,j),      &
                                                     slurb_tile%uv_eff_can(i,j), .TRUE. )
                     IF ( slurb_tile%rah_wall_b(i,j) < rah_min )  slurb_tile%rah_wall_b(i,j) = rah_min
                     IF ( slurb_tile%rah_wall_b(i,j) > rah_max )  slurb_tile%rah_wall_b(i,j) = rah_max
                     IF ( slurb_tile%f_win(i,j) /= 0.0_field_r )  THEN
-                        slurb_tile%rah_win_b(i,j) = rah_doe2( k_topo, slurb_tile%t_can(i,j), slurb_tile%t_win_b(nzt_win,i,j),      &
+                        slurb_tile%rah_win_b(i,j) = rah_doe2( k_topo, slurb_tile%t_can_0(i,j), slurb_tile%t_win_b_0(nzt_win,i,j),      &
                                                     slurb_tile%uv_eff_can(i,j), .FALSE. )
                         IF ( slurb_tile%rah_win_b(i,j) < rah_min )  slurb_tile%rah_win_b(i,j) = rah_min
                         IF ( slurb_tile%rah_win_b(i,j) > rah_max )  slurb_tile%rah_win_b(i,j) = rah_max
@@ -1827,7 +1683,6 @@ end subroutine slurb_update_external_vars
 !> Calculate the bulk Richardson number for given surface (z0) temperature.
 !--------------------------------------------------------------------------------------------------!
  SUBROUTINE calc_rib( pt1, pt_surface, rib, uvw_abs, z_mo )
-    use modmpi, only: myid
     implicit none
 
     real, intent(in)  ::  pt1          !< potential temperature at first grid level
@@ -1836,11 +1691,9 @@ end subroutine slurb_update_external_vars
     real, intent(in)  ::  uvw_abs      !< absolute surface-parallel velocity on grid center
     real, intent(in)  ::  z_mo         !< constant flux layer height
 
-    ! write(*,*) g, z_mo, pt1, pt_surface, uvw_abs, pt1
     !-- Evaluate bulk Richardson number.
     rib = g * z_mo * ( pt1 - pt_surface ) / ( uvw_abs**2 * pt1 + 1.0E-20_field_r )
-    ! rib = 5
-    !TODOSELF TODOSELF !!!! TURN OFF
+
     !
     !-- For the SLUrb model, limit to |rib| < |rib_max| to dampen possible instabilities during
     !-- initialization.
@@ -2020,441 +1873,122 @@ end subroutine slurb_update_external_vars
 
 
 
-!--------------------------------------------------------------------------------------------------!
-!   MODLULE PREDEFINED PARAMETERS
-!--------------------------------------------------------------------------------------------------!
-! Description:
-! ------------
-!> Default parameters for the building types. These are based on the urban surface mod.
-!--------------------------------------------------------------------------------------------------!
- SUBROUTINE slurb_default_pars
-
-!
-!-- Residential, < 1950.
-    building_pars_slurb(:,1) = (/                                                                  &
-       0.18_field_r,        &   !< parameter 0   - [-] window fraction
-       0.02_field_r,        &   !< parameter 1   - [m] 1st roof layer thickness (outside)
-       0.04_field_r,        &   !< parameter 2   - [m] 2nd roof layer thickness
-       0.02_field_r,        &   !< parameter 3   - [m] 3rd roof layer thickness
-       0.02_field_r,        &   !< parameter 4   - [m] 4th roof layer thickness (inside)
-       1.51200E6_field_r,   &   !< parameter 5   - [J/(m3*K)] specific heat capacity 1st roof layer (outside)
-       0.70965E6_field_r,   &   !< parameter 6   - [J/(m3*K)] specific heat capacity 2nd roof layer
-       0.70965E6_field_r,   &   !< parameter 7   - [J/(m3*K)] specific heat capacity 3rd roof layer
-       1.52600E6_field_r,   &   !< parameter 8   - [J/(m3*K)] specific heat capacity 4th roof layer (inside)
-       0.520_field_r,       &   !< parameter 9   - [W/(m*K)] thermal conductivity 1st roof layer (outside)
-       0.120_field_r,       &   !< parameter 10  - [W/(m*K)] thermal conductivity 2nd roof layer
-       0.120_field_r,       &   !< parameter 11  - [W/(m*K)] thermal conductivity 3rd roof layer
-       0.700_field_r,       &   !< parameter 12  - [W/(m*K)] thermal conductivity 4th roof layer (inside)
-       0.15_field_r,        &   !< parameter 13  - [m] z0 roughness length for momentum
-       0.17_field_r,        &   !< parameter 14  - [-] albedo
-       0.90_field_r,        &   !< parameter 15  - [-] emissivity
-       0.02_field_r,        &   !< parameter 16  - [m] 1st wall layer thickness (outside)
-       0.18_field_r,        &   !< parameter 17  - [m] 2nd wall layer thickness
-       0.18_field_r,        &   !< parameter 18  - [m] 3rd wall layer thickness
-       0.02_field_r,        &   !< parameter 19  - [m] 4th wall layer thickness
-       1.5200E6_field_r,    &   !< parameter 20  - [J/(m3*K)] specific heat capacity 1st wall layer (outside)
-       1.5120E6_field_r,    &   !< parameter 21  - [J/(m3*K)] specific heat capacity 2nd wall layer
-       1.5120E6_field_r,    &   !< parameter 22  - [J/(m3*K)] specific heat capacity 3rd wall layer
-       1.5260E6_field_r,    &   !< parameter 23  - [J/(m3*K)] specific heat capacity 4th wall layer (inside)
-       0.930_field_r,       &   !< parameter 24  - [W/(m*K)] thermal conductivity 1st wall layer (outside)
-       0.810_field_r,       &   !< parameter 25  - [W/(m*K)] thermal conductivity 2nd wall layer
-       0.810_field_r,       &   !< parameter 26  - [W/(m*K)] thermal conductivity 3rd wall layer
-       0.700_field_r,       &   !< parameter 27  - [W/(m*K)] thermal conductivity 4th wall layer (inside)
-       0.001_field_r,       &   !< parameter 28  - [m] z0 roughness length for momentum
-       0.30_field_r,        &   !< parameter 29  - [-] albedo
-       0.93_field_r,        &   !< parameter 30  - [-] emissivity
-       0.02_field_r,        &   !< parameter 31  - [m] 1st window layer thickness (glass sheet + air total) (outside)
-       0.02_field_r,        &   !< parameter 32  - [m] 2rd window layer thickness
-       0.02_field_r,        &   !< parameter 33  - [m] 3rd window layer thickness
-       0.02_field_r,        &   !< parameter 34  - [m] 4th window layer thickness (inside)
-       1.736E6_field_r,     &   !< parameter 35  - [J/(m3*K)] specific heat capacity 1st window layer (outside)
-       1.736E6_field_r,     &   !< parameter 36  - [J/(m3*K)] specific heat capacity 2nd window layer
-       1.736E6_field_r,     &   !< parameter 37  - [J/(m3*K)] specific heat capacity 3rd window layer
-       1.736E6_field_r,     &   !< parameter 38  - [J/(m3*K)] specific heat capacity 4th window layer (inside)
-       0.45_field_r,        &   !< parameter 39  - [W/(m*K)] thermal conductivity 1st window layer (outside)
-       0.45_field_r,        &   !< parameter 40  - [W/(m*K)] thermal conductivity 2nd window layer
-       0.45_field_r,        &   !< parameter 41  - [W/(m*K)] thermal conductivity 3rd window layer
-       0.45_field_r,        &   !< parameter 42  - [W/(m*K)] thermal conductivity 4th window layer (inside)
-       0.70_field_r,        &   !< parameter 43  - [-] transmissivity
-       0.12_field_r,        &   !< parameter 44  - [-] albedo
-       0.91_field_r         &   !< parameter 45  - [-] emissivity
-    /)
-
-!
-!-- Residential, 1950 - 2000.
-    building_pars_slurb(:,2) = (/                                                                  &
-       0.25_field_r,        &   !< parameter 0   - [-] window fraction
-       0.02_field_r,        &   !< parameter 1   - [m] 1st roof layer thickness (outside)
-       0.15_field_r,        &   !< parameter 2   - [m] 2nd roof layer thickness
-       0.20_field_r,        &   !< parameter 3   - [m] 3rd roof layer thickness
-       0.02_field_r,        &   !< parameter 4   - [m] 4th roof layer thickness (inside)
-       1.70000E6_field_r,   &   !< parameter 5   - [J/(m3*K)] specific heat capacity 1st roof layer (outside)
-       0.07920E6_field_r,   &   !< parameter 6   - [J/(m3*K)] specific heat capacity 2nd roof layer
-       2.11200E6_field_r,   &   !< parameter 7   - [J/(m3*K)] specific heat capacity 3rd roof layer
-       1.52600E6_field_r,   &   !< parameter 8   - [J/(m3*K)] specific heat capacity 4th roof layer (inside)
-       0.160_field_r,       &   !< parameter 9   - [W/(m*K)] thermal conductivity 1st roof layer (outside)
-       0.046_field_r,       &   !< parameter 10  - [W/(m*K)] thermal conductivity 2nd roof layer
-       2.100_field_r,       &   !< parameter 11  - [W/(m*K)] thermal conductivity 3rd roof layer
-       0.700_field_r,       &   !< parameter 12  - [W/(m*K)] thermal conductivity 4th roof layer (inside)
-       0.15_field_r,        &   !< parameter 13  - [m] z0 roughness length for momentum
-       0.10_field_r,        &   !< parameter 14  - [-] albedo
-       0.95_field_r,        &   !< parameter 15  - [-] emissivity
-       0.02_field_r,        &   !< parameter 16  - [m] 1st wall layer thickness (outside)
-       0.06_field_r,        &   !< parameter 17  - [m] 2nd wall layer thickness
-       0.24_field_r,        &   !< parameter 18  - [m] 3rd wall layer thickness
-       0.02_field_r,        &   !< parameter 19  - [m] 4th wall layer thickness
-       1.5200E6_field_r,    &   !< parameter 20  - [J/(m3*K)] specific heat capacity 1st wall layer (outside)
-       0.0792E6_field_r,    &   !< parameter 21  - [J/(m3*K)] specific heat capacity 2nd wall layer
-       2.1120E6_field_r,    &   !< parameter 22  - [J/(m3*K)] specific heat capacity 3rd wall layer
-       1.5260E6_field_r,    &   !< parameter 23  - [J/(m3*K)] specific heat capacity 4th wall layer (inside)
-       0.930_field_r,       &   !< parameter 24  - [W/(m*K)] thermal conductivity 1st wall layer (outside)
-       0.046_field_r,       &   !< parameter 25  - [W/(m*K)] thermal conductivity 2nd wall layer
-       2.100_field_r,       &   !< parameter 26  - [W/(m*K)] thermal conductivity 3rd wall layer
-       0.700_field_r,       &   !< parameter 27  - [W/(m*K)] thermal conductivity 4th wall layer (inside)
-       0.001_field_r,       &   !< parameter 28  - [m] z0 roughness length for momentum
-       0.30_field_r,        &   !< parameter 29  - [-] albedo
-       0.93_field_r,        &   !< parameter 30  - [-] emissivity
-       0.02_field_r,        &   !< parameter 31  - [m] 1st window layer thickness (glass sheet + air total) (outside)
-       0.02_field_r,        &   !< parameter 32  - [m] 2rd window layer thickness
-       0.02_field_r,        &   !< parameter 33  - [m] 3rd window layer thickness
-       0.02_field_r,        &   !< parameter 34  - [m] 4th window layer thickness (inside)
-       1.736E6_field_r,     &   !< parameter 35  - [J/(m3*K)] specific heat capacity 1st window layer (outside)
-       1.736E6_field_r,     &   !< parameter 36  - [J/(m3*K)] specific heat capacity 2nd window layer
-       1.736E6_field_r,     &   !< parameter 37  - [J/(m3*K)] specific heat capacity 3rd window layer
-       1.736E6_field_r,     &   !< parameter 38  - [J/(m3*K)] specific heat capacity 4th window layer (inside)
-       0.18_field_r,        &   !< parameter 39  - [W/(m*K)] thermal conductivity 1st window layer (outside)
-       0.18_field_r,        &   !< parameter 40  - [W/(m*K)] thermal conductivity 2nd window layer
-       0.18_field_r,        &   !< parameter 41  - [W/(m*K)] thermal conductivity 3rd window layer
-       0.18_field_r,        &   !< parameter 42  - [W/(m*K)] thermal conductivity 4th window layer (inside)
-       0.65_field_r,        &   !< parameter 43  - [-] transmissivity
-       0.15_field_r,        &   !< parameter 44  - [-] albedo
-       0.87_field_r         &   !< parameter 45  - [-] emissivity
-    /)
-
-!
-!-- Residential, > 2000.
-    building_pars_slurb(:,3) = (/                                                                  &
-       0.29_field_r,        &   !< parameter 0   - [-] window fraction
-       0.02_field_r,        &   !< parameter 1   - [m] 1st roof layer thickness (outside)
-       0.04_field_r,        &   !< parameter 2   - [m] 2nd roof layer thickness
-       0.30_field_r,        &   !< parameter 3   - [m] 3rd roof layer thickness
-       0.02_field_r,        &   !< parameter 4   - [m] 4th roof layer thickness (inside)
-       3.75360E6_field_r,   &   !< parameter 5   - [J/(m3*K)] specific heat capacity 1st roof layer (outside)
-       0.70965E6_field_r,   &   !< parameter 6   - [J/(m3*K)] specific heat capacity 2nd roof layer
-       0.07920E6_field_r,   &   !< parameter 7   - [J/(m3*K)] specific heat capacity 3rd roof layer
-       1.52600E6_field_r,   &   !< parameter 8   - [J/(m3*K)] specific heat capacity 4th roof layer (inside)
-       0.520_field_r,       &   !< parameter 9   - [W/(m*K)] thermal conductivity 1st roof layer (outside)
-       0.120_field_r,       &   !< parameter 10  - [W/(m*K)] thermal conductivity 2nd roof layer
-       0.035_field_r,       &   !< parameter 11  - [W/(m*K)] thermal conductivity 3rd roof layer
-       0.700_field_r,       &   !< parameter 12  - [W/(m*K)] thermal conductivity 4th roof layer (inside)
-       0.15_field_r,        &   !< parameter 13  - [m] z0 roughness length for momentum
-       0.17_field_r,        &   !< parameter 14  - [-] albedo
-       0.92_field_r,        &   !< parameter 15  - [-] emissivity
-       0.02_field_r,        &   !< parameter 16  - [m] 1st wall layer thickness (outside)
-       0.20_field_r,        &   !< parameter 17  - [m] 2nd wall layer thickness
-       0.36_field_r,        &   !< parameter 18  - [m] 3rd wall layer thickness
-       0.02_field_r,        &   !< parameter 19  - [m] 4th wall layer thickness
-       1.5200E6_field_r,    &   !< parameter 20  - [J/(m3*K)] specific heat capacity 1st wall layer (outside)
-       0.0792E6_field_r,    &   !< parameter 21  - [J/(m3*K)] specific heat capacity 2nd wall layer
-       1.3400E6_field_r,    &   !< parameter 22  - [J/(m3*K)] specific heat capacity 3rd wall layer
-       1.5260E6_field_r,    &   !< parameter 23  - [J/(m3*K)] specific heat capacity 4th wall layer (inside)
-       0.930_field_r,       &   !< parameter 24  - [W/(m*K)] thermal conductivity 1st wall layer (outside)
-       0.035_field_r,       &   !< parameter 25  - [W/(m*K)] thermal conductivity 2nd wall layer
-       0.680_field_r,       &   !< parameter 26  - [W/(m*K)] thermal conductivity 3rd wall layer
-       0.700_field_r,       &   !< parameter 27  - [W/(m*K)] thermal conductivity 4th wall layer (inside)
-       0.001_field_r,       &   !< parameter 28  - [m] z0 roughness length for momentum
-       0.37_field_r,        &   !< parameter 29  - [-] albedo
-       0.93_field_r,        &   !< parameter 30  - [-] emissivity
-       0.02_field_r,        &   !< parameter 31  - [m] 1st window layer thickness (glass sheet + air total) (outside)
-       0.02_field_r,        &   !< parameter 32  - [m] 2rd window layer thickness
-       0.02_field_r,        &   !< parameter 33  - [m] 3rd window layer thickness
-       0.02_field_r,        &   !< parameter 34  - [m] 4th window layer thickness (inside)
-       1.736E6_field_r,     &   !< parameter 35  - [J/(m3*K)] specific heat capacity 1st window layer (outside)
-       1.736E6_field_r,     &   !< parameter 36  - [J/(m3*K)] specific heat capacity 2nd window layer
-       1.736E6_field_r,     &   !< parameter 37  - [J/(m3*K)] specific heat capacity 3rd window layer
-       1.736E6_field_r,     &   !< parameter 38  - [J/(m3*K)] specific heat capacity 4th window layer (inside)
-       0.11_field_r,        &   !< parameter 39  - [W/(m*K)] thermal conductivity 1st window layer (outside)
-       0.11_field_r,        &   !< parameter 40  - [W/(m*K)] thermal conductivity 2nd window layer
-       0.11_field_r,        &   !< parameter 41  - [W/(m*K)] thermal conductivity 3rd window layer
-       0.11_field_r,        &   !< parameter 42  - [W/(m*K)] thermal conductivity 4th window layer (inside)
-       0.57_field_r,        &   !< parameter 43  - [-] transmissivity
-       0.18_field_r,        &   !< parameter 44  - [-] albedo
-       0.80_field_r         &   !< parameter 45  - [-] emissivity
-    /)
-
-!
-!-- Office, < 1950.
-    building_pars_slurb(:,4) = (/                                                                  &
-       0.18_field_r,        &   !< parameter 0   - [-] window fraction
-       0.02_field_r,        &   !< parameter 1   - [m] 1st roof layer thickness (outside)
-       0.04_field_r,        &   !< parameter 2   - [m] 2nd roof layer thickness
-       0.02_field_r,        &   !< parameter 3   - [m] 3rd roof layer thickness
-       0.02_field_r,        &   !< parameter 4   - [m] 4th roof layer thickness (inside)
-       1.51200E6_field_r,   &   !< parameter 5   - [J/(m3*K)] specific heat capacity 1st roof layer (outside)
-       0.70965E6_field_r,   &   !< parameter 6   - [J/(m3*K)] specific heat capacity 2nd roof layer
-       0.70965E6_field_r,   &   !< parameter 7   - [J/(m3*K)] specific heat capacity 3rd roof layer
-       1.52600E6_field_r,   &   !< parameter 8   - [J/(m3*K)] specific heat capacity 4th roof layer (inside)
-       0.520_field_r,       &   !< parameter 9   - [W/(m*K)] thermal conductivity 1st roof layer (outside)
-       0.120_field_r,       &   !< parameter 10  - [W/(m*K)] thermal conductivity 2nd roof layer
-       0.120_field_r,       &   !< parameter 11  - [W/(m*K)] thermal conductivity 3rd roof layer
-       0.700_field_r,       &   !< parameter 12  - [W/(m*K)] thermal conductivity 4th roof layer (inside)
-       0.15_field_r,        &   !< parameter 13  - [m] z0 roughness length for momentum
-       0.17_field_r,        &   !< parameter 14  - [-] albedo
-       0.90_field_r,        &   !< parameter 15  - [-] emissivity
-       0.02_field_r,        &   !< parameter 16  - [m] 1st wall layer thickness (outside)
-       0.18_field_r,        &   !< parameter 17  - [m] 2nd wall layer thickness
-       0.18_field_r,        &   !< parameter 18  - [m] 3rd wall layer thickness
-       0.02_field_r,        &   !< parameter 19  - [m] 4th wall layer thickness
-       1.5200E6_field_r,    &   !< parameter 20  - [J/(m3*K)] specific heat capacity 1st wall layer (outside)
-       1.5120E6_field_r,    &   !< parameter 21  - [J/(m3*K)] specific heat capacity 2nd wall layer
-       1.5120E6_field_r,    &   !< parameter 22  - [J/(m3*K)] specific heat capacity 3rd wall layer
-       1.5260E6_field_r,    &   !< parameter 23  - [J/(m3*K)] specific heat capacity 4th wall layer (inside)
-       0.930_field_r,       &   !< parameter 24  - [W/(m*K)] thermal conductivity 1st wall layer (outside)
-       0.810_field_r,       &   !< parameter 25  - [W/(m*K)] thermal conductivity 2nd wall layer
-       0.810_field_r,       &   !< parameter 26  - [W/(m*K)] thermal conductivity 3rd wall layer
-       0.700_field_r,       &   !< parameter 27  - [W/(m*K)] thermal conductivity 4th wall layer (inside)
-       0.001_field_r,       &   !< parameter 28  - [m] z0 roughness length for momentum
-       0.30_field_r,        &   !< parameter 29  - [-] albedo
-       0.93_field_r,        &   !< parameter 30  - [-] emissivity
-       0.02_field_r,        &   !< parameter 31  - [m] 1st window layer thickness (glass sheet + air total) (outside)
-       0.02_field_r,        &   !< parameter 32  - [m] 2rd window layer thickness
-       0.02_field_r,        &   !< parameter 33  - [m] 3rd window layer thickness
-       0.02_field_r,        &   !< parameter 34  - [m] 4th window layer thickness (inside)
-       1.736E6_field_r,     &   !< parameter 35  - [J/(m3*K)] specific heat capacity 1st window layer (outside)
-       1.736E6_field_r,     &   !< parameter 36  - [J/(m3*K)] specific heat capacity 2nd window layer
-       1.736E6_field_r,     &   !< parameter 37  - [J/(m3*K)] specific heat capacity 3rd window layer
-       1.736E6_field_r,     &   !< parameter 38  - [J/(m3*K)] specific heat capacity 4th window layer (inside)
-       0.45_field_r,        &   !< parameter 39  - [W/(m*K)] thermal conductivity 1st window layer (outside)
-       0.45_field_r,        &   !< parameter 40  - [W/(m*K)] thermal conductivity 2nd window layer
-       0.45_field_r,        &   !< parameter 41  - [W/(m*K)] thermal conductivity 3rd window layer
-       0.45_field_r,        &   !< parameter 42  - [W/(m*K)] thermal conductivity 4th window layer (inside)
-       0.70_field_r,        &   !< parameter 43  - [-] transmissivity
-       0.12_field_r,        &   !< parameter 44  - [-] albedo
-       0.91_field_r         &   !< parameter 45  - [-] emissivity
-    /)
-
-!
-!-- Office, 1950 - 2000.
-    building_pars_slurb(:,5) = (/                                                                  &
-       0.25_field_r,        &   !< parameter 0   - [-] window fraction
-       0.02_field_r,        &   !< parameter 1   - [m] 1st roof layer thickness (outside)
-       0.15_field_r,        &   !< parameter 2   - [m] 2nd roof layer thickness
-       0.20_field_r,        &   !< parameter 3   - [m] 3rd roof layer thickness
-       0.02_field_r,        &   !< parameter 4   - [m] 4th roof layer thickness (inside)
-       1.70000E6_field_r,   &   !< parameter 5   - [J/(m3*K)] specific heat capacity 1st roof layer (outside)
-       0.07920E6_field_r,   &   !< parameter 6   - [J/(m3*K)] specific heat capacity 2nd roof layer
-       2.11200E6_field_r,   &   !< parameter 7   - [J/(m3*K)] specific heat capacity 3rd roof layer
-       1.52600E6_field_r,   &   !< parameter 8   - [J/(m3*K)] specific heat capacity 4th roof layer (inside)
-       0.160_field_r,       &   !< parameter 9   - [W/(m*K)] thermal conductivity 1st roof layer (outside)
-       0.046_field_r,       &   !< parameter 10  - [W/(m*K)] thermal conductivity 2nd roof layer
-       2.100_field_r,       &   !< parameter 11  - [W/(m*K)] thermal conductivity 3rd roof layer
-       0.700_field_r,       &   !< parameter 12  - [W/(m*K)] thermal conductivity 4th roof layer (inside)
-       0.15_field_r,        &   !< parameter 13  - [m] z0 roughness length for momentum
-       0.10_field_r,        &   !< parameter 14  - [-] albedo
-       0.95_field_r,        &   !< parameter 15  - [-] emissivity
-       0.02_field_r,        &   !< parameter 16  - [m] 1st wall layer thickness (outside)
-       0.06_field_r,        &   !< parameter 17  - [m] 2nd wall layer thickness
-       0.24_field_r,        &   !< parameter 18  - [m] 3rd wall layer thickness
-       0.02_field_r,        &   !< parameter 19  - [m] 4th wall layer thickness
-       1.5200E6_field_r,    &   !< parameter 20  - [J/(m3*K)] specific heat capacity 1st wall layer (outside)
-       0.0792E6_field_r,    &   !< parameter 21  - [J/(m3*K)] specific heat capacity 2nd wall layer
-       2.1120E6_field_r,    &   !< parameter 22  - [J/(m3*K)] specific heat capacity 3rd wall layer
-       1.5260E6_field_r,    &   !< parameter 23  - [J/(m3*K)] specific heat capacity 4th wall layer (inside)
-       0.930_field_r,       &   !< parameter 24  - [W/(m*K)] thermal conductivity 1st wall layer (outside)
-       0.046_field_r,       &   !< parameter 25  - [W/(m*K)] thermal conductivity 2nd wall layer
-       2.100_field_r,       &   !< parameter 26  - [W/(m*K)] thermal conductivity 3rd wall layer
-       0.700_field_r,       &   !< parameter 27  - [W/(m*K)] thermal conductivity 4th wall layer (inside)
-       0.001_field_r,       &   !< parameter 28  - [m] z0 roughness length for momentum
-       0.30_field_r,        &   !< parameter 29  - [-] albedo
-       0.93_field_r,        &   !< parameter 30  - [-] emissivity
-       0.02_field_r,        &   !< parameter 31  - [m] 1st window layer thickness (glass sheet + air total) (outside)
-       0.02_field_r,        &   !< parameter 32  - [m] 2rd window layer thickness
-       0.02_field_r,        &   !< parameter 33  - [m] 3rd window layer thickness
-       0.02_field_r,        &   !< parameter 34  - [m] 4th window layer thickness (inside)
-       1.736E6_field_r,     &   !< parameter 35  - [J/(m3*K)] specific heat capacity 1st window layer (outside)
-       1.736E6_field_r,     &   !< parameter 36  - [J/(m3*K)] specific heat capacity 2nd window layer
-       1.736E6_field_r,     &   !< parameter 37  - [J/(m3*K)] specific heat capacity 3rd window layer
-       1.736E6_field_r,     &   !< parameter 38  - [J/(m3*K)] specific heat capacity 4th window layer (inside)
-       0.18_field_r,        &   !< parameter 39  - [W/(m*K)] thermal conductivity 1st window layer (outside)
-       0.18_field_r,        &   !< parameter 40  - [W/(m*K)] thermal conductivity 2nd window layer
-       0.18_field_r,        &   !< parameter 41  - [W/(m*K)] thermal conductivity 3rd window layer
-       0.18_field_r,        &   !< parameter 42  - [W/(m*K)] thermal conductivity 4th window layer (inside)
-       0.65_field_r,        &   !< parameter 43  - [-] transmissivity
-       0.15_field_r,        &   !< parameter 44  - [-] albedo
-       0.87_field_r         &   !< parameter 45  - [-] emissivity
-    /)
-
-!
-!-- Office, > 2000.
-    building_pars_slurb(:,6) = (/                                                                  &
-       0.29_field_r,        &   !< parameter 0   - [-] window fraction
-       0.02_field_r,        &   !< parameter 1   - [m] 1st roof layer thickness (outside)
-       0.04_field_r,        &   !< parameter 2   - [m] 2nd roof layer thickness
-       0.30_field_r,        &   !< parameter 3   - [m] 3rd roof layer thickness
-       0.02_field_r,        &   !< parameter 4   - [m] 4th roof layer thickness (inside)
-       3.75360E6_field_r,   &   !< parameter 5   - [J/(m3*K)] specific heat capacity 1st roof layer (outside)
-       0.70965E6_field_r,   &   !< parameter 6   - [J/(m3*K)] specific heat capacity 2nd roof layer
-       0.07920E6_field_r,   &   !< parameter 7   - [J/(m3*K)] specific heat capacity 3rd roof layer
-       1.52600E6_field_r,   &   !< parameter 8   - [J/(m3*K)] specific heat capacity 4th roof layer (inside)
-       0.520_field_r,       &   !< parameter 9   - [W/(m*K)] thermal conductivity 1st roof layer (outside)
-       0.120_field_r,       &   !< parameter 10  - [W/(m*K)] thermal conductivity 2nd roof layer
-       0.035_field_r,       &   !< parameter 11  - [W/(m*K)] thermal conductivity 3rd roof layer
-       0.700_field_r,       &   !< parameter 12  - [W/(m*K)] thermal conductivity 4th roof layer (inside)
-       0.15_field_r,        &   !< parameter 13  - [m] z0 roughness length for momentum
-       0.17_field_r,        &   !< parameter 14  - [-] albedo
-       0.92_field_r,        &   !< parameter 15  - [-] emissivity
-       0.02_field_r,        &   !< parameter 16  - [m] 1st wall layer thickness (outside)
-       0.20_field_r,        &   !< parameter 17  - [m] 2nd wall layer thickness
-       0.36_field_r,        &   !< parameter 18  - [m] 3rd wall layer thickness
-       0.02_field_r,        &   !< parameter 19  - [m] 4th wall layer thickness
-       1.5200E6_field_r,    &   !< parameter 20  - [J/(m3*K)] specific heat capacity 1st wall layer (outside)
-       0.0792E6_field_r,    &   !< parameter 21  - [J/(m3*K)] specific heat capacity 2nd wall layer
-       1.3400E6_field_r,    &   !< parameter 22  - [J/(m3*K)] specific heat capacity 3rd wall layer
-       1.5260E6_field_r,    &   !< parameter 23  - [J/(m3*K)] specific heat capacity 4th wall layer (inside)
-       0.930_field_r,       &   !< parameter 24  - [W/(m*K)] thermal conductivity 1st wall layer (outside)
-       0.035_field_r,       &   !< parameter 25  - [W/(m*K)] thermal conductivity 2nd wall layer
-       0.680_field_r,       &   !< parameter 26  - [W/(m*K)] thermal conductivity 3rd wall layer
-       0.700_field_r,       &   !< parameter 27  - [W/(m*K)] thermal conductivity 4th wall layer (inside)
-       0.001_field_r,       &   !< parameter 28  - [m] z0 roughness length for momentum
-       0.37_field_r,        &   !< parameter 29  - [-] albedo
-       0.93_field_r,        &   !< parameter 30  - [-] emissivity
-       0.02_field_r,        &   !< parameter 31  - [m] 1st window layer thickness (glass sheet + air total) (outside)
-       0.02_field_r,        &   !< parameter 32  - [m] 2rd window layer thickness
-       0.02_field_r,        &   !< parameter 33  - [m] 3rd window layer thickness
-       0.02_field_r,        &   !< parameter 34  - [m] 4th window layer thickness (inside)
-       1.736E6_field_r,     &   !< parameter 35  - [J/(m3*K)] specific heat capacity 1st window layer (outside)
-       1.736E6_field_r,     &   !< parameter 36  - [J/(m3*K)] specific heat capacity 2nd window layer
-       1.736E6_field_r,     &   !< parameter 37  - [J/(m3*K)] specific heat capacity 3rd window layer
-       1.736E6_field_r,     &   !< parameter 38  - [J/(m3*K)] specific heat capacity 4th window layer (inside)
-       0.11_field_r,        &   !< parameter 39  - [W/(m*K)] thermal conductivity 1st window layer (outside)
-       0.11_field_r,        &   !< parameter 40  - [W/(m*K)] thermal conductivity 2nd window layer
-       0.11_field_r,        &   !< parameter 41  - [W/(m*K)] thermal conductivity 3rd window layer
-       0.11_field_r,        &   !< parameter 42  - [W/(m*K)] thermal conductivity 4th window layer (inside)
-       0.57_field_r,        &   !< parameter 43  - [-] transmissivity
-       0.18_field_r,        &   !< parameter 44  - [-] albedo
-       0.80_field_r         &   !< parameter 45  - [-] emissivity
-    /)
-
-!
-!-- Asphalt concrete mix (I-II), stone aggregate(III), gravel and soil(IV), PALM-LSM default.
-    pavement_pars_slurb(:,1) = (/                                                                  &
-       0.01_field_r,      &   !< parameter 0   - [m] 1st pavement layer thickness (top)
-       0.04_field_r,      &   !< parameter 1   - [m] 2nd pavement layer thickness
-       0.20_field_r,      &   !< parameter 2   - [m] 3rd pavement layer thickness
-       1.00_field_r,      &   !< parameter 3   - [m] 4th pavement layer thickness (bottom)
-       2.00E6_field_r,    &   !< parameter 4   - [J/(m3*K)] heat capacity 1st pavement layer (top)
-       2.00E6_field_r,    &   !< parameter 5   - [J/(m3*K)] heat capacity 2nd pavement layer
-       2.00E6_field_r,    &   !< parameter 6   - [J/(m3*K)] heat capacity 3rd pavement layer
-       1.40E6_field_r,    &   !< parameter 7   - [J/(m3*K)] heat capacity 4th pavement layer (bottom)
-       1.00_field_r,      &   !< parameter 8   - [W/(m*K)] thermal conductivity 1st pavement layer (top)
-       1.00_field_r,      &   !< parameter 9   - [W/(m*K)] thermal conductivity 2nd pavement layer
-       2.10_field_r,      &   !< parameter 10  - [W/(m*K)] thermal conductivity 3rd pavement layer
-       0.40_field_r,      &   !< parameter 11  - [W/(m*K)] thermal conductivity 4th pavement layer (bottom)
-       5.0E-2_field_r,    &   !< parameter 12  - [m] z0 roughness length for momentum
-       0.17_field_r,      &   !< parameter 13  - [-] albedo
-       0.93_field_r       &   !< parameter 14  - [-] emissivity
-    /)
-
-!
-!-- Asphalt concrete (I-II), stone aggregate (III), gravel and soil (IV), Masson et al. (2002).
-    pavement_pars_slurb(:,2) = (/                                                                  &
-       0.01_field_r,      &   !< parameter 0   - [m] 1st pavement layer thickness (top)
-       0.04_field_r,      &   !< parameter 1   - [m] 2nd pavement layer thickness
-       0.20_field_r,      &   !< parameter 2   - [m] 3rd pavement layer thickness
-       1.00_field_r,      &   !< parameter 3   - [m] 4th pavement layer thickness (bottom)
-       1.74E6_field_r,    &   !< parameter 4   - [J/(m3*K)] heat capacity 1st pavement layer (top)
-       1.74E6_field_r,    &   !< parameter 5   - [J/(m3*K)] heat capacity 2nd pavement layer
-       2.00E6_field_r,    &   !< parameter 6   - [J/(m3*K)] heat capacity 3rd pavement layer
-       1.40E6_field_r,    &   !< parameter 7   - [J/(m3*K)] heat capacity 4th pavement layer (bottom)
-       0.82_field_r,      &   !< parameter 8   - [W/(m*K)] thermal conductivity 1st pavement layer (top)
-       0.82_field_r,      &   !< parameter 9   - [W/(m*K)] thermal conductivity 2nd pavement layer
-       2.10_field_r,      &   !< parameter 10  - [W/(m*K)] thermal conductivity 3rd pavement layer
-       0.40_field_r,      &   !< parameter 11  - [W/(m*K)] thermal conductivity 4th pavement layer (bottom)
-       5.0E-2_field_r,    &   !< parameter 12  - [m] z0 roughness length for momentum
-       0.10_field_r,      &   !< parameter 13  - [-] albedo
-       0.95_field_r       &   !< parameter 14  - [-] emissivity
-    /)
-
-!
-!-- Concrete (Portland concrete, I-II), stone aggregate (III), gravel and soil (IV),
-!-- Masson et al. (2002) and Yaghoobian et al. (2009).
-    pavement_pars_slurb(:,3) = (/                                                                  &
-       0.01_field_r,      &   !< parameter 0   - [m] 1st pavement layer thickness (top)
-       0.04_field_r,      &   !< parameter 1   - [m] 2nd pavement layer thickness
-       0.20_field_r,      &   !< parameter 2   - [m] 3rd pavement layer thickness
-       1.00_field_r,      &   !< parameter 3   - [m] 4th pavement layer thickness (bottom)
-       2.11E6_field_r,    &   !< parameter 4   - [J/(m3*K)] heat capacity 1st pavement layer (top)
-       2.11E6_field_r,    &   !< parameter 5   - [J/(m3*K)] heat capacity 2nd pavement layer
-       2.00E6_field_r,    &   !< parameter 6   - [J/(m3*K)] heat capacity 3rd pavement layer
-       1.40E6_field_r,    &   !< parameter 7   - [J/(m3*K)] heat capacity 4th pavement layer (bottom)
-       1.51_field_r,      &   !< parameter 8   - [W/(m*K)] thermal conductivity 1st pavement layer (top)
-       1.51_field_r,      &   !< parameter 9   - [W/(m*K)] thermal conductivity 2nd pavement layer
-       2.10_field_r,      &   !< parameter 10  - [W/(m*K)] thermal conductivity 3rd pavement layer
-       0.40_field_r,      &   !< parameter 11  - [W/(m*K)] thermal conductivity 4th pavement layer (bottom)
-       5.0E-2_field_r,    &   !< parameter 12  - [m] z0 roughness length for momentum
-       0.30_field_r,      &   !< parameter 13  - [-] albedo
-       0.90_field_r       &   !< parameter 14  - [-] emissivity
-    /)
-
-!
-!-- Sett (I-II), stone aggregate (III), gravel and soil (IV),Masson et al. (2002), Oke (1987)
-!-- and Mandanici et al. (2016).
-    pavement_pars_slurb(:,4) = (/                                                                  &
-       0.01_field_r,      &   !< parameter 0   - [m] 1st pavement layer thickness (top)
-       0.04_field_r,      &   !< parameter 1   - [m] 2nd pavement layer thickness
-       0.20_field_r,      &   !< parameter 2   - [m] 3rd pavement layer thickness
-       1.00_field_r,      &   !< parameter 3   - [m] 4th pavement layer thickness (bottom)
-       2.25E6_field_r,    &   !< parameter 4   - [J/(m3*K)] heat capacity 1st pavement layer (top)
-       2.25E6_field_r,    &   !< parameter 5   - [J/(m3*K)] heat capacity 2nd pavement layer
-       2.00E6_field_r,    &   !< parameter 6   - [J/(m3*K)] heat capacity 3rd pavement layer
-       1.40E6_field_r,    &   !< parameter 7   - [J/(m3*K)] heat capacity 4th pavement layer (bottom)
-       2.19_field_r,      &   !< parameter 8   - [W/(m*K)] thermal conductivity 1st pavement layer (top)
-       2.19_field_r,      &   !< parameter 9   - [W/(m*K)] thermal conductivity 2nd pavement layer
-       2.10_field_r,      &   !< parameter 10  - [W/(m*K)] thermal conductivity 3rd pavement layer
-       0.40_field_r,      &   !< parameter 11  - [W/(m*K)] thermal conductivity 4th pavement layer (bottom)
-       5.0E-2_field_r,    &   !< parameter 12  - [m] z0 roughness length for momentum
-       0.17_field_r,      &   !< parameter 13  - [-] albedo
-       0.95_field_r       &   !< parameter 14  - [-] emissivity
-    /)
-
-!
-!-- Pavement stones (I-II), stone aggregate (III), gravel and soil (IV),
-!-- Masson et al. (2002), Oke (1987) and Göttsche & Hulley (2012).
-    pavement_pars_slurb(:,5) = (/                                                                  &
-       0.01_field_r,      &   !< parameter 0   - [m] 1st pavement layer thickness (top)
-       0.04_field_r,      &   !< parameter 1   - [m] 2nd pavement layer thickness
-       0.20_field_r,      &   !< parameter 2   - [m] 3rd pavement layer thickness
-       1.00_field_r,      &   !< parameter 3   - [m] 4th pavement layer thickness (bottom)
-       2.25E6_field_r,    &   !< parameter 4   - [J/(m3*K)] heat capacity 1st pavement layer (top)
-       2.25E6_field_r,    &   !< parameter 5   - [J/(m3*K)] heat capacity 2nd pavement layer
-       2.00E6_field_r,    &   !< parameter 6   - [J/(m3*K)] heat capacity 3rd pavement layer
-       1.40E6_field_r,    &   !< parameter 7   - [J/(m3*K)] heat capacity 4th pavement layer (bottom)
-       2.19_field_r,      &   !< parameter 8   - [W/(m*K)] thermal conductivity 1st pavement layer (top)
-       2.19_field_r,      &   !< parameter 9   - [W/(m*K)] thermal conductivity 2nd pavement layer
-       2.10_field_r,      &   !< parameter 10  - [W/(m*K)] thermal conductivity 3rd pavement layer
-       0.40_field_r,      &   !< parameter 11  - [W/(m*K)] thermal conductivity 4th pavement layer (bottom)
-       5.0E-2_field_r,    &   !< parameter 12  - [m] z0 roughness length for momentum
-       0.17_field_r,      &   !< parameter 13  - [-] albedo
-       0.93_field_r       &   !< parameter 14  - [-] emissivity
-    /)
-
- END SUBROUTINE slurb_default_pars
  !--------------------------------------------------------------------------------------------------!
 ! Description:
 ! ------------
 !> Process parameters dependent on the building/pavement type and properties.
 !--------------------------------------------------------------------------------------------------!
  SUBROUTINE process_surface_parameters
-    use modglobal, only: i1, j1, i2, j2
+    use modglobal, only: i1, j1, i2, j2, cexpnr, zf
+    use modslurbdata, only : slurb_default_pars, building_pars_slurb, pavement_pars_slurb
+    use modstat_nc, only : read_nc_field, nchandle_error
+    use modinputchecking, only : check_grid_variable
     implicit none
+
+    real(field_r), allocatable :: canyon_orientation_tmp(:,:)
+
     INTEGER, DIMENSION(:,:), ALLOCATABLE ::  type_tmp  !< array to contain building type temporarily
-    integer i,j,k
+    integer i,j,k, ncid
+    
+    if (lread_from_netcdf) then
+        call nchandle_error(nf90_open('inslurb.'//cexpnr//'.nc', NF90_NOWRITE, ncid))
+    endif
+
+
+
+    !
+    !-- Process variables related to urban form.
+    !
+    !-- Internally, f_bld refers to building plan area fraction of the urban surface. However, it is
+    !-- more common to report the building plan area fraction as a fraction of the total surface, e.g.
+    !-- in the case of LCZs. We want the user input correspond to the latter, thus the scaling.
+    slurb_tile%f_bld(:,:) = -9999.0_field_r
+    call read_nc_field(ncid, 'f_bld', slurb_tile%f_bld(2:i1,2:j1), fillvalue=0.5, requirefill=.true.)
+    call check_grid_variable("f_bld", slurb_tile%f_bld(2:i1,2:j1), TINY( 1.0_field_r ), 1.0_field_r )
+    ! slurb_tile%f_bld(:,:) = 0.5_field_r !TODOSELF deze is nu 0.5 voor nu
+    do j=2,j1
+      do i=2,i1
+        if ( fraction_slurb(i,j) /= 0) then
+            slurb_tile%f_bld(i, j) = slurb_tile%f_bld(i, j) / fraction_slurb(i, j)
+        endif
+        enddo
+    enddo
+
+    slurb_tile%f_bld_frn(:,:) = -9999.0_field_r
+
+    call read_nc_field(ncid, 'f_bld_frn', slurb_tile%f_bld_frn(2:i1,2:j1), fillvalue=0.2, requirefill=.true.)
+    call check_grid_variable("f_bld_frn", slurb_tile%f_bld_frn(2:i1,2:j1), 0.0_field_r, 1.0_field_r )
+
+
+    slurb_tile%h_bld(:,:) = -9999.0_field_r
+    call read_nc_field(ncid, 'h_bld', slurb_tile%h_bld(2:i1,2:j1), fillvalue=building_height, requirefill=.true.)
+    call check_grid_variable("h_bld", slurb_tile%h_bld(2:i1,2:j1), 0.0_field_r, 1000.0_field_r )
+
+    !
+    !-- Urban surface and street canyon MOST heights.
+    do j=2,j1
+      do i=2,i1
+       slurb_tile%z_mo(i,j) = 0.5_field_r * (zf(2) - zf(1)) ! (m)
+    !    slurb_tile%z_mo(i,j) = 0.5_field_r *  dzw(topo_top_ind(j,i,0)+1)
+       slurb_tile%z_mo_can(i,j) = 0.5_field_r * slurb_tile%h_bld(i,j) ! (m)
+      enddo
+    enddo
+    !
+    !-- Process canyon direction information if anisotropic street canyons are enabled.
+    IF ( anisotropic_street_canyons )  THEN
+       ALLOCATE( canyon_orientation_tmp(i2,j2) )
+       canyon_orientation_tmp(:,:) = -9999.0_field_r
+        IF ( street_canyon_orientation /= -9999.0_field_r  )  THEN
+            canyon_orientation_tmp(:,:) = street_canyon_orientation
+        ENDIF
+    !    CALL get_grid_variable_1d_real( 'street_canyon_orientation', canyon_orientation_tmp,        &
+    !                                    street_canyon_orientation )
+        call read_nc_field(ncid, 'street_canyon_orientation', canyon_orientation_tmp(2:i1,2:j1), requirefill=.false.)
+    !
+    !--    In order to make it possible to have a mix of isotropic and anisotropic tiles, use
+    !--    anisotropic canyons only in the case a canyon orientation has been given either for all tiles
+    !--    in the namelist or per-patch basis in input file.
+        do j=2,j1
+            do i=2,i1
+                IF ( canyon_orientation_tmp(i,j) /= -9999.0_field_r )  THEN
+                    slurb_tile%anisotropic_canyon(i,j) = .TRUE.
+                    slurb_tile%theta_can(i,j) = canyon_orientation_tmp(i,j) * ( pi / 180.0_field_r )
+                ELSE
+                    slurb_tile%anisotropic_canyon(i,j) = .FALSE.
+                    slurb_tile%theta_can(i,j) = -9999.0_field_r
+                ENDIF
+            enddo
+        enddo
+       DEALLOCATE( canyon_orientation_tmp )
+    ELSE
+        do j=2,j1
+            do i=2,i1
+                slurb_tile%anisotropic_canyon(i,j) = .FALSE.
+                slurb_tile%theta_can(i,j) = -9999.0_field_r
+            enddo
+        enddo
+    ENDIF
+
+    ! CALL get_grid_variable_1d_real( 'street_canyon_aspect_ratio', slurb_tile%hw_can,                     &
+    !                                 street_canyon_aspect_ratio )
+    ! call check_grid_variable("street_canyon_aspect_ratio", slurb_tile%street_canyon_aspect_ratio(2:i1,2:j1),                   &
+    !                                   TINY( 1.0_field_r ), HUGE( 0.0_field_r ) )
+    call read_nc_field(ncid, 'hw_can', slurb_tile%hw_can(2:i1,2:j1), fillvalue=street_canyon_aspect_ratio, requirefill=.true.)
+    call check_grid_variable("hw_can", slurb_tile%hw_can(2:i1,2:j1), TINY(0.0_field_r), 1000.0_field_r ) !TODOSELF REALISTIC FALUE
+
+    ! CALL get_grid_variable_1d_real( 'z0_urb', slurb_tile%z0_urb, urban_roughness_length )
+    ! call check_grid_variable("z0_urb", slurb_tile%z0_urb(2:i1,2:j1), TINY( 1.0_field_r ), MINVAL( slurb_tile%z_mo ) )
+    call read_nc_field(ncid, 'z0_urb', slurb_tile%z0_urb(2:i1,2:j1), fillvalue=urban_roughness_length, requirefill=.true.)
+    call check_grid_variable("z0_urb", slurb_tile%z0_urb(2:i1,2:j1), TINY(0.0_field_r), 1000.0_field_r ) !TODOSELF REALISTIC FALUE
 
 
     ALLOCATE( type_tmp(i2, j2) )
     type_tmp(:,:) = 2 ! TODOSELF buiding type staat voor nu gewoon even vast op 2
 
     CALL slurb_default_pars
+
+    call read_nc_field(ncid, "building_type", type_tmp, fillvalue=2, requirefill=.true.)
+    CALL check_grid_variable( 'building_type', type_tmp, 1, 6 )
 
     do j=2,j1
       do i=2,i1
@@ -2527,10 +2061,12 @@ end subroutine slurb_update_external_vars
 
         enddo
     enddo
-
-!
-!-- Process pavement type.
-    type_tmp(:,:) = 2 !TODOSELF pavement type staat nu ook gewoon constant op 2
+    if (lread_from_netcdf) then
+        call read_nc_field(ncid, "pavement_type", type_tmp, fillvalue=2, requirefill=.true.)
+        CALL check_grid_variable( 'pavement_type', type_tmp, 1, 5 )
+    endif
+    !
+    !-- Process pavement type.
 
     do j=2,j1
       do i=2,i1
@@ -2562,17 +2098,85 @@ end subroutine slurb_update_external_vars
 !
 !-- Process material layer information such as thickness, heat capacities, if given.
 !-- By default, use information provided on building type.
-    ! CALL get_grid_variable_1d_real( 'albedo_roof', slurb_tile%albedo_roof )
-    ! CALL check_grid_variable_1d_real( 'albedo_roof', slurb_tile%albedo_roof, 0.0_field_r, 1.0_field_r )
-    ! CALL get_grid_variable_2d_real( 'dz_roof', slurb_tile%dz_roof )
-    ! CALL check_grid_variable_2d_real( 'dz_roof', slurb_tile%dz_roof, TINY( 1.0_field_r ), HUGE( 1.0_field_r ) )
-    ! CALL get_grid_variable_1d_real( 'emiss_roof', slurb_tile%emiss_roof )
-    ! CALL check_grid_variable_1d_real( 'emiss_roof', slurb_tile%emiss_roof, 0.0_field_r, 1.0_field_r )
-    ! CALL get_grid_variable_2d_real( 'c_roof', slurb_tile%c_roof )
-    ! CALL check_grid_variable_2d_real( 'c_roof', slurb_tile%c_roof, TINY( 1.0_field_r ), HUGE( 1.0_field_r ) )
-!
-!-- SLUrb uses the total layer heat capacity instead of specific heat capacity,
-!-- so multiply c_roof by dz_roof.
+    if (lread_from_netcdf) then
+        call read_nc_field(ncid, 'albedo_roof', slurb_tile%albedo_roof(2:i1,2:j1), requirefill=.false.)
+        call check_grid_variable("albedo_roof", slurb_tile%albedo_roof(2:i1,2:j1), 0.0_field_r, 1.0_field_r )
+        call read_nc_field(ncid, 'dz_roof', slurb_tile%dz_roof(:,2:i1,2:j1), requirefill=.false.)
+        call check_grid_variable("dz_roof", slurb_tile%dz_roof(:,2:i1,2:j1), TINY( 1.0_field_r ), HUGE( 1.0_field_r ) )
+        call read_nc_field(ncid, 'emiss_roof', slurb_tile%emiss_roof(2:i1,2:j1), requirefill=.false.)
+        call check_grid_variable("emiss_roof", slurb_tile%emiss_roof(2:i1,2:j1), 0.0_field_r, 1.0_field_r )
+        call read_nc_field(ncid, 'c_roof', slurb_tile%c_roof(:,2:i1,2:j1), requirefill=.false.)
+        call check_grid_variable("c_roof", slurb_tile%c_roof(:,2:i1,2:j1), TINY( 1.0_field_r ), HUGE( 1.0_field_r ) )
+
+        call read_nc_field(ncid, 'z0_roof', slurb_tile%z0_roof(2:i1,2:j1), requirefill=.false.)
+        call check_grid_variable("z0_roof", slurb_tile%z0_roof(2:i1,2:j1),                                     &
+                                        TINY( 1.0_field_r ), 0.5_field_r * MINVAL( slurb_tile%z_mo(2:i1,2:j1) ) )
+        call read_nc_field(ncid, 'z0h_roof', slurb_tile%z0h_roof(2:i1,2:j1), requirefill=.false.)
+        call check_grid_variable("z0h_roof", slurb_tile%z0h_roof(2:i1,2:j1),                                   &
+                                        TINY( 1.0_field_r ), 0.5_field_r * MINVAL( slurb_tile%z_mo(2:i1,2:j1) ) )
+        call read_nc_field(ncid, 'lambda_roof', slurb_tile%lambda_roof(:,2:i1,2:j1), requirefill=.false.)
+        call check_grid_variable("lambda_roof", slurb_tile%lambda_roof(:,2:i1,2:j1),                             &
+                                        TINY( 1.0_field_r ), HUGE( 1.0_field_r )  )
+        call read_nc_field(ncid, 'albedo_wall', slurb_tile%albedo_wall(2:i1,2:j1), requirefill=.false.)
+        call check_grid_variable("albedo_wall", slurb_tile%albedo_wall(2:i1,2:j1), 0.0_field_r, 1.0_field_r )
+        call read_nc_field(ncid, 'dz_wall', slurb_tile%dz_wall(:,2:i1,2:j1), requirefill=.false.)
+        call check_grid_variable("dz_wall", slurb_tile%dz_wall(:,2:i1,2:j1), TINY( 1.0_field_r ), HUGE( 1.0_field_r ) )
+        call read_nc_field(ncid, 'emiss_wall', slurb_tile%emiss_wall(2:i1,2:j1), requirefill=.false.)
+        call check_grid_variable("emiss_wall", slurb_tile%emiss_wall(2:i1,2:j1), 0.0_field_r, 1.0_field_r )
+        call read_nc_field(ncid, 'c_wall', slurb_tile%c_wall(:,2:i1,2:j1), requirefill=.false.)
+        call check_grid_variable("c_wall", slurb_tile%c_wall(:,2:i1,2:j1), TINY( 1.0_field_r ), HUGE( 1.0_field_r ) )
+
+        call read_nc_field(ncid, 'z0_wall', slurb_tile%z0_wall(2:i1,2:j1), requirefill=.false.)
+        call check_grid_variable("z0_wall", slurb_tile%z0_wall(2:i1,2:j1), TINY( 1.0_field_r ), 1.0_field_r )
+        call read_nc_field(ncid, 'lambda_wall', slurb_tile%lambda_wall(:,2:i1,2:j1), requirefill=.false.)
+        call check_grid_variable("lambda_wall", slurb_tile%lambda_wall(:,2:i1,2:j1),                             &
+                                        TINY( 1.0_field_r ), HUGE( 1.0_field_r )  )
+        call read_nc_field(ncid, 'albedo_win', slurb_tile%albedo_win(2:i1,2:j1), requirefill=.false.)
+        call check_grid_variable("albedo_win", slurb_tile%albedo_win(2:i1,2:j1), 0.0_field_r, 1.0_field_r )
+        call read_nc_field(ncid, 'dz_win', slurb_tile%dz_win(:,2:i1,2:j1), requirefill=.false.)
+        call check_grid_variable("dz_win", slurb_tile%dz_win(:,2:i1,2:j1), TINY( 1.0_field_r ), HUGE( 1.0_field_r ) )
+        call read_nc_field(ncid, 'emiss_win', slurb_tile%emiss_win(2:i1,2:j1), requirefill=.false.)
+        call check_grid_variable("emiss_win", slurb_tile%emiss_win(2:i1,2:j1), 0.0_field_r, 1.0_field_r )
+        call read_nc_field(ncid, 'c_win', slurb_tile%c_win(:,2:i1,2:j1), requirefill=.false.)
+        call check_grid_variable("c_win", slurb_tile%c_win(:,2:i1,2:j1), TINY( 1.0_field_r ), HUGE( 1.0_field_r ) )
+
+        ! slurb_tile%c_win = slurb_tile%c_win * slurb_tile%dz_win
+        call read_nc_field(ncid, 'lambda_win', slurb_tile%lambda_win(:,2:i1,2:j1), requirefill=.false.)
+        call check_grid_variable("lambda_win", slurb_tile%lambda_win(:,2:i1,2:j1),                            &
+                                        TINY( 1.0_field_r ), HUGE( 1.0_field_r )  )
+        call read_nc_field(ncid, 'transmissivity_win', slurb_tile%transmissivity_win(2:i1,2:j1), requirefill=.false.)
+        call check_grid_variable("transmissivity_win", slurb_tile%transmissivity_win(2:i1,2:j1),            &
+                                        0.0_field_r, 1.0_field_r )
+
+        CALL read_nc_field(ncid, 'f_win', slurb_tile%f_win(2:i1,2:j1), requirefill=.false. )
+        call check_grid_variable("f_win", slurb_tile%f_win(2:i1,2:j1), 0.0_field_r, 1.0_field_r )
+
+
+        call read_nc_field(ncid, 'albedo_road', slurb_tile%albedo_road(2:i1,2:j1), requirefill=.false.)
+        call check_grid_variable("albedo_road", slurb_tile%albedo_road(2:i1,2:j1), 0.0_field_r, 1.0_field_r )
+        call read_nc_field(ncid, 'dz_road', slurb_tile%dz_road(:,2:i1,2:j1), requirefill=.false.)
+        call check_grid_variable("dz_road", slurb_tile%dz_road(:,2:i1,2:j1), TINY( 1.0_field_r ), HUGE( 1.0_field_r ) )
+        call read_nc_field(ncid, 'emiss_road', slurb_tile%emiss_road(2:i1,2:j1), requirefill=.false.)
+        call check_grid_variable("emiss_road", slurb_tile%emiss_road(2:i1,2:j1), 0.0_field_r, 1.0_field_r )
+        call read_nc_field(ncid, 'c_road', slurb_tile%c_road(:,2:i1,2:j1), requirefill=.false.)
+        call check_grid_variable("c_road", slurb_tile%c_road(:,2:i1,2:j1), TINY( 1.0_field_r ), HUGE( 1.0_field_r ) )
+
+        call read_nc_field(ncid, 'z0_road', slurb_tile%z0_road(2:i1,2:j1), requirefill=.false.)
+        call check_grid_variable("z0_road", slurb_tile%z0_road(2:i1,2:j1), TINY( 1.0_field_r ), 1.0_field_r )
+        call check_grid_variable("z0h_road", slurb_tile%z0h_road(2:i1,2:j1), TINY( 1.0_field_r ), 1.0_field_r )
+        call read_nc_field(ncid, 'lambda_road', slurb_tile%lambda_road(:,2:i1,2:j1), requirefill=.false.)
+        call check_grid_variable("lambda_road", slurb_tile%lambda_road(:,2:i1,2:j1),                             &
+                                        TINY( 1.0_field_r ), HUGE( 1.0_field_r )  )
+    endif
+
+
+    ! slurb_tile%lambda_road(:,:,:) = 0.00001
+    ! slurb_tile%lambda_roof(:,:,:) = 0.00001
+    ! slurb_tile%lambda_win(:,:,:) = 0.00001
+    ! slurb_tile%lambda_wall(:,:,:) = 0.00001
+    !
+    !-- SLUrb uses the total layer heat capacity instead of specific heat capacity,
+    !-- so multiply c_roof by dz_roof.
 
     do j=2,j1
       do i=2,i1
@@ -2581,26 +2185,9 @@ end subroutine slurb_update_external_vars
         enddo
       enddo
     enddo
-    ! CALL get_grid_variable_1d_real( 'z0_roof', slurb_tile%z0_roof )
-    ! CALL check_grid_variable_1d_real( 'z0_roof', slurb_tile%z0_roof,                                     &
-    !                                   TINY( 1.0_field_r ), 0.5_field_r * MINVAL( slurb_tile%z_mo ) )
-    ! CALL get_grid_variable_1d_real( 'z0h_roof', slurb_tile%z0h_roof )
-    ! CALL check_grid_variable_1d_real( 'z0h_roof', slurb_tile%z0h_roof,                                   &
-    !                                   TINY( 1.0_field_r ), 0.5_field_r * MINVAL( slurb_tile%z_mo ) )
-    ! CALL get_grid_variable_2d_real( 'lambda_roof', slurb_tile%lambda_roof )
-    ! CALL check_grid_variable_2d_real( 'lambda_roof', slurb_tile%lambda_roof,                             &
-    !                                   TINY( 1.0_field_r ), HUGE( 1.0_field_r )  )
-    ! CALL get_grid_variable_1d_real( 'albedo_wall', slurb_tile%albedo_wall )
-    ! CALL check_grid_variable_1d_real( 'albedo_wall', slurb_tile%albedo_wall, 0.0_field_r, 1.0_field_r )
-    ! CALL get_grid_variable_2d_real( 'dz_wall', slurb_tile%dz_wall )
-    ! CALL check_grid_variable_2d_real( 'dz_wall', slurb_tile%dz_wall, TINY( 1.0_field_r ), HUGE( 1.0_field_r ) )
-    ! CALL get_grid_variable_1d_real( 'emiss_wall', slurb_tile%emiss_wall )
-    ! CALL check_grid_variable_1d_real( 'emiss_wall', slurb_tile%emiss_wall, 0.0_field_r, 1.0_field_r )
-    ! CALL get_grid_variable_2d_real( 'c_wall', slurb_tile%c_wall )
-    ! CALL check_grid_variable_2d_real( 'c_wall', slurb_tile%c_wall, TINY( 1.0_field_r ), HUGE( 1.0_field_r ) )
-!
-!-- SLUrb uses the total layer heat capacity instead of specific heat capacity,
-!-- so multiply c_wall by dz_wall.
+    !
+    !-- SLUrb uses the total layer heat capacity instead of specific heat capacity,
+    !-- so multiply c_wall by dz_wall.
     do j=2,j1
       do i=2,i1
         do k=1,4
@@ -2608,22 +2195,9 @@ end subroutine slurb_update_external_vars
         enddo
       enddo
     enddo
-    ! CALL get_grid_variable_1d_real( 'z0_wall', slurb_tile%z0_wall )
-    ! CALL check_grid_variable_1d_real( 'z0_wall', slurb_tile%z0_wall, TINY( 1.0_field_r ), 1.0_field_r )
-    ! CALL get_grid_variable_2d_real( 'lambda_wall', slurb_tile%lambda_wall )
-    ! CALL check_grid_variable_2d_real( 'lambda_wall', slurb_tile%lambda_wall,                             &
-    !                                   TINY( 1.0_field_r ), HUGE( 1.0_field_r )  )
-    ! CALL get_grid_variable_1d_real( 'albedo_window', slurb_tile%albedo_win )
-    ! CALL check_grid_variable_1d_real( 'albedo_window', slurb_tile%albedo_win, 0.0_field_r, 1.0_field_r )
-    ! CALL get_grid_variable_2d_real( 'dz_window', slurb_tile%dz_win )
-    ! CALL check_grid_variable_2d_real( 'dz_window', slurb_tile%dz_win, TINY( 1.0_field_r ), HUGE( 1.0_field_r ) )
-    ! CALL get_grid_variable_1d_real( 'emiss_window', slurb_tile%emiss_win )
-    ! CALL check_grid_variable_1d_real( 'emiss_window', slurb_tile%emiss_win, 0.0_field_r, 1.0_field_r )
-    ! CALL get_grid_variable_2d_real( 'c_window', slurb_tile%c_win )
-    ! CALL check_grid_variable_2d_real( 'c_window', slurb_tile%c_win, TINY( 1.0_field_r ), HUGE( 1.0_field_r ) )
-!
-!-- SLUrb uses the total layer heat capacity instead of specific heat capacity, so multiply c_win
-!-- by dz_win.
+    !
+    !-- SLUrb uses the total layer heat capacity instead of specific heat capacity, so multiply c_win
+    !-- by dz_win.
     do j=2,j1
       do i=2,i1
         do k=1,4
@@ -2631,29 +2205,9 @@ end subroutine slurb_update_external_vars
         enddo
       enddo
     enddo
-    ! slurb_tile%c_win = slurb_tile%c_win * slurb_tile%dz_win
-    ! CALL get_grid_variable_2d_real( 'lambda_window', slurb_tile%lambda_win )
-    ! CALL check_grid_variable_2d_real( 'lambda_window', slurb_tile%lambda_win,                            &
-    !                                   TINY( 1.0_field_r ), HUGE( 1.0_field_r )  )
-    ! CALL get_grid_variable_1d_real( 'transmissivity_window', slurb_tile%transmissivity_win )
-    ! CALL check_grid_variable_1d_real( 'transmissivity_window', slurb_tile%transmissivity_win,            &
-    !                                   0.0_field_r, 1.0_field_r )
-
-    ! CALL get_grid_variable_1d_real( 'window_fraction', slurb_tile%f_win, window_fraction )
-    ! CALL check_grid_variable_1d_real( 'window_fraction', slurb_tile%f_win, 0.0_field_r, 1.0_field_r )
-
-
-    ! CALL get_grid_variable_1d_real( 'albedo_road', slurb_tile%albedo_road )
-    ! CALL check_grid_variable_1d_real( 'albedo_road', slurb_tile%albedo_road, 0.0_field_r, 1.0_field_r )
-    ! CALL get_grid_variable_2d_real( 'dz_road', slurb_tile%dz_road )
-    ! CALL check_grid_variable_2d_real( 'dz_road', slurb_tile%dz_road, TINY( 1.0_field_r ), HUGE( 1.0_field_r ) )
-    ! CALL get_grid_variable_1d_real( 'emiss_road', slurb_tile%emiss_road )
-    ! CALL check_grid_variable_1d_real( 'emiss_road', slurb_tile%emiss_road, 0.0_field_r, 1.0_field_r )
-    ! CALL get_grid_variable_2d_real( 'c_road', slurb_tile%c_road )
-    ! CALL check_grid_variable_2d_real( 'c_road', slurb_tile%c_road, TINY( 1.0_field_r ), HUGE( 1.0_field_r ) )
-!
-!-- SLUrb uses the total layer heat capacity instead of specific heat capacity,
-!-- so multiply c_road by dz_road.
+    !
+    !-- SLUrb uses the total layer heat capacity instead of specific heat capacity,
+    !-- so multiply c_road by dz_road.
 
     do j=2,j1
       do i=2,i1
@@ -2662,63 +2216,17 @@ end subroutine slurb_update_external_vars
         enddo
       enddo
     enddo
-    ! CALL get_grid_variable_1d_real( 'z0_road', slurb_tile%z0_road )
-    ! CALL check_grid_variable_1d_real( 'z0_road', slurb_tile%z0_road, TINY( 1.0_field_r ), 1.0_field_r )
-    ! CALL check_grid_variable_1d_real( 'z0h_road', slurb_tile%z0h_road, TINY( 1.0_field_r ), 1.0_field_r )
-    ! CALL get_grid_variable_2d_real( 'lambda_road', slurb_tile%lambda_road )
-    ! CALL check_grid_variable_2d_real( 'lambda_road', slurb_tile%lambda_road,                             &
-    !                                   TINY( 1.0_field_r ), HUGE( 1.0_field_r )  )
-!
-!-- Compute weighted wall-window albedo.
 
-
-    call slurb_read_RADnamelist
-    if ( namemiss_road /= -9999 ) THEN
-        slurb_tile%emiss_road(:,:) = namemiss_road
-    ENDIF 
-    if ( namemiss_wall /= -9999 ) THEN
-        slurb_tile%emiss_wall(:,:) = namemiss_wall
-    ENDIF
-    if ( namemiss_win /= -9999 ) THEN
-        slurb_tile%emiss_win(:,:) = namemiss_win
-    ENDIF
-    if ( namemiss_roof /= -9999 ) THEN
-        slurb_tile%emiss_roof(:,:) = namemiss_roof
-    ENDIF
-    if ( namalbedo_road /= -9999 ) THEN
-        slurb_tile%albedo_road(:,:) = namalbedo_road
-    ENDIF
-    if ( namalbedo_wall /= -9999 ) THEN
-        slurb_tile%albedo_wall(:,:) = namalbedo_wall
-    ENDIF
-    if ( namalbedo_win /= -9999 ) THEN
-        slurb_tile%albedo_win(:,:) = namalbedo_win
-    ENDIF
-    if ( namalbedo_roof /= -9999 ) THEN
-        slurb_tile%albedo_roof(:,:) = namalbedo_roof
-    ENDIF
-    if ( namlambda_road /= -9999 ) THEN
-        slurb_tile%lambda_road(:,:,:) = namlambda_road
-    ENDIF
-    if ( namlambda_wall /= -9999 ) THEN
-        slurb_tile%lambda_wall(:,:,:) = namlambda_wall
-    ENDIF
-    if ( namlambda_win /= -9999 ) THEN
-        slurb_tile%lambda_win(:,:,:) = namlambda_win
-    ENDIF
-    if ( namlambda_roof /= -9999 ) THEN
-        slurb_tile%lambda_roof(:,:,:) = namlambda_roof
-    ENDIF
-
-
+    !
+    !-- Compute weighted wall-window albedo.
     do j=2,j1
       do i=2,i1
        slurb_tile%albedo_wall_win(i,j) = ( 1.0_field_r - slurb_tile%f_win(i,j) ) * slurb_tile%albedo_wall(i,j) +                &
                                  slurb_tile%f_win(i,j) * slurb_tile%albedo_win(i,j)
       enddo
     enddo
-!
-!-- Compute the cumulative layer thickness zw for windows.
+    !
+    !-- Compute the cumulative layer thickness zw for windows.
     do j=2,j1
         do i=2,i1
             slurb_tile%zw_win(nzt_win,i,j) = slurb_tile%dz_win(nzt_win,i,j)
@@ -2818,8 +2326,8 @@ end subroutine slurb_update_external_vars
         slurb_tile%shf_urb(i,j)  = 0.0_field_r
         slurb_tile%qsws_urb(i,j) = 0.0_field_r
 
-        slurb_tile%t_can(i,j)   = bc_atm
-        slurb_tile%t_can_p(i,j) = slurb_tile%t_can(i,j)
+        slurb_tile%t_can_0(i,j)   = bc_atm
+        slurb_tile%t_can_m(i,j) = slurb_tile%t_can_0(i,j)
 
         slurb_tile%t_indoor(i,j) = building_indoor_temperature
         slurb_tile%t_soil(i,j) = deep_soil_temperature
@@ -2832,53 +2340,53 @@ end subroutine slurb_update_external_vars
 !--       In case of windowless facade, set window temps to fill value to prevent meaningless
 !--       output values. Vice versa for the opposite case.
         IF ( slurb_tile%f_win(i,j) < 1.0_field_r )  THEN
-            slurb_tile%t_wall_a(:,i,j) = calc_1d_heat_equation( SIZE( slurb_tile%t_wall_a, 1 ), bc_atm,         &
+            slurb_tile%t_wall_a_0(:,i,j) = calc_1d_heat_equation( SIZE( slurb_tile%t_wall_a_0, 1 ), bc_atm,         &
                                                         slurb_tile%t_indoor(i,j),                         &
                                                         slurb_tile%conductivity_wall(:,i,j) )
-            slurb_tile%t_wall_a_p(:,i,j) = slurb_tile%t_wall_a(:,i,j)
-            slurb_tile%t_wall_b(:,i,j)   = slurb_tile%t_wall_a(:,i,j)
-            slurb_tile%t_wall_b_p(:,i,j) = slurb_tile%t_wall_a(:,i,j)
+            slurb_tile%t_wall_a_m(:,i,j) = slurb_tile%t_wall_a_0(:,i,j)
+            slurb_tile%t_wall_b_0(:,i,j)   = slurb_tile%t_wall_a_0(:,i,j)
+            slurb_tile%t_wall_b_m(:,i,j) = slurb_tile%t_wall_a_0(:,i,j)
         ELSE
             IF ( .NOT. data_output_raw )  THEN
-                slurb_tile%t_wall_a(:,i,j)   = output_fill_value
-                slurb_tile%t_wall_a_p(:,i,j) = output_fill_value
+                slurb_tile%t_wall_a_0(:,i,j)   = output_fill_value
+                slurb_tile%t_wall_a_m(:,i,j) = output_fill_value
             ENDIF
         ENDIF
 
         IF ( slurb_tile%f_win(i,j) > 0.0_field_r )  THEN
-            slurb_tile%t_win_a(:,i,j) = calc_1d_heat_equation( SIZE( slurb_tile%t_win_a, 1 ), bc_atm,           &
+            slurb_tile%t_win_a_0(:,i,j) = calc_1d_heat_equation( SIZE( slurb_tile%t_win_a_0, 1 ), bc_atm,           &
                                                         slurb_tile%t_indoor(i,j),                          &
                                                         slurb_tile%conductivity_win(:,i,j) )
-            slurb_tile%t_win_a_p(:,i,j) = slurb_tile%t_win_a(:,i,j)
-            slurb_tile%t_win_b(:,i,j)   = slurb_tile%t_win_a(:,i,j)
-            slurb_tile%t_win_b_p(:,i,j) = slurb_tile%t_win_a(:,i,j)
+            slurb_tile%t_win_a_m(:,i,j) = slurb_tile%t_win_a_0(:,i,j)
+            slurb_tile%t_win_b_0(:,i,j)   = slurb_tile%t_win_a_0(:,i,j)
+            slurb_tile%t_win_b_m(:,i,j) = slurb_tile%t_win_a_0(:,i,j)
         ELSE
             IF ( .NOT. data_output_raw )  THEN
-                slurb_tile%t_win_a(:,i,j)   = output_fill_value
-                slurb_tile%t_win_a_p(:,i,j) = output_fill_value
+                slurb_tile%t_win_a_0(:,i,j)   = output_fill_value
+                slurb_tile%t_win_a_m(:,i,j) = output_fill_value
             ENDIF
         ENDIF
 
-        slurb_tile%t_roof(:,i,j) = calc_1d_heat_equation( SIZE( slurb_tile%t_roof, 1 ), bc_atm,                &
+        slurb_tile%t_roof_0(:,i,j) = calc_1d_heat_equation( SIZE( slurb_tile%t_roof_0, 1 ), bc_atm,                &
                                                     slurb_tile%t_indoor(i,j), slurb_tile%conductivity_roof(:,i,j) )
-        slurb_tile%t_roof_p(:,i,j) = slurb_tile%t_roof(:,i,j)
+        slurb_tile%t_roof_m(:,i,j) = slurb_tile%t_roof_0(:,i,j)
 
-        slurb_tile%t_road(:,i,j) = calc_1d_heat_equation( SIZE( slurb_tile%t_road, 1 ), bc_atm,                &
+        slurb_tile%t_road_0(:,i,j) = calc_1d_heat_equation( SIZE( slurb_tile%t_road_0, 1 ), bc_atm,                &
                                                     slurb_tile%t_soil(i,j), slurb_tile%conductivity_road(:,i,j) )
-        slurb_tile%t_road_p(:,i,j) = slurb_tile%t_road(:,i,j)
+        slurb_tile%t_road_m(:,i,j) = slurb_tile%t_road_0(:,i,j)
 
         IF ( moist_physics )  THEN
             slurb_tile%vpt_can(i,j) = 0.0_field_r
 
-            slurb_tile%q_can(i,j)        = slurb_tile%q1(i,j)
-            slurb_tile%q_can_p(i,j)      = slurb_tile%q_can(i,j)
-            slurb_tile%m_liq_roof(i,j)   = 0.0_field_r
-            slurb_tile%m_liq_roof_p(i,j) = slurb_tile%m_liq_roof(i,j)
-            slurb_tile%m_liq_road(i,j)   = 0.0_field_r
-            slurb_tile%m_liq_road_p(i,j) = slurb_tile%m_liq_road(i,j)
+            slurb_tile%q_can_0(i,j)      = slurb_tile%q1(i,j)
+            slurb_tile%q_can_m(i,j)      = slurb_tile%q_can_0(i,j)
+            slurb_tile%m_liq_roof_m(i,j)   = 0.0_field_r
+            slurb_tile%m_liq_roof_0(i,j) = slurb_tile%m_liq_roof_m(i,j)
+            slurb_tile%m_liq_road_m(i,j)   = 0.0_field_r
+            slurb_tile%m_liq_road_0(i,j) = slurb_tile%m_liq_road_m(i,j)
 
             slurb_tile%q_roof(i,j) = slurb_tile%q1(i,j)
-            slurb_tile%q_road(i,j) = slurb_tile%q_can(i,j)
+            slurb_tile%q_road(i,j) = slurb_tile%q_can_0(i,j)
         ENDIF
 
         slurb_tile%ol_roof(i,j) = slurb_tile%z_mo(i,j)     / zeta_min
@@ -2890,11 +2398,11 @@ end subroutine slurb_update_external_vars
     !
     !--    Init potential temperatures and virtual potential temperatures. These need to be computed
     !--    also for the restart case, as d_exner is not yet available when rrd routines are called.
-        slurb_tile%pt_can(i,j) = slurb_tile%t_can(i,j) / exnf(k_topo)
+        slurb_tile%pt_can(i,j) = slurb_tile%t_can_0(i,j) / exnf(k_topo)
 
         IF ( slurb_tile%f_win(i,j) < 1.0_field_r )  THEN
-            slurb_tile%pt_wall_a(i,j) = slurb_tile%t_wall_a(nzt_wall,i,j) / exnf(k_topo)
-            slurb_tile%pt_wall_b(i,j) = slurb_tile%t_wall_b(nzt_wall,i,j) / exnf(k_topo)
+            slurb_tile%pt_wall_a(i,j) = slurb_tile%t_wall_a_0(nzt_wall,i,j) / exnf(k_topo)
+            slurb_tile%pt_wall_b(i,j) = slurb_tile%t_wall_b_0(nzt_wall,i,j) / exnf(k_topo)
         ELSE
             IF ( .NOT. data_output_raw )  THEN
                 slurb_tile%pt_wall_a(i,j) = output_fill_value
@@ -2903,8 +2411,8 @@ end subroutine slurb_update_external_vars
         ENDIF
 
         IF ( slurb_tile%f_win(i,j) > 0.0_field_r )  THEN
-            slurb_tile%pt_win_a(i,j) = slurb_tile%t_win_a(nzt_win,i,j) / exnf(k_topo)
-            slurb_tile%pt_win_b(i,j) = slurb_tile%t_win_b(nzt_win,i,j) / exnf(k_topo)
+            slurb_tile%pt_win_a(i,j) = slurb_tile%t_win_a_0(nzt_win,i,j) / exnf(k_topo)
+            slurb_tile%pt_win_b(i,j) = slurb_tile%t_win_b_0(nzt_win,i,j) / exnf(k_topo)
         ELSE
             IF ( .NOT. data_output_raw )  THEN
                 slurb_tile%pt_win_a(i,j) = output_fill_value
@@ -2912,11 +2420,11 @@ end subroutine slurb_update_external_vars
             ENDIF
         ENDIF
 
-        slurb_tile%pt_roof(i,j) = slurb_tile%t_roof(nzt_roof,i,j) / exnf(k_topo)
-        slurb_tile%pt_road(i,j) = slurb_tile%t_road(nzt_road,i,j) / exnf(k_topo)
+        slurb_tile%pt_roof(i,j) = slurb_tile%t_roof_0(nzt_roof,i,j) / exnf(k_topo)
+        slurb_tile%pt_road(i,j) = slurb_tile%t_road_0(nzt_road,i,j) / exnf(k_topo)
 
         IF ( moist_physics )  THEN
-            slurb_tile%vpt_can(i,j)  = slurb_tile%pt_can(i,j)  * ( 1.0_field_r + 0.61_field_r * slurb_tile%q_can(i,j)  )
+            slurb_tile%vpt_can(i,j)  = slurb_tile%pt_can(i,j)  * ( 1.0_field_r + 0.61_field_r * slurb_tile%q_can_0(i,j)  )
             slurb_tile%vpt_roof(i,j) = slurb_tile%pt_roof(i,j) * ( 1.0_field_r + 0.61_field_r * slurb_tile%q_roof(i,j) )
             slurb_tile%vpt_road(i,j) = slurb_tile%pt_road(i,j) * ( 1.0_field_r + 0.61_field_r * slurb_tile%q_road(i,j) )
         ENDIF
@@ -2934,6 +2442,10 @@ end subroutine slurb_update_external_vars
             slurb_tile%tq_can(i,j)      = 0.0_field_r
             slurb_tile%tm_liq_roof(i,j) = 0.0_field_r
             slurb_tile%tm_liq_road(i,j) = 0.0_field_r
+            slurb_tile%tm_roof_runoff(i,j) = 0.0_field_r
+            slurb_tile%tm_road_runoff(i,j) = 0.0_field_r
+            slurb_tile%tm_roof_precep(i,j) = 0.0_field_r
+            slurb_tile%tm_road_precep(i,j) = 0.0_field_r
         ENDIF
 
     !
@@ -3016,13 +2528,13 @@ end subroutine slurb_update_external_vars
             slurb_tile%qsws_road(i,j)     = 0.0_field_r
             slurb_tile%qsws_roof(i,j)     = 0.0_field_r
 
-            e_s = 0.01_field_r * magnus( MIN( slurb_tile%t_road(nzt_road,i,j), 333.15_field_r ) )
+            e_s = magnus( MIN( slurb_tile%t_road_0(nzt_road,i,j), 333.15_field_r ) )
             slurb_tile%qs_road(i,j) = ep * e_s / ( ps - e_s )
-            e_s = 0.01_field_r * magnus( MIN( slurb_tile%t_roof(nzt_roof,i,j), 333.15_field_r ) )
+            e_s = magnus( MIN( slurb_tile%t_roof_0(nzt_roof,i,j), 333.15_field_r ) )
             slurb_tile%qs_roof(i,j) = ep * e_s / ( ps - e_s )
 
-            slurb_tile%c_liq_road(i,j)    = MIN( 1.0_field_r, ( slurb_tile%m_liq_road(i,j) / m_liq_max_road )**0.67 )
-            slurb_tile%c_liq_roof(i,j)    = MIN( 1.0_field_r, ( slurb_tile%m_liq_roof(i,j) / m_liq_max_roof )**0.67 )
+            slurb_tile%c_liq_road(i,j)    = MIN( 1.0_field_r, ( slurb_tile%m_liq_road_m(i,j) / m_liq_max_road )**0.67 )
+            slurb_tile%c_liq_roof(i,j)    = MIN( 1.0_field_r, ( slurb_tile%m_liq_roof_m(i,j) / m_liq_max_roof )**0.67 )
         ENDIF
 
 
@@ -3134,37 +2646,71 @@ end subroutine slurb_update_external_vars
 ! ------------
 ! Swap timelevel of the SLUrb model.
 !--------------------------------------------------------------------------------------------------!
- SUBROUTINE slurb_swap_timelevel ( mod_count )
+ SUBROUTINE slurb_swap_timelevel()
+    use modglobal, only: rk3step
+    modcount = mod(modcount, 2)
 
-    INTEGER, INTENT(IN) ::  mod_count
+    if (rk3step == 1) then
+        slurb_tile%t_wall_a_m(:,:,:) = slurb_tile%t_wall_a_0(:,:,:)
+        slurb_tile%t_wall_b_m(:,:,:) = slurb_tile%t_wall_b_0(:,:,:)
+        slurb_tile%t_win_a_m(:,:,:) = slurb_tile%t_win_a_0(:,:,:)
+        slurb_tile%t_win_b_m(:,:,:) = slurb_tile%t_win_b_0(:,:,:)
+        slurb_tile%t_roof_m(:,:,:) = slurb_tile%t_roof_0(:,:,:)
+        slurb_tile%t_road_m(:,:,:) = slurb_tile%t_road_0(:,:,:)
+        slurb_tile%t_can_m(:,:) = slurb_tile%t_can_0(:,:)
+        slurb_tile%q_can_m(:,:) = slurb_tile%q_can_0(:,:)
+        slurb_tile%m_liq_roof_m(:,:) = slurb_tile%m_liq_roof_0(:,:)
+        slurb_tile%m_liq_road_m(:,:) = slurb_tile%m_liq_road_0(:,:)
+    endif
+    ! SELECT CASE ( modcount )
+    !    CASE ( 0 ) !initialization phase
+    !     !   slurb_tile%q_can_0 => q_can_2; slurb_tile%q_can_m => q_can_1
+    !     !   slurb_tile%t_can_0 => t_can_2; slurb_tile%t_can_m => t_can_1
+    !     !   slurb_tile%m_liq_road_m => m_liq_road_2; slurb_tile%m_liq_road_0 => m_liq_road_1
+    !     !   slurb_tile%m_liq_roof_m => m_liq_roof_2; slurb_tile%m_liq_roof_0 => m_liq_roof_1
+    !     !   slurb_tile%t_wall_a_0 => t_wall_a_2; slurb_tile%t_wall_a_m => t_wall_a_1
+    !     !   slurb_tile%t_wall_b_0 => t_wall_b_2; slurb_tile%t_wall_b_m => t_wall_b_1
+    !     !   slurb_tile%t_win_a_0 => t_win_a_2; slurb_tile%t_win_a_m => t_win_a_1
+    !     !   slurb_tile%t_win_b_0 => t_win_b_2; slurb_tile%t_win_b_m => t_win_b_1
+    !     !   slurb_tile%t_roof_0 => t_roof_2; slurb_tile%t_roof_m => t_roof_1
+    !     !   slurb_tile%t_road_0 => t_road_2; slurb_tile%t_road_m => t_road_1
+    !    CASE ( 1 ) ! set q_can_0 to equal q_can_m
+    !     !   slurb_tile%q_can_0 => q_can_1; slurb_tile%q_can_m => q_can_2
+    !     !   slurb_tile%t_can_0 => t_can_1; slurb_tile%t_can_m => t_can_2
+    !     !   slurb_tile%m_liq_road_m => m_liq_road_1; slurb_tile%m_liq_road_0 => m_liq_road_2
+    !     !   slurb_tile%m_liq_roof_m => m_liq_roof_1; slurb_tile%m_liq_roof_0 => m_liq_roof_2
+    !     !   slurb_tile%t_wall_a_0 => t_wall_a_1; slurb_tile%t_wall_a_m => t_wall_a_2
+    !     !   slurb_tile%t_wall_b_0 => t_wall_b_1; slurb_tile%t_wall_b_m => t_wall_b_2
+    !     !   slurb_tile%t_win_a_0 => t_win_a_1; slurb_tile%t_win_a_m => t_win_a_2
+    !     !   slurb_tile%t_win_b_0 => t_win_b_1; slurb_tile%t_win_b_m => t_win_b_2
+    !     !   slurb_tile%t_road_0 => t_road_1; slurb_tile%t_road_m => t_road_2
+    !     !   slurb_tile%t_roof_0 => t_roof_1; slurb_tile%t_roof_m => t_roof_2
 
-    SELECT CASE ( mod_count )
+    ! !    CASE ( 2 )
+    ! !       slurb_tile%q_can_0 => q_can_2; slurb_tile%q_can_m => q_can_1
+    ! !       slurb_tile%t_can_0 => t_can_2; slurb_tile%t_can_m => t_can_1
+    ! !       slurb_tile%m_liq_road_m => m_liq_road_2; slurb_tile%m_liq_road_0 => m_liq_road_1
+    ! !       slurb_tile%m_liq_roof_m => m_liq_roof_2; slurb_tile%m_liq_roof_0 => m_liq_roof_1
+    ! !       slurb_tile%t_wall_a_0 => t_wall_a_2; slurb_tile%t_wall_a_m => t_wall_a_1
+    ! !       slurb_tile%t_wall_b_0 => t_wall_b_2; slurb_tile%t_wall_b_m => t_wall_b_1
+    ! !       slurb_tile%t_win_a_0 => t_win_a_2; slurb_tile%t_win_a_m => t_win_a_1
+    ! !       slurb_tile%t_win_b_0 => t_win_b_2; slurb_tile%t_win_b_m => t_win_b_1
+    ! !       slurb_tile%t_roof_0 => t_roof_2; slurb_tile%t_roof_m => t_roof_1
+    ! !       slurb_tile%t_road_0 => t_road_2; slurb_tile%t_road_m => t_road_1
+        
+    !     ! CASE ( 3 )
+    !     !   slurb_tile%q_can_0 => q_can_2; slurb_tile%q_can_m => q_can_1
+    !     !   slurb_tile%t_can_0 => t_can_2; slurb_tile%t_can_m => t_can_1
+    !     !   slurb_tile%m_liq_road_m => m_liq_road_2; slurb_tile%m_liq_road_0 => m_liq_road_1
+    !     !   slurb_tile%m_liq_roof_m => m_liq_roof_2; slurb_tile%m_liq_roof_0 => m_liq_roof_1
+    !     !   slurb_tile%t_wall_a_0 => t_wall_a_2; slurb_tile%t_wall_a_m => t_wall_a_1
+    !     !   slurb_tile%t_wall_b_0 => t_wall_b_2; slurb_tile%t_wall_b_m => t_wall_b_1
+    !     !   slurb_tile%t_win_a_0 => t_win_a_2; slurb_tile%t_win_a_m => t_win_a_1
+    !     !   slurb_tile%t_win_b_0 => t_win_b_2; slurb_tile%t_win_b_m => t_win_b_1
+    !     !   slurb_tile%t_roof_0 => t_roof_2; slurb_tile%t_roof_m => t_roof_1
+    !     !   slurb_tile%t_road_0 => t_road_2; slurb_tile%t_road_m => t_road_1
 
-       CASE ( 0 )
-          slurb_tile%q_can => q_can_1; slurb_tile%q_can_p => q_can_2
-          slurb_tile%t_can => t_can_1; slurb_tile%t_can_p => t_can_2
-          slurb_tile%m_liq_road => m_liq_road_1; slurb_tile%m_liq_road_p => m_liq_road_2
-          slurb_tile%m_liq_roof => m_liq_roof_1; slurb_tile%m_liq_roof_p => m_liq_roof_2
-          slurb_tile%t_wall_a => t_wall_a_1; slurb_tile%t_wall_a_p => t_wall_a_2
-          slurb_tile%t_wall_b => t_wall_b_1; slurb_tile%t_wall_b_p => t_wall_b_2
-          slurb_tile%t_win_a => t_win_a_1; slurb_tile%t_win_a_p => t_win_a_2
-          slurb_tile%t_win_b => t_win_b_1; slurb_tile%t_win_b_p => t_win_b_2
-          slurb_tile%t_road => t_road_1; slurb_tile%t_road_p => t_road_2
-          slurb_tile%t_roof => t_roof_1; slurb_tile%t_roof_p => t_roof_2
-
-       CASE ( 1 )
-          slurb_tile%q_can => q_can_2; slurb_tile%q_can_p => q_can_1
-          slurb_tile%t_can => t_can_2; slurb_tile%t_can_p => t_can_1
-          slurb_tile%m_liq_road => m_liq_road_2; slurb_tile%m_liq_road_p => m_liq_road_1
-          slurb_tile%m_liq_roof => m_liq_roof_2; slurb_tile%m_liq_roof_p => m_liq_roof_1
-          slurb_tile%t_wall_a => t_wall_a_2; slurb_tile%t_wall_a_p => t_wall_a_1
-          slurb_tile%t_wall_b => t_wall_b_2; slurb_tile%t_wall_b_p => t_wall_b_1
-          slurb_tile%t_win_a => t_win_a_2; slurb_tile%t_win_a_p => t_win_a_1
-          slurb_tile%t_win_b => t_win_b_2; slurb_tile%t_win_b_p => t_win_b_1
-          slurb_tile%t_roof => t_roof_2; slurb_tile%t_roof_p => t_roof_1
-          slurb_tile%t_road => t_road_2; slurb_tile%t_road_p => t_road_1
-
-    END SELECT
+    ! END SELECT
 
  END SUBROUTINE slurb_swap_timelevel
 
@@ -3200,11 +2746,11 @@ end subroutine slurb_update_external_vars
 
 
     !TODOSELF
-    do j=2,j1
-        do i=2,i1
-            slurb_tile%hw_can(i,j) = 0.3
-        enddo
-    ENDDO
+    ! do j=2,j1
+    !     do i=2,i1
+    !         slurb_tile%hw_can(i,j) = 0.3
+    !     enddo
+    ! ENDDO
     
 !
 !-- Check street canyon height-to-width ratio.
@@ -3466,6 +3012,10 @@ end subroutine slurb_update_external_vars
         enddo
     ENDDO
 
+    ! slurb_tile%lw_win_coef(:,:,:) = 0
+    ! slurb_tile%lw_wall_coef(:,:,:) = 0
+    ! slurb_tile%lw_roof_coef(:,:,:) = 0
+    ! slurb_tile%lw_road_coef(:,:,:) = 0
 !
 !-- Precompute shortwave radiation reflection denominator.
     do j=2,j1
@@ -3548,7 +3098,10 @@ end subroutine slurb_update_external_vars
         write(*,*) 'WARNING: no canyon coefficient set for calculating absolute canyon velocity, this might have unintended consequences.'
         call abort
     endif
-
+    ! slurb_tile%conductivity_road(:,:,:) = 0.001
+    ! slurb_tile%conductivity_roof(:,:,:) = 0.001
+    ! slurb_tile%conductivity_wall(:,:,:) = 0.001
+    ! slurb_tile%conductivity_win(:,:,:) = 0.001
 !
 !-- Compute minimum timestep based on SLUrb internal diffusivities.
     do j=2,j1
@@ -3595,7 +3148,7 @@ end subroutine slurb_update_external_vars
 !--------------------------------------------------------------------------------------------------!
  SUBROUTINE slurb_energy_balance_model
    use modglobal, only : i1, j1, cp, rlv, rhow, rk3step, rdt, ep
-   use modfields, only : exnf, rhobf, ql0
+   use modfields, only : exnf, rhobf, ql0, rhof
    use modmicrodata, only : precep, imicro !TODOSELF TEST MICRO
    use modsurface,  only : ps
    implicit none
@@ -3603,7 +3156,6 @@ end subroutine slurb_update_external_vars
     INTEGER ::  j       !< loop index (y-direction)
     INTEGER ::  k_topo  !< k index of topography
     INTEGER ::  k_atm   !< k index of the first atmospheric level
-    INTEGER ::  m       !< running SLUrb tile index
 
     LOGICAL ::  runge_l  !< flag to vectorize timestep scheme switch
 
@@ -3642,63 +3194,84 @@ end subroutine slurb_update_external_vars
 
  CONTAINS
 
+ subroutine calc_tend_surf_t_p ( t, tt_surf, coef_1, coef_2, c )
+    use modglobal, only : rk3step, rdt
+    implicit none
+
+    REAL(field_r), INTENT(IN) ::  c       !< total layer heat capacity (J m^-2 K^-1)
+    REAL(field_r), INTENT(IN) ::  coef_1  !< coefficient A in the prognostic equation (W m^-2)
+    REAL(field_r), INTENT(IN) ::  coef_2  !< coefficient B in the prognostic equation (W m^-2 K^-1)
+    REAL(field_r), INTENT(IN) ::  t       !< current layer temperature (K)
+
+    REAL(field_r), INTENT(OUT) ::  tt_surf  !< current temperature tendency (K s^-1)
+
+    real :: rk3coef
+
+    rk3coef = rdt / (4. - dble(rk3step))
+
+    tt_surf = (( coef_1 * (rk3coef) + c * t )  / ( c + coef_2 * (rk3coef)  ) - t ) / rk3coef
+
+ END SUBROUTINE calc_tend_surf_t_p
 
 !--------------------------------------------------------------------------------------------------!
 ! Description:
 ! ------------
 !> Computes the new surface prognostic temperature for current time step using RK3.
 !--------------------------------------------------------------------------------------------------!
- SUBROUTINE calc_surf_t_p ( t, t_p, tt_current, coef_1, coef_2, c )
-    use modglobal, only : rk3step
+ SUBROUTINE calc_surf_t_p ( t_m, t_0, tt_current, coef_1, coef_2, c )
+    use modglobal, only : rk3step, rdt
+    implicit none
+
     REAL(field_r), INTENT(IN) ::  c       !< total layer heat capacity (J m^-2 K^-1)
     REAL(field_r), INTENT(IN) ::  coef_1  !< coefficient A in the prognostic equation (W m^-2)
     REAL(field_r), INTENT(IN) ::  coef_2  !< coefficient B in the prognostic equation (W m^-2 K^-1)
-    REAL(field_r), INTENT(IN) ::  t       !< current layer temperature (K)
+    REAL(field_r), INTENT(IN) ::  t_m       !< current layer temperature (K)
 
-    REAL(field_r), INTENT(OUT) ::  t_p  !< new layer temperature (K)
+    ! REAL(field_r) :: tend
+    REAL(field_r), INTENT(INOUT) ::  t_0  !< new layer temperature (K)
 
     REAL(field_r), INTENT(INOUT) ::  tt_current  !< current temperature tendency (K s^-1)
 
     REAL(field_r) ::  tt_new  !< new temperature tendency (K s^-1)
+    REAL(field_r) :: t_new_implicit
 
-!
-!-- Compute the prognostic temperature without RK weighting.
-    !K = (W m^-2 s + J m^-2 K^-1 K) / (J m^-2 K^-1 + W m^-2 K^-1 s)
-    !K = (J m^-2 + J m^-2) / (J m^-2 K^-1 + J m^-2 K^-1)
-    t_p = ( coef_1 * (rdt/3) * tsc(2) + c * t )  / ( c + coef_2 * (rdt/3) * tsc(2) )
+    real :: rk3coef
+    real :: tt_new_old, t_p_old, t_old, tt_current_old
+    real :: rdt3 
 
-!
+    rdt3 = rdt / 3
+
+    rk3coef = rdt / (4. - dble(rk3step))
 !-- Compute the RK3 tendency for next time step.
     IF ( c /= 0.0_field_r )  THEN
+        t_new_implicit = ( ( coef_1 * (rk3coef) + c * t_0 )  / ( c + coef_2 * (rk3coef)  ))
+        tt_new = (t_new_implicit - t_0) / rk3coef
+        t_0 = t_new_implicit
 
-       t_p    = t_p + (rdt/3) * tsc(3) * tt_current
-       tt_new = ( t_p - t - (rdt/3) * tsc(3) * tt_current ) / ( (rdt/3)  * tsc(2) )
+        tt_current = tt_new*(-4.25)
 
-       CALL calc_rk3_tend( tt_current, tt_new )
 
     ENDIF
 
  END SUBROUTINE calc_surf_t_p
-
-
 !--------------------------------------------------------------------------------------------------!
 ! Description:
 ! ------------
 !> Computes the new layer prognostic temperature by solving the Fourier diffusion equation.
 !--------------------------------------------------------------------------------------------------!
- SUBROUTINE calc_heat_diffusion ( t, t_p, tt_current, c, lambda, t_bc, sw_in, phi )
-
+ SUBROUTINE calc_heat_diffusion ( t_m, t_0, tt_current, c, lambda, t_bc, sw_in, phi )
+    use modglobal, only : rk3step, rdt
     REAL(field_r), INTENT(IN) ::  t_bc  !< temperature boundary condition (K)
 
     REAL(field_r), INTENT(IN), OPTIONAL ::  sw_in  !< incoming shortwave radiation for windows
 
     REAL(field_r), DIMENSION(:), INTENT(IN) ::  c       !< total heat capacity of the layer (J m^-2 K^-1)
     REAL(field_r), DIMENSION(:), INTENT(IN) ::  lambda  !< total heat conductivity between layers (W m^-2 K^-1)
-    REAL(field_r), DIMENSION(:), INTENT(IN) ::  t       !< current time level temperature (K)
+    REAL(field_r), DIMENSION(:), INTENT(IN) ::  t_m       !< current time level temperature (K)
 
     REAL(field_r), DIMENSION(:), INTENT(IN), OPTIONAL ::  phi  !< fraction of incoming shortwave radiation absorbed at window layer
 
-    REAL(field_r), DIMENSION(:), INTENT(OUT) ::  t_p  !< new layer temperature (K)
+    REAL(field_r), DIMENSION(:), INTENT(INOUT) ::  t_0  !< new layer temperature (K)
 
     REAL(field_r), DIMENSION(:), INTENT(INOUT) ::  tt_current  !< current temperature tendency (K s^-1)
 
@@ -3706,25 +3279,31 @@ end subroutine slurb_update_external_vars
 
     REAL(field_r) ::  tt_new  !<  new temperature tendency (K s^-1)
 
+    REAL, ALLOCATABLE :: temp1(:)
+
+    real :: rk3coef
+
+    rk3coef = rdt / (4. - dble(rk3step))
+
 
 !
 !-- Loop through non-boundary layers of the material.
 !-- @todo Split loop into three to move IFs out for better vecotrization.
-    DO  k = LBOUND( t, 1 ) + 1, UBOUND( t, 1 )
+    DO  k = LBOUND( t_0, 1 ) + 1, UBOUND( t_0, 1 )
 !
 !--    New prognostic layer temperature.
-!--    Compute the diffusion between neighbouring layers.
-       IF ( k /= UBOUND( t , 1 ) )  THEN
-          tt_new = ( 1.0_field_r / c(k) ) * ( lambda(k) * ( t(k+1) - t(k) ) +                           &
-                   lambda(k-1) * ( t(k-1) - t(k) ) )
-       ELSE
+!--    Compute the t between neighbouring layers.
+       IF ( k /= UBOUND( t_0 , 1 ) )  THEN
+          tt_new = ( 1.0_field_r / c(k) ) * ( lambda(k) * ( t_0(k+1) - t_0(k) ) +                           &
+                   lambda(k-1) * ( t_0(k-1) - t_0(k) ) )
+       else
 !
 !--    Use a constant value boundary condition (skin temperature) for the innermost layer.
             ! (J^-1 m^2 K) (J s^-1 m^-2 K^-1) * K
             ! K s^-1
-          tt_new = ( 1.0_field_r / c(k) ) * ( lambda(k) * ( t_bc - t(k) ) +                             &
-                   lambda(k-1) * ( t(k-1) - t(k) ) )
-       ENDIF
+          tt_new = ( 1.0_field_r / c(k) ) * ( lambda(k) * ( t_bc - t_0(k) ) +                             &
+                   lambda(k-1) * ( t_0(k-1) - t_0(k) ) )
+       endif
 !
 !--    Add tendency from absorbed shortwave radiation.
        IF ( PRESENT( sw_in ) )  THEN
@@ -3732,9 +3311,35 @@ end subroutine slurb_update_external_vars
        ENDIF
 !
 !--    Compute the prognostic temperature and RK3 tendency for next time step.
-       t_p(k) = t(k) + (rdt / 3) * ( tsc(2) * tt_new + tsc(3) * tt_current(k) )
+    !    t_p(k) = t(k) + (rdt) * ( tsc(2) * tt_new + tsc(3) * tt_current(k) )
+    !    temp1(k) = t(k) + (rdt) * ( tsc(2) * tt_new + tsc(3) * tt_current(k) )
 
-       CALL calc_rk3_tend( tt_current(k), tt_new )
+    !    if (rk3step == 1) then
+    !     t_p(k) = t(k) + (rk3coef) * ( tt_new)
+    !     else
+    !     t_p(k) = t(k) + (rk3coef) * ( tt_new  + tt_current(k) / 4.25 )
+    !    endif
+        ! if ((rk3step == 1).and.(k/=1)) then
+        !     tt_current(k) = 0
+        ! endif
+        ! tt_new = tt_current(k)/(-4.25) + tt_new
+        t_0(k) = t_m(k) + (rk3coef) * ( tt_new )
+
+        tt_current(k) = (-4.25)*tt_new
+
+        ! t_0(k) = t_m(k)
+        ! tt_current(k) = 0
+
+
+    !    CALL calc_rk3_tend( tt_current(k), tt_new )
+        
+        ! IF ((rk3step == 1).and.(k /= 1)) THEN
+        ! IF ((rk3step == 1)) THEN
+        !     tt_current(k) = tt_new * 4.25
+        ! ELSE
+        !     tt_current(k) = tt_current(k) + tt_new* 4.25
+        ! endif
+        ! tt_current(k) = ( t_p(k) - t(k) - rk3coef * tt_current(k) ) / ( rk3coef )
     ENDDO
 
  END SUBROUTINE calc_heat_diffusion
@@ -3770,14 +3375,18 @@ end subroutine slurb_update_external_vars
 !--------------------------------------------------------------------------------------------------!
  SUBROUTINE roof_model
 
-    REAL(field_r) ::  coef_1      !< coefficient A of the prognostic equation
-    REAL(field_r) ::  coef_2      !< coefficient B of the prognostic equation
-    REAL(field_r) ::  dq_s_dt     !< water vapour mixing ratio tendency
-    REAL(field_r) ::  e_s         !< saturation water vapour pressure
-    REAL(field_r) ::  e_s_dt      !< saturation water vapour pressure tendency
-    REAL(field_r) ::  f_shf       !< factor for the roof sensible heat flux (W m^-2 K^-1)
-    REAL(field_r) ::  f_qsws_liq  !< factor for the latent heat flux from/to liquid water reservoir
-    REAL(field_r) ::  tm_new      !< new liquid water reservoir tendency
+    REAL(field_r) ::  coef_1              !< coefficient A of the prognostic equation
+    REAL(field_r) ::  coef_2              !< coefficient B of the prognostic equation
+    REAL(field_r) ::  dq_s_dt             !< water vapour mixing ratio tendency
+    REAL(field_r) ::  e_s                 !< saturation water vapour pressure
+    REAL(field_r) ::  e_s_dt              !< saturation water vapour pressure tendency
+    REAL(field_r) ::  f_shf               !< factor for the roof sensible heat flux (W m^-2 K^-1)
+    REAL(field_r) ::  f_qsws_liq          !< factor for the latent heat flux from/to liquid water reservoir (W m^-2)
+    REAL(field_r) ::  tm_new              !< new liquid water reservoir tendency (m s^-1)
+    REAL(field_r) ::  tm_new_limited      !< new liquid water reservoir tendency limited by the max reservoir (m s^-1)
+    real :: rk3coef
+
+    rk3coef = rdt / (4. - dble(rk3step))
 
 
 !
@@ -3802,9 +3411,9 @@ end subroutine slurb_update_external_vars
           f_qsws_liq = rho_lv / slurb_tile%rah_roof(i,j)
        ENDIF
 
-       e_s_dt = e_s * ( 17.62_field_r / ( slurb_tile%t_roof(nzt_roof,i,j) -  29.65_field_r ) -                       &
-                        17.62_field_r * ( slurb_tile%t_roof(nzt_roof,i,j) - 273.15_field_r ) /                       &
-                        ( slurb_tile%t_roof(nzt_roof,i,j) - 29.65_field_r )**2                                  &
+       e_s_dt = e_s * ( 17.62_field_r / ( slurb_tile%t_roof_0(nzt_roof,i,j) -  29.65_field_r ) -                       &
+                        17.62_field_r * ( slurb_tile%t_roof_0(nzt_roof,i,j) - 273.15_field_r ) /                       &
+                        ( slurb_tile%t_roof_0(nzt_roof,i,j) - 29.65_field_r )**2                                  &
                       )
 
        dq_s_dt = ep * e_s_dt / ( ps - e_s_dt )
@@ -3812,13 +3421,13 @@ end subroutine slurb_update_external_vars
 !
 !--    The coefficients for the moist prognostic equation for temperature.
        coef_1 = slurb_tile%rad_sw_net_roof(i,j) + slurb_tile%rad_lw_net_roof(i,j)                                  &
-                - 3.0_field_r * slurb_tile%lw_roof_coef(1,i,j) * slurb_tile%t_roof(nzt_roof,i,j)**4                     &
+                - 3.0_field_r * slurb_tile%lw_roof_coef(1,i,j) * slurb_tile%t_roof_0(nzt_roof,i,j)**4                     &
                 + f_shf * slurb_tile%pt1(i,j)                                                              &
                 + f_qsws_liq * ( slurb_tile%q1(i,j) - slurb_tile%qs_roof(i,j)                                      &
-                                 + dq_s_dt * slurb_tile%t_roof(nzt_roof,i,j) )                             &
-                + slurb_tile%conductivity_roof(nzt_roof,i,j) * slurb_tile%t_roof(nzt_roof+1,i,j)
+                                 + dq_s_dt * slurb_tile%t_roof_0(nzt_roof,i,j) )                             &
+                + slurb_tile%conductivity_roof(nzt_roof,i,j) * slurb_tile%t_roof_0(nzt_roof+1,i,j)
 
-       coef_2 = -4.0_field_r * slurb_tile%lw_roof_coef(1,i,j) * slurb_tile%t_roof(nzt_roof,i,j)**3                      &
+       coef_2 = -4.0_field_r * slurb_tile%lw_roof_coef(1,i,j) * slurb_tile%t_roof_0(nzt_roof,i,j)**3                      &
                 + f_shf * (1 / exnf(k_topo))                                                          &
                 + f_qsws_liq * dq_s_dt                                                             &
                 + slurb_tile%conductivity_roof(nzt_roof,i,j)
@@ -3827,45 +3436,48 @@ end subroutine slurb_update_external_vars
 !
 !-- The coefficients for the dry prognostic equation for temperature.
        coef_1 = slurb_tile%rad_sw_net_roof(i,j) + slurb_tile%rad_lw_net_roof(i,j)                                  &
-                -3.0_field_r * slurb_tile%lw_roof_coef(1,i,j) * slurb_tile%t_roof(nzt_roof,i,j)**4                      &
+                -3.0_field_r * slurb_tile%lw_roof_coef(1,i,j) * slurb_tile%t_roof_0(nzt_roof,i,j)**4                      &
                 + f_shf * slurb_tile%pt1(i,j)                                                              &
-                + slurb_tile%conductivity_roof(nzt_roof,i,j) * slurb_tile%t_roof(nzt_roof+1,i,j)
+                + slurb_tile%conductivity_roof(nzt_roof,i,j) * slurb_tile%t_roof_0(nzt_roof+1,i,j)
 
-       coef_2 = -4.0_field_r * slurb_tile%lw_roof_coef(1,i,j) * slurb_tile%t_roof(nzt_roof,i,j)**3                      &
+       coef_2 = -4.0_field_r * slurb_tile%lw_roof_coef(1,i,j) * slurb_tile%t_roof_0(nzt_roof,i,j)**3                      &
                 + f_shf * (1 / exnf(k_topo))                                                          &
                 + slurb_tile%conductivity_roof(nzt_roof,i,j)
     ENDIF
 
-    CALL calc_surf_t_p( slurb_tile%t_roof(nzt_roof,i,j), slurb_tile%t_roof_p(nzt_roof,i,j),                        &
+    CALL calc_surf_t_p( slurb_tile%t_roof_m(nzt_roof,i,j), slurb_tile%t_roof_0(nzt_roof,i,j),                        &
                         slurb_tile%tt_roof(nzt_roof,i,j), coef_1, coef_2, slurb_tile%c_roof(nzt_roof,i,j) )
 
 !
 !-- Explicit solution of the Fourier heat equation for the subsurface layers.
-    CALL calc_heat_diffusion( slurb_tile%t_roof(:,i,j), slurb_tile%t_roof_p(:,i,j), slurb_tile%tt_roof(:,i,j),             &
+    CALL calc_heat_diffusion( slurb_tile%t_roof_m(:,i,j), slurb_tile%t_roof_0(:,i,j), slurb_tile%tt_roof(:,i,j),             &
                               slurb_tile%c_roof(:,i,j), slurb_tile%conductivity_roof(:,i,j), slurb_tile%t_indoor(i,j) )
 
+    ! call calc_tend_surf_t_p(slurb_tile%t_roof_0(nzt_roof,i,j), slurb_tile%tt_roof(nzt_roof,i,j), coef_1, coef_2, slurb_tile%c_roof(nzt_roof,i,j))
+    ! call calc_tend_heat_diffusion(slurb_tile%t_roof_0(:,i,j), slurb_tile%tt_roof(:,i,j),slurb_tile%c_roof(:,i,j), slurb_tile%conductivity_roof(:,i,j), slurb_tile%t_indoor(i,j))
+    ! call apply_tend(slurb_tile%t_roof_0(:,i,j), slurb_tile%t_roof_m(:,i,j), slurb_tile%tt_roof(:,i,j))
 !
 !-- Compute the diagnostic fluxes for the roof surface.
     slurb_tile%ghf_roof(i,j) = slurb_tile%conductivity_roof(nzb_roof,i,j) *                                        &
-                       ( slurb_tile%t_roof_p(nzb_roof,i,j) - slurb_tile%t_indoor(i,j) )
+                       ( slurb_tile%t_roof_0(nzb_roof,i,j) - slurb_tile%t_indoor(i,j) )
 
-    slurb_tile%pt_roof(i,j) = slurb_tile%t_roof_p(nzt_roof,i,j) * (1 / exnf(k_topo))
+    slurb_tile%pt_roof(i,j) = slurb_tile%t_roof_0(nzt_roof,i,j) * (1 / exnf(k_topo))
 
     slurb_tile%shf_roof(i,j) = -f_shf * ( slurb_tile%pt1(i,j) - slurb_tile%pt_roof(i,j) )
 
 !
 !-- Update longwave radiative flux following linearization.
     slurb_tile%rad_lw_net_roof(i,j) = slurb_tile%rad_lw_net_roof(i,j)                                              &
-                              + slurb_tile%lw_roof_coef(1,i,j) * slurb_tile%t_roof(nzt_roof,i,j)**4                &
-                              - 4.0_field_r * slurb_tile%lw_roof_coef(1,i,j) * slurb_tile%t_roof(nzt_roof,i,j)**3       &
-                              * ( slurb_tile%t_roof(nzt_roof,i,j) - slurb_tile%t_roof_p(nzt_roof,i,j) )
+                              + slurb_tile%lw_roof_coef(1,i,j) * slurb_tile%t_roof_m(nzt_roof,i,j)**4                &
+                              - 4.0_field_r * slurb_tile%lw_roof_coef(1,i,j) * slurb_tile%t_roof_0(nzt_roof,i,j)**3       &
+                              * ( slurb_tile%t_roof_m(nzt_roof,i,j) - slurb_tile%t_roof_0(nzt_roof,i,j) )
 
 !
 !-- Compute the water vapor flux from/to liquid water reservoir and the prognostic reservoir level.
     IF ( moist_physics )  THEN
        slurb_tile%qsws_liq_roof(i,j) = -f_qsws_liq * ( slurb_tile%q1(i,j) - slurb_tile%qs_roof(i,j) +                      &
-                                               dq_s_dt * slurb_tile%t_roof(nzt_roof,i,j) -                 &
-                                               dq_s_dt * slurb_tile%t_roof_p(nzt_roof,i,j)                 &
+                                               dq_s_dt * slurb_tile%t_roof_m(nzt_roof,i,j) -                 &
+                                               dq_s_dt * slurb_tile%t_roof_0(nzt_roof,i,j)                 &
                                              )
 
        slurb_tile%qsws_roof(i,j) = slurb_tile%qsws_liq_roof(i,j)
@@ -3876,39 +3488,55 @@ end subroutine slurb_update_external_vars
 !--    The precipitation flux is not included in the surface-atmosphere latent heat flux (qsws).
        if (imicro == 0 .or. imicro == 1) then
             slurb_tile%qsws_liq_roof(i,j) = slurb_tile%qsws_roof(i,j)
-            else
-          IF ( slurb_tile%m_liq_roof(i,j) < m_liq_max_roof )  THEN
-             slurb_tile%qsws_liq_roof(i,j) = slurb_tile%qsws_roof(i,j) -                                           &
-                                     precep(i,j,k_atm) * rhobf(k_atm) * rhow * rlv
-          ENDIF
+        else
+            !   IF ( slurb_tile%m_liq_roof_0(i,j) < m_liq_max_roof )  THEN
+            slurb_tile%tm_roof_precep(i,j) = precep(i,j,k_atm)
+            slurb_tile%qsws_liq_roof(i,j) = (slurb_tile%qsws_roof(i,j) - slurb_tile%tm_roof_precep(i,j) * rhof(k_atm) * rlv)
+        !   ENDIF
 
           !todoself even morme assume precipitation
        ENDIF
           !todoself assume precipitation
 !
 !--    Compute the total latent heat flux.
-       slurb_tile%qsws_roof(i,j) = slurb_tile%qsws_roof(i,j) / rlv
+       slurb_tile%qsws_roof(i,j) = slurb_tile%qsws_roof(i,j)
 !
 !--    Compute the prognostic liquid water reservoir.
        tm_new = - slurb_tile%qsws_liq_roof(i,j) * drho_l_lv
-       slurb_tile%m_liq_roof_p(i,j) = slurb_tile%m_liq_roof(i,j) +                                                 &
-                              (rdt / 3) * ( tsc(2) * tm_new + tsc(3) * slurb_tile%tm_liq_roof(i,j) )
+    !    slurb_tile%m_liq_roof_0(i,j) = slurb_tile%m_liq_roof_m(i,j) +                                                 &
+    !                           (rdt) * ( tsc(2) * tm_new + tsc(3) * slurb_tile%tm_liq_roof(i,j) )
+       slurb_tile%m_liq_roof_0(i,j)  = slurb_tile%m_liq_roof_m(i,j) + rk3coef * tm_new
 !
 !--    Check if the liquid water reservoir is overfull. If so, drain excess to the
 !--    assumed drainage system (water is not conserved here).
-       slurb_tile%m_liq_roof_p(i,j) = MIN( slurb_tile%m_liq_roof_p(i,j), m_liq_max_roof )
+
+       
+    !    if (rk3step = 3) then
+
+            if ((slurb_tile%m_liq_roof_0(i,j) > m_liq_max_roof)) then
+                ! tm_new = (m_liq_max_roof - slurb_tile%m_liq_roof_m(i,j)) / rk3coef
+                slurb_tile%tm_roof_runoff(i,j) = (slurb_tile%m_liq_roof_0(i,j) - m_liq_max_roof) / rk3coef
+                slurb_tile%m_liq_roof_0(i,j) = m_liq_max_roof
+            else
+                slurb_tile%tm_roof_runoff(i,j) = 0
+            endif
+        ! else
+        !     slurb_tile%m_liq_roof_0(i,j) = MIN( slurb_tile%m_liq_roof_0(i,j), m_liq_max_roof )
+        ! endif
 !
 !--    Check for negative water reservoir. @todo store the removed water as runoff for output.
-       slurb_tile%m_liq_roof_p(i,j) = MAX( slurb_tile%m_liq_roof_p(i,j), 0.0_field_r )
+       slurb_tile%m_liq_roof_0(i,j) = MAX( slurb_tile%m_liq_roof_0(i,j), 0.0_field_r )
 !
 !--    Compute RK3 tendency.
-       CALL calc_rk3_tend( slurb_tile%tm_liq_roof(i,j), tm_new )
+    !    CALL calc_rk3_tend( slurb_tile%tm_liq_roof(i,j), tm_new )
+       
+       slurb_tile%tm_liq_roof(i,j) = tm_new
 !
 !--    Compute the new liquid water coverage.
-       slurb_tile%c_liq_roof(i,j) = MIN( 1.0_field_r, ( slurb_tile%m_liq_roof_p(i,j) / m_liq_max_roof )**0.67 )
+       slurb_tile%c_liq_roof(i,j) = MIN( 1.0_field_r, ( slurb_tile%m_liq_roof_0(i,j) / m_liq_max_roof )**0.67 )
 !
 !--    Compute new saturation mixing ratio.
-       e_s = 0.01_field_r * magnus( MIN( slurb_tile%t_roof_p(nzt_roof,i,j), 333.15_field_r ) )
+       e_s = magnus( MIN( slurb_tile%t_roof_0(nzt_roof,i,j), 333.15_field_r ) )
        slurb_tile%qs_roof(i,j) = ep * e_s / ( ps - e_s )
 !
 !--    Calculate new mixing ratio and vpt at roof surface.
@@ -3926,16 +3554,18 @@ end subroutine slurb_update_external_vars
 !> Models the surface energy balance and subsurface heat diffusion for roads.
 !--------------------------------------------------------------------------------------------------!
  SUBROUTINE road_model
+    REAL(field_r) ::  coef_1              !< coefficient A of the prognostic equation
+    REAL(field_r) ::  coef_2              !< coefficient B of the prognostic equation
+    REAL(field_r) ::  dq_s_dt             !< water vapour mixing ratio tendency
+    REAL(field_r) ::  e_s                 !< saturation water vapour pressure
+    REAL(field_r) ::  e_s_dt              !< saturation water vapour pressure tendency
+    REAL(field_r) ::  f_shf               !< factor for the road sensible heat flux (W m^-2 K^-1)
+    REAL(field_r) ::  f_qsws_liq          !< factor for the latent heat flux from/to liquid water reservoir (W m^-2)
+    REAL(field_r) ::  tm_new              !< new liquid water reservoir tendency (m s^-1)
+    REAL(field_r) ::  tm_new_limited      !< new liquid water reservoir tendency limited by the max reservoir (m s^-1)
+    real :: rk3coef
 
-    REAL(field_r) ::  coef_1      !< coefficient A of the prognostic equation
-    REAL(field_r) ::  coef_2      !< coefficient B of the prognostic equation
-    REAL(field_r) ::  dq_s_dt     !< water vapour mixing ratio tendency
-    REAL(field_r) ::  e_s         !< saturation water vapour pressure
-    REAL(field_r) ::  e_s_dt      !< saturation water vapour pressure tendency
-    REAL(field_r) ::  f_shf       !< factor for the sensible heat flux from roads (W m^-2 K^-1)
-    REAL(field_r) ::  f_qsws_liq  !< factor for the latent heat flux from/to liquid water reservoir
-    REAL(field_r) ::  tm_new      !< new liquid water reservoir tendency
-
+    rk3coef = rdt / (4. - dble(rk3step))
 
 !
 !-- Surface sensible heat flux factor.
@@ -3952,15 +3582,15 @@ end subroutine slurb_update_external_vars
 !
 !--    In case of evaporation, evaporate only for the liquid water coverage area,
 !--    in case of condensation, use the total surface.
-       IF ( slurb_tile%qs_road(i,j) > slurb_tile%q_can(i,j) )  THEN
+       IF ( slurb_tile%qs_road(i,j) > slurb_tile%q_can_0(i,j) )  THEN
           f_qsws_liq = rho_lv * slurb_tile%c_liq_road(i,j) / slurb_tile%rah_road(i,j)
        ELSE
           f_qsws_liq = rho_lv / slurb_tile%rah_road(i,j)
        ENDIF
 
-       e_s_dt = e_s * ( 17.62_field_r / ( slurb_tile%t_road(nzt_road,i,j) - 29.65_field_r ) -                        &
-                        17.62_field_r * ( slurb_tile%t_road(nzt_road,i,j) - 273.15_field_r ) /                       &
-                        ( slurb_tile%t_road(nzt_road,i,j) - 29.65_field_r)**2                                   &
+       e_s_dt = e_s * ( 17.62_field_r / ( slurb_tile%t_road_0(nzt_road,i,j) - 29.65_field_r ) -                        &
+                        17.62_field_r * ( slurb_tile%t_road_0(nzt_road,i,j) - 273.15_field_r ) /                       &
+                        ( slurb_tile%t_road_0(nzt_road,i,j) - 29.65_field_r)**2                                   &
                       )
 
        dq_s_dt = ep * e_s_dt / ( ps - e_s_dt )
@@ -3969,13 +3599,13 @@ end subroutine slurb_update_external_vars
 !--    The coefficients for the moist prognostic equation for temperature. For the longwave balance,
 !--    both direct emission and the effect of backreflection are linearized.
        coef_1 = slurb_tile%rad_sw_net_road(i,j) + slurb_tile%rad_lw_net_road(i,j)                                  &
-                -3.0_field_r * slurb_tile%lw_road_coef(1,i,j) * slurb_tile%t_road(nzt_road,i,j)**4                      &
-                + f_shf * slurb_tile%t_can(i,j)                                                            &
-                + f_qsws_liq * ( slurb_tile%q_can(i,j) - slurb_tile%qs_road(i,j)                                   &
-                                 + dq_s_dt * slurb_tile%t_road(nzt_road,i,j) )                             &
-                + slurb_tile%conductivity_road(nzt_road,i,j) * slurb_tile%t_road(nzt_road+1,i,j)
+                -3.0_field_r * slurb_tile%lw_road_coef(1,i,j) * slurb_tile%t_road_0(nzt_road,i,j)**4                      &
+                + f_shf * slurb_tile%t_can_0(i,j)                                                            &
+                + f_qsws_liq * ( slurb_tile%q_can_0(i,j) - slurb_tile%qs_road(i,j)                                   &
+                                 + dq_s_dt * slurb_tile%t_road_0(nzt_road,i,j) )                             &
+                + slurb_tile%conductivity_road(nzt_road,i,j) * slurb_tile%t_road_0(nzt_road+1,i,j)
 
-       coef_2 = -4.0_field_r * slurb_tile%lw_road_coef(1,i,j) * slurb_tile%t_road(nzt_road,i,j)**3                      &
+       coef_2 = -4.0_field_r * slurb_tile%lw_road_coef(1,i,j) * slurb_tile%t_road_0(nzt_road,i,j)**3                      &
                 + f_shf                                                                            &
                 + f_qsws_liq * dq_s_dt                                                             &
                 + slurb_tile%conductivity_road(nzt_road,i,j)
@@ -3984,50 +3614,50 @@ end subroutine slurb_update_external_vars
 !
 !--    The coefficients for the dry prognostic equation for temperature.
        coef_1 = slurb_tile%rad_sw_net_road(i,j) + slurb_tile%rad_lw_net_road(i,j)                                  &
-                -3.0_field_r * slurb_tile%lw_road_coef(1,i,j) * slurb_tile%t_road(nzt_road,i,j)**4                      &
-                + f_shf * slurb_tile%t_can(i,j)                                                            &
-                + slurb_tile%conductivity_road(nzt_road,i,j) * slurb_tile%t_road(nzt_road+1,i,j)
+                -3.0_field_r * slurb_tile%lw_road_coef(1,i,j) * slurb_tile%t_road_0(nzt_road,i,j)**4                      &
+                + f_shf * slurb_tile%t_can_0(i,j)                                                            &
+                + slurb_tile%conductivity_road(nzt_road,i,j) * slurb_tile%t_road_0(nzt_road+1,i,j)
 
-       coef_2 = -4.0_field_r * slurb_tile%lw_road_coef(1,i,j) * slurb_tile%t_road(nzt_road,i,j)**3                      &
+       coef_2 = -4.0_field_r * slurb_tile%lw_road_coef(1,i,j) * slurb_tile%t_road_0(nzt_road,i,j)**3                      &
                 + f_shf                                                                            &
                 + slurb_tile%conductivity_road(nzt_road,i,j)
     ENDIF
 
-    CALL calc_surf_t_p( slurb_tile%t_road(nzt_road,i,j), slurb_tile%t_road_p(nzt_road,i,j),                        &
+    CALL calc_surf_t_p( slurb_tile%t_road_m(nzt_road,i,j), slurb_tile%t_road_0(nzt_road,i,j),                        &
                         slurb_tile%tt_road(nzt_road,i,j), coef_1, coef_2, slurb_tile%c_road(nzt_road,i,j) )
 
 !
 !-- Heat diffusion through subsurface layers.
-    CALL calc_heat_diffusion( slurb_tile%t_road(:,i,j), slurb_tile%t_road_p(:,i,j), slurb_tile%tt_road(:,i,j),             &
+    CALL calc_heat_diffusion( slurb_tile%t_road_m(:,i,j), slurb_tile%t_road_0(:,i,j), slurb_tile%tt_road(:,i,j),             &
                               slurb_tile%c_road(:,i,j), slurb_tile%conductivity_road(:,i,j), slurb_tile%t_soil(i,j) )
 
 
     ! write(*,*) "f_shf"
     ! write (*,*) i,j,f_shf
-    ! write(*,*) "slurb_tile%t_road_p(nzt_road,i,j)"
-    ! write (*,*) i,j,slurb_tile%t_road_p(nzt_road,i,j)
-    ! write(*,*) "slurb_tile%t_can(i,j)"
-    ! write (*,*) i,j,slurb_tile%t_can(i,j)
-    slurb_tile%shf_road(i,j) = -f_shf * ( slurb_tile%t_can(i,j) - slurb_tile%t_road_p(nzt_road,i,j) )
+    ! write(*,*) "slurb_tile%t_road_m(nzt_road,i,j)"
+    ! write (*,*) i,j,slurb_tile%t_road_m(nzt_road,i,j)
+    ! write(*,*) "slurb_tile%t_can_0(i,j)"
+    ! write (*,*) i,j,slurb_tile%t_can_0(i,j)
+    slurb_tile%shf_road(i,j) = -f_shf * ( slurb_tile%t_can_m(i,j) - slurb_tile%t_road_0(nzt_road,i,j) )
 
-    slurb_tile%pt_road(i,j)  = slurb_tile%t_road_p(nzt_road,i,j) * (1 / exnf(k_topo))
+    slurb_tile%pt_road(i,j)  = slurb_tile%t_road_0(nzt_road,i,j) * (1 / exnf(k_topo))
 
     slurb_tile%ghf_road(i,j) = slurb_tile%conductivity_road(nzb_road,i,j) *                                        &
-                       ( slurb_tile%t_road_p(nzb_road,i,j) - slurb_tile%t_soil(i,j) )
+                       ( slurb_tile%t_road_0(nzb_road,i,j) - slurb_tile%t_soil(i,j) )
 
 !
 !-- Update longwave radiative flux following linearization.
     slurb_tile%rad_lw_net_road(i,j) = slurb_tile%rad_lw_net_road(i,j)                                              &
-                              + slurb_tile%lw_road_coef(1,i,j) * slurb_tile%t_road(nzt_road,i,j)**4                &
-                              - 4.0_field_r * slurb_tile%lw_road_coef(1,i,j) * slurb_tile%t_road(nzt_road,i,j)**3       &
-                              * ( slurb_tile%t_road(nzt_road,i,j) - slurb_tile%t_road_p(nzt_road,i,j) )
+                              + slurb_tile%lw_road_coef(1,i,j) * slurb_tile%t_road_m(nzt_road,i,j)**4                &
+                              - 4.0_field_r * slurb_tile%lw_road_coef(1,i,j) * slurb_tile%t_road_m(nzt_road,i,j)**3       &
+                              * ( slurb_tile%t_road_m(nzt_road,i,j) - slurb_tile%t_road_0(nzt_road,i,j) )
 
 !
 !-- Compute the water vapor flux from/to liquid water reservoir and the prognostic reservoir level.
     IF ( moist_physics )  THEN
-       slurb_tile%qsws_liq_road(i,j) = -f_qsws_liq * ( slurb_tile%q_can(i,j) - slurb_tile%qs_road(i,j) +                   &
-                                               dq_s_dt * slurb_tile%t_road(nzt_road,i,j) -                 &
-                                               dq_s_dt * slurb_tile%t_road_p(nzt_road,i,j)                 &
+       slurb_tile%qsws_liq_road(i,j) = -f_qsws_liq * ( slurb_tile%q_can_0(i,j) - slurb_tile%qs_road(i,j) +                   &
+                                               dq_s_dt * slurb_tile%t_road_m(nzt_road,i,j) -                 &
+                                               dq_s_dt * slurb_tile%t_road_0(nzt_road,i,j)                 &
                                              )
 
        slurb_tile%qsws_road(i,j) = slurb_tile%qsws_liq_road(i,j)
@@ -4038,41 +3668,83 @@ end subroutine slurb_update_external_vars
     !    IF ( precipitation )  THEN
 
     !    ENDIF
-       if (imicro == 0 .or. imicro == 1) then
-            slurb_tile%qsws_liq_roof(i,j) = slurb_tile%qsws_roof(i,j)
-            else
-          IF ( slurb_tile%m_liq_road(i,j) < m_liq_max_road )  THEN
-             slurb_tile%qsws_road(i,j) = slurb_tile%qsws_road(i,j) -                                               &
-                                 precep(i,j,k_atm) * rhobf(k_atm) * rhow * rlv
-          ENDIF
+    if (imicro == 0 .or. imicro == 1) then
+        slurb_tile%qsws_liq_road(i,j) = slurb_tile%qsws_road(i,j)
+    else
+        ! IF ( slurb_tile%m_liq_road_0(i,j) < m_liq_max_road )  THEN
+            slurb_tile%tm_road_precep(i,j) = precep(i,j,k_atm)
+            slurb_tile%qsws_liq_road(i,j) = (slurb_tile%qsws_road(i,j) - slurb_tile%tm_road_precep(i,j) * rhof(k_atm) * rlv)
+            ! ?      = m s^-1 kg m^-3 kg^-1 m^3 J kg^-1
+            ! ?      = J s^-1
+            ! W m^-2 = W
+            ! however, we want this to be
+            ! W m^-2 = (kg m^-2 s^-1) (J kg^-1)??
+            ! a (kg m^-2 s^-1) can be formed like:
+            ! kg m^-2 s^-1 = precep(m s^-1) * rhobf(kg m^-3)
+            ! kg m^-2 s^-1 = kg m^-2 s^-1
+            ! then multiplying by rlv (J kg^-1) we get
+            ! W m^-2       = J kg^-1 kg m^-2 s^-1
+            ! W m^-2       = W m^-2
+        
+        ! ENDIF
 
           !todoself even morme assume precipitation
-       ENDIF
+    ENDIF
        ! liquid water reservoir is in m^3/m^2, rain rate in m/s (m^3/m^2 /s)
 !
 !--    Compute the total latent heat flux.
-       slurb_tile%qsws_road(i,j) = slurb_tile%qsws_road(i,j) / rlv
+       slurb_tile%qsws_road(i,j) = slurb_tile%qsws_road(i,j)
 !
 !--    Compute the prognostic liquid water reservoir.
        tm_new = - slurb_tile%qsws_liq_road(i,j) * drho_l_lv
-       slurb_tile%m_liq_road_p(i,j) = slurb_tile%m_liq_road(i,j) +                                                 &
-                              (rdt / 3) * ( tsc(2) * tm_new + tsc(3) * slurb_tile%tm_liq_road(i,j) )
+    !    slurb_tile%m_liq_road_0(i,j) = slurb_tile%m_liq_road_m(i,j) +                                                 &
+    !                           (rdt) * ( tsc(2) * tm_new + tsc(3) * slurb_tile%tm_liq_road(i,j) )
+       slurb_tile%m_liq_road_0(i,j) = slurb_tile%m_liq_road_m(i,j) + rk3coef * tm_new
 !
 !--    Check if the liquid water reservoir is overfull. If so, drain excess to the
 !--    assumed drainage system (water is not conserved here).
-       slurb_tile%m_liq_road_p(i,j) = MIN( slurb_tile%m_liq_road_p(i,j), m_liq_max_road )
+    !    if ((slurb_tile%m_liq_road_0(i,j) > m_liq_max_road).and.(tm_new > 0)) then
+    !     ! slurb_tile%tm_road_runoff(i,j) = (slurb_tile%m_liq_road_0(i,j) - m_liq_max_road) / rk3coef
+    !     ! slurb_tile%m_liq_road_0(i,j) = m_liq_max_road
+    !     ! tm_new = tm_new - slurb_tile%tm_road_runoff(i,j)
+
+    !     tm_new_limited = (m_liq_max_road - slurb_tile%m_liq_road_m(i,j)) / rk3coef
+    !     slurb_tile%tm_road_runoff(i,j) = tm_new - tm_new_limited
+    !     tm_new = tm_new_limited
+    !     slurb_tile%m_liq_road_0(i,j) = slurb_tile%m_liq_road_m(i,j) + rk3coef * tm_new
+    !    endif
+        ! if (rk3step == 3) then
+
+            ! if ((slurb_tile%m_liq_road_0(i,j) > m_liq_max_road)) then
+            !     tm_new_limited = (m_liq_max_road - slurb_tile%m_liq_road_m(i,j)) / rk3coef
+            !     slurb_tile%tm_road_runoff(i,j) = tm_new - tm_new_limited
+            !     tm_new = tm_new_limited
+            !     slurb_tile%m_liq_road_0(i,j) = m_liq_max_road
+            ! else
+            !     slurb_tile%tm_roof_runoff(i,j) = 0
+            ! endif
+            if ((slurb_tile%m_liq_road_0(i,j) > m_liq_max_road)) then
+                slurb_tile%tm_road_runoff(i,j) = (slurb_tile%m_liq_road_0(i,j) - m_liq_max_road) / rk3coef
+                slurb_tile%m_liq_road_0(i,j) = m_liq_max_road
+            else
+                slurb_tile%tm_road_runoff(i,j) = 0
+            endif
+        ! else
+        !     slurb_tile%m_liq_road_0(i,j) = MIN( slurb_tile%m_liq_road_m(i,j), m_liq_max_road )
+        ! endif
 !
 !--    Check for negative water reservoir. Should we adjust qsws_road accordingly?
-       slurb_tile%m_liq_road_p(i,j) = MAX( slurb_tile%m_liq_road_p(i,j), 0.0_field_r )
+       slurb_tile%m_liq_road_0(i,j) = MAX( slurb_tile%m_liq_road_0(i,j), 0.0_field_r )
 !
 !--    Compute RK3 tendency
-       CALL calc_rk3_tend( slurb_tile%tm_liq_road(i,j), tm_new )
+    !    CALL calc_rk3_tend( slurb_tile%tm_liq_road(i,j), tm_new )
+       slurb_tile%tm_liq_road(i,j) = tm_new
 !
 !--    Compute the new liquid water coverage.
-       slurb_tile%c_liq_road(i,j) = MIN( 1.0_field_r, ( slurb_tile%m_liq_road_p(i,j) / m_liq_max_road )**0.67 )
+       slurb_tile%c_liq_road(i,j) = MIN( 1.0_field_r, ( slurb_tile%m_liq_road_0(i,j) / m_liq_max_road )**0.67 )
 !
 !--    Compute new saturation mixing ratio.
-       e_s = 0.01_field_r * magnus( MIN( slurb_tile%t_road_p(nzt_road,i,j), 333.15_field_r ) )
+       e_s = magnus( MIN( slurb_tile%t_road_0(nzt_road,i,j), 333.15_field_r ) )
        slurb_tile%qs_road(i,j) = ep * e_s / ( ps - e_s )
 !
 !--    Calculate new mixing ratio and vpt at road surface.
@@ -4112,27 +3784,27 @@ end subroutine slurb_update_external_vars
 !-- We consider the walls are dry in all cases, so moist physical processes are not considered.
     IF ( slurb_tile%anisotropic_canyon(i,j) )  THEN
        coef_1 = slurb_tile%rad_sw_net_wall_a(i,j) + slurb_tile%rad_lw_net_wall_a(i,j)                              &
-                - 3.0_field_r * slurb_tile%lw_wall_coef(1,i,j) * slurb_tile%t_wall_a(nzt_wall,i,j)**4                   &
-                + f_shf_a * slurb_tile%t_can(i,j)                                                          &
-                + slurb_tile%conductivity_wall(nzt_wall,i,j) * slurb_tile%t_wall_a(nzt_wall+1,i,j)
+                - 3.0_field_r * slurb_tile%lw_wall_coef(1,i,j) * slurb_tile%t_wall_a_0(nzt_wall,i,j)**4                   &
+                + f_shf_a * slurb_tile%t_can_0(i,j)                                                          &
+                + slurb_tile%conductivity_wall(nzt_wall,i,j) * slurb_tile%t_wall_a_0(nzt_wall+1,i,j)
 
-       coef_2 = -4.0_field_r * slurb_tile%lw_wall_coef(1,i,j) * slurb_tile%t_wall_a(nzt_wall,i,j)**3                    &
+       coef_2 = -4.0_field_r * slurb_tile%lw_wall_coef(1,i,j) * slurb_tile%t_wall_a_0(nzt_wall,i,j)**3                    &
                 + f_shf_a                                                                          &
                 + slurb_tile%conductivity_wall(nzt_wall,i,j)
 
-       CALL calc_surf_t_p(slurb_tile%t_wall_a(nzt_wall,i,j), slurb_tile%t_wall_a_p(nzt_wall,i,j),                  &
+       CALL calc_surf_t_p(slurb_tile%t_wall_a_m(nzt_wall,i,j), slurb_tile%t_wall_a_0(nzt_wall,i,j),                  &
                           slurb_tile%tt_wall_a(nzt_wall,i,j), coef_1, coef_2, slurb_tile%c_wall(nzt_wall,i,j) )
 
        coef_1 = slurb_tile%rad_sw_net_wall_b(i,j) + slurb_tile%rad_lw_net_wall_b(i,j)                              &
-                - 3.0_field_r * slurb_tile%lw_wall_coef(1,i,j) * slurb_tile%t_wall_b(nzt_wall,i,j)**4                   &
-                + f_shf_b * slurb_tile%t_can(i,j)                                                          &
-                + slurb_tile%conductivity_wall(nzt_wall,i,j) * slurb_tile%t_wall_b(nzt_wall+1,i,j)
+                - 3.0_field_r * slurb_tile%lw_wall_coef(1,i,j) * slurb_tile%t_wall_b_0(nzt_wall,i,j)**4                   &
+                + f_shf_b * slurb_tile%t_can_0(i,j)                                                          &
+                + slurb_tile%conductivity_wall(nzt_wall,i,j) * slurb_tile%t_wall_b_0(nzt_wall+1,i,j)
 
-       coef_2 = -4.0_field_r * slurb_tile%lw_wall_coef(1,i,j) * slurb_tile%t_wall_b(nzt_wall,i,j)**3                    &
+       coef_2 = -4.0_field_r * slurb_tile%lw_wall_coef(1,i,j) * slurb_tile%t_wall_b_0(nzt_wall,i,j)**3                    &
                 + f_shf_b                                                                          &
                 + slurb_tile%conductivity_wall(nzt_wall,i,j)
 
-       CALL calc_surf_t_p( slurb_tile%t_wall_b(nzt_wall,i,j), slurb_tile%t_wall_b_p(nzt_wall,i,j),                 &
+       CALL calc_surf_t_p( slurb_tile%t_wall_b_m(nzt_wall,i,j), slurb_tile%t_wall_b_0(nzt_wall,i,j),                 &
                            slurb_tile%tt_wall_b(nzt_wall,i,j), coef_1, coef_2, slurb_tile%c_wall(nzt_wall,i,j) )
     ELSE
 !
@@ -4142,59 +3814,58 @@ end subroutine slurb_update_external_vars
 !--    the surface temperature.
        coef_1 = slurb_tile%rad_sw_net_wall_a(i,j) + slurb_tile%rad_lw_net_wall_a(i,j)                              &
                 - 3.0_field_r * ( slurb_tile%lw_wall_coef(1,i,j) + slurb_tile%lw_wall_coef(3,i,j) )                     &
-                   * slurb_tile%t_wall_a(nzt_wall,i,j)**4                                                  &
-                + f_shf_a * slurb_tile%t_can(i,j)                                                          &
-                + slurb_tile%conductivity_wall(nzt_wall,i,j) * slurb_tile%t_wall_a(nzt_wall+1,i,j)
+                   * slurb_tile%t_wall_a_0(nzt_wall,i,j)**4                                                  &
+                + f_shf_a * slurb_tile%t_can_0(i,j)                                                          &
+                + slurb_tile%conductivity_wall(nzt_wall,i,j) * slurb_tile%t_wall_a_0(nzt_wall+1,i,j)
 
        coef_2 = -4.0_field_r * ( slurb_tile%lw_wall_coef(1,i,j) + slurb_tile%lw_wall_coef(3,i,j) )                      &
-                   * slurb_tile%t_wall_a(nzt_wall,i,j)**3                                                  &
+                   * slurb_tile%t_wall_a_0(nzt_wall,i,j)**3                                                  &
                 + f_shf_a                                                                          &
                 + slurb_tile%conductivity_wall(nzt_wall,i,j)
 
-       CALL calc_surf_t_p( slurb_tile%t_wall_a(nzt_wall,i,j), slurb_tile%t_wall_a_p(nzt_wall,i,j),                 &
+       CALL calc_surf_t_p( slurb_tile%t_wall_a_m(nzt_wall,i,j), slurb_tile%t_wall_a_0(nzt_wall,i,j),                 &
                            slurb_tile%tt_wall_a(nzt_wall,i,j), coef_1, coef_2, slurb_tile%c_wall(nzt_wall,i,j) )
     ENDIF
+    slurb_tile%pt_wall_a(i,j)  = slurb_tile%t_wall_a_0(nzt_wall,i,j) * (1 / exnf(k_topo))
+    slurb_tile%shf_wall_a(i,j) = -f_shf_a * ( slurb_tile%t_can_m(i,j) - slurb_tile%t_wall_a_0(nzt_wall,i,j) )
 
-    slurb_tile%pt_wall_a(i,j)  = slurb_tile%t_wall_a_p(nzt_wall,i,j) * (1 / exnf(k_topo))
-    slurb_tile%shf_wall_a(i,j) = -f_shf_a * ( slurb_tile%t_can(i,j) - slurb_tile%t_wall_a_p(nzt_wall,i,j) )
-
-!
-!-- Heat diffusion through subsurface layers.
-    CALL calc_heat_diffusion( slurb_tile%t_wall_a(:,i,j), slurb_tile%t_wall_a_p(:,i,j), slurb_tile%tt_wall_a(:,i,j),       &
+    !
+    !-- Heat diffusion through subsurface layers.
+    CALL calc_heat_diffusion( slurb_tile%t_wall_a_m(:,i,j), slurb_tile%t_wall_a_0(:,i,j), slurb_tile%tt_wall_a(:,i,j),       &
                               slurb_tile%c_wall(:,i,j), slurb_tile%conductivity_wall(:,i,j), slurb_tile%t_indoor(i,j) )
 
     slurb_tile%ghf_wall_a(i,j) = slurb_tile%conductivity_wall(nzb_wall,i,j) *                                      &
-                         ( slurb_tile%t_wall_a_p(nzb_wall,i,j) - slurb_tile%t_indoor(i,j) )
+                         ( slurb_tile%t_wall_a_0(nzb_wall,i,j) - slurb_tile%t_indoor(i,j) )
 
 !
 !-- Same treatment for wall B if this is an anisotropic canyon, otherwise copy.
     IF ( slurb_tile%anisotropic_canyon(i,j) )  THEN
-       slurb_tile%pt_wall_b(i,j)  = slurb_tile%t_wall_b_p(nzt_wall,i,j) * (1 / exnf(k_topo))
-       slurb_tile%shf_wall_b(i,j) = -f_shf_b * ( slurb_tile%t_can(i,j) - slurb_tile%t_wall_b_p(nzt_wall,i,j) )
+       slurb_tile%pt_wall_b(i,j)  = slurb_tile%t_wall_b_0(nzt_wall,i,j) * (1 / exnf(k_topo))
+       slurb_tile%shf_wall_b(i,j) = -f_shf_b * ( slurb_tile%t_can_m(i,j) - slurb_tile%t_wall_b_0(nzt_wall,i,j) )
 
-       CALL calc_heat_diffusion( slurb_tile%t_wall_b(:,i,j), slurb_tile%t_wall_b_p(:,i,j), slurb_tile%tt_wall_b(:,i,j),    &
-                                 slurb_tile%c_wall(:,i,j), slurb_tile%conductivity_wall(:,i,j), slurb_tile%t_indoor(i,j) )
 
        slurb_tile%ghf_wall_b(i,j) = slurb_tile%conductivity_wall(nzb_wall,i,j) *                                   &
-                            ( slurb_tile%t_wall_b_p(nzb_wall,i,j) - slurb_tile%t_indoor(i,j) )
+                            ( slurb_tile%t_wall_b_0(nzb_wall,i,j) - slurb_tile%t_indoor(i,j) )
 
+    CALL calc_heat_diffusion( slurb_tile%t_wall_b_m(:,i,j), slurb_tile%t_wall_b_0(:,i,j), slurb_tile%tt_wall_b(:,i,j),    &
+        slurb_tile%c_wall(:,i,j), slurb_tile%conductivity_wall(:,i,j), slurb_tile%t_indoor(i,j) )
 !
 !--    Update longwave radiative fluxes following linearization.
        slurb_tile%rad_lw_net_wall_a(i,j) = slurb_tile%rad_lw_net_wall_a(i,j)                                       &
-                                   + slurb_tile%lw_wall_coef(1,i,j) * slurb_tile%t_wall_a(nzt_wall,i,j)**4         &
+                                   + slurb_tile%lw_wall_coef(1,i,j) * slurb_tile%t_wall_a_m(nzt_wall,i,j)**4         &
                                    - 4.0_field_r * slurb_tile%lw_wall_coef(1,i,j)                               &
-                                      * slurb_tile%t_wall_a(nzt_wall,i,j)**3                               &
-                                   * ( slurb_tile%t_wall_a(nzt_wall,i,j) - slurb_tile%t_wall_a_p(nzt_wall,i,j) )
+                                      * slurb_tile%t_wall_a_m(nzt_wall,i,j)**3                               &
+                                   * ( slurb_tile%t_wall_a_m(nzt_wall,i,j) - slurb_tile%t_wall_a_0(nzt_wall,i,j) )
 
        slurb_tile%rad_lw_net_wall_b(i,j) = slurb_tile%rad_lw_net_wall_b(i,j)                                       &
-                                   + slurb_tile%lw_wall_coef(1,i,j) * slurb_tile%t_wall_b(nzt_wall,i,j)**4         &
+                                   + slurb_tile%lw_wall_coef(1,i,j) * slurb_tile%t_wall_b_m(nzt_wall,i,j)**4         &
                                    - 4.0_field_r * slurb_tile%lw_wall_coef(1,i,j)                               &
-                                      * slurb_tile%t_wall_b(nzt_wall,i,j)**3                               &
-                                   * ( slurb_tile%t_wall_b(nzt_wall,i,j) - slurb_tile%t_wall_b_p(nzt_wall,i,j) )
+                                      * slurb_tile%t_wall_b_m(nzt_wall,i,j)**3                               &
+                                   * ( slurb_tile%t_wall_b_m(nzt_wall,i,j) - slurb_tile%t_wall_b_0(nzt_wall,i,j) )
     ELSE
 !
 !--    Copy all layers including the surface for wall B.
-       slurb_tile%t_wall_b_p(:,i,j) = slurb_tile%t_wall_a_p(:,i,j)
+       slurb_tile%t_wall_b_0(:,i,j) = slurb_tile%t_wall_a_0(:,i,j)
        slurb_tile%tt_wall_b(:,i,j)  = slurb_tile%tt_wall_a(:,i,j)
        slurb_tile%pt_wall_b(i,j)    = slurb_tile%pt_wall_a(i,j)
        slurb_tile%shf_wall_b(i,j)   = slurb_tile%shf_wall_a(i,j)
@@ -4205,11 +3876,11 @@ end subroutine slurb_update_external_vars
 !--    in the longwave balance, thus coefficients 1 and 3 are summed here.
        slurb_tile%rad_lw_net_wall_a(i,j) = slurb_tile%rad_lw_net_wall_a(i,j)                                       &
                                    + ( slurb_tile%lw_wall_coef(1,i,j) + slurb_tile%lw_wall_coef(3,i,j) )           &
-                                      * slurb_tile%t_wall_a(nzt_wall,i,j)**4                               &
+                                      * slurb_tile%t_wall_a_m(nzt_wall,i,j)**4                               &
                                    - 4.0_field_r * ( slurb_tile%lw_wall_coef(1,i,j)                             &
                                                 + slurb_tile%lw_wall_coef(3,i,j) )                         &
-                                   * slurb_tile%t_wall_a(nzt_wall,i,j)**3                                  &
-                                   * ( slurb_tile%t_wall_a(nzt_wall,i,j) - slurb_tile%t_wall_a_p(nzt_wall,i,j) )
+                                   * slurb_tile%t_wall_a_m(nzt_wall,i,j)**3                                  &
+                                   * ( slurb_tile%t_wall_a_m(nzt_wall,i,j) - slurb_tile%t_wall_a_0(nzt_wall,i,j) )
        slurb_tile%rad_lw_net_wall_b(i,j) = slurb_tile%rad_lw_net_wall_a(i,j)
     ENDIF
 
@@ -4246,84 +3917,87 @@ end subroutine slurb_update_external_vars
 !--    For windows, some of the incoming shortwave radiation is transmitted through the material.
        coef_1 = slurb_tile%rad_sw_net_win_a(i,j) * slurb_tile%absorption_win(nzt_win,i,j)                          &
                 + slurb_tile%rad_lw_net_win_a(i,j)                                                         &
-                - 3.0_field_r * slurb_tile%lw_win_coef(1,i,j) * slurb_tile%t_win_a(nzt_win,i,j)**4                      &
-                + f_shf_a * slurb_tile%t_can(i,j)                                                          &
-                + slurb_tile%conductivity_win(nzt_win,i,j) * slurb_tile%t_win_a(nzt_win+1,i,j)
+                - 3.0_field_r * slurb_tile%lw_win_coef(1,i,j) * slurb_tile%t_win_a_0(nzt_win,i,j)**4                      &
+                + f_shf_a * slurb_tile%t_can_0(i,j)                                                          &
+                + slurb_tile%conductivity_win(nzt_win,i,j) * slurb_tile%t_win_a_0(nzt_win+1,i,j)
 
-       coef_2 = -4.0_field_r * slurb_tile%lw_win_coef(1,i,j) * slurb_tile%t_win_a(nzt_win,i,j)**3                       &
+       coef_2 = -4.0_field_r * slurb_tile%lw_win_coef(1,i,j) * slurb_tile%t_win_a_0(nzt_win,i,j)**3                       &
                 + f_shf_a                                                                          &
                 + slurb_tile%conductivity_win(nzt_win,i,j)
 
-       CALL calc_surf_t_p( slurb_tile%t_win_a(nzt_win,i,j), slurb_tile%t_win_a_p(nzt_win,i,j),                     &
+       CALL calc_surf_t_p( slurb_tile%t_win_a_m(nzt_win,i,j), slurb_tile%t_win_a_0(nzt_win,i,j),                     &
                            slurb_tile%tt_win_a(nzt_win,i,j), coef_1, coef_2, slurb_tile%c_win(nzt_win,i,j) )
 
        coef_1 = slurb_tile%rad_sw_net_win_b(i,j) * slurb_tile%absorption_win(nzt_win,i,j)                          &
                 + slurb_tile%rad_lw_net_win_b(i,j)                                                         &
-                - 3.0_field_r * slurb_tile%lw_win_coef(1,i,j) * slurb_tile%t_win_b(nzt_win,i,j)**4                      &
-                + f_shf_b * slurb_tile%t_can(i,j)                                                          &
-                + slurb_tile%conductivity_win(nzt_win,i,j) * slurb_tile%t_win_b(nzt_win+1,i,j)
+                - 3.0_field_r * slurb_tile%lw_win_coef(1,i,j) * slurb_tile%t_win_b_0(nzt_win,i,j)**4                      &
+                + f_shf_b * slurb_tile%t_can_0(i,j)                                                          &
+                + slurb_tile%conductivity_win(nzt_win,i,j) * slurb_tile%t_win_b_0(nzt_win+1,i,j)
 
-       coef_2 = -4.0_field_r * slurb_tile%lw_win_coef(1,i,j) * slurb_tile%t_win_b(nzt_win,i,j)**3                       &
+       coef_2 = -4.0_field_r * slurb_tile%lw_win_coef(1,i,j) * slurb_tile%t_win_b_0(nzt_win,i,j)**3                       &
                 + f_shf_b                                                                          &
                 + slurb_tile%conductivity_win(nzt_win,i,j)
 
-       CALL calc_surf_t_p( slurb_tile%t_win_b(nzt_win,i,j), slurb_tile%t_win_b_p(nzt_win,i,j),                     &
+       CALL calc_surf_t_p( slurb_tile%t_win_b_m(nzt_win,i,j), slurb_tile%t_win_b_0(nzt_win,i,j),                     &
                            slurb_tile%tt_win_b(nzt_win,i,j), coef_1, coef_2, slurb_tile%c_win(nzt_win,i,j) )
 
     ELSE
        coef_1 = slurb_tile%rad_sw_net_win_a(i,j) * slurb_tile%absorption_win(nzt_win,i,j)                          &
                 + slurb_tile%rad_lw_net_win_a(i,j)                                                         &
                 - 3.0_field_r * ( slurb_tile%lw_win_coef(1,i,j) + slurb_tile%lw_win_coef(3,i,j) )                       &
-                   * slurb_tile%t_win_a(nzt_win,i,j)**4                                                    &
-                + f_shf_a * slurb_tile%t_can(i,j)                                                          &
-                + slurb_tile%conductivity_win(nzt_win,i,j) * slurb_tile%t_win_a(nzt_win+1,i,j)
+                   * slurb_tile%t_win_a_0(nzt_win,i,j)**4                                                    &
+                + f_shf_a * slurb_tile%t_can_0(i,j)                                                          &
+                + slurb_tile%conductivity_win(nzt_win,i,j) * slurb_tile%t_win_a_0(nzt_win+1,i,j)
 
        coef_2 = -4.0_field_r * ( slurb_tile%lw_win_coef(1,i,j) + slurb_tile%lw_win_coef(3,i,j) )                        &
-                   * slurb_tile%t_win_a(nzt_win,i,j)**3                                                    &
+                   * slurb_tile%t_win_a_0(nzt_win,i,j)**3                                                    &
                 + f_shf_a                                                                          &
                 + slurb_tile%conductivity_win(nzt_win,i,j)
 
-       CALL calc_surf_t_p( slurb_tile%t_win_a(nzt_win,i,j), slurb_tile%t_win_a_p(nzt_win,i,j),                     &
+       CALL calc_surf_t_p( slurb_tile%t_win_a_m(nzt_win,i,j), slurb_tile%t_win_a_0(nzt_win,i,j),                     &
                            slurb_tile%tt_win_a(nzt_win,i,j), coef_1, coef_2, slurb_tile%c_win(nzt_win,i,j) )
     ENDIF
-
-    slurb_tile%pt_win_a(i,j)  = slurb_tile%t_win_a_p(nzt_win,i,j) * (1 / exnf(k_topo))
-    slurb_tile%shf_win_a(i,j) = -f_shf_a * ( slurb_tile%t_can(i,j) - slurb_tile%t_win_a_p(nzt_win,i,j) )
-
 !
 !-- The transmitted shortwave radiation is included also in the prognostic equations for material
 !-- subsurface temperatures.
-    CALL calc_heat_diffusion( slurb_tile%t_win_a(:,i,j), slurb_tile%t_win_a_p(:,i,j),                              &
+    slurb_tile%pt_win_a(i,j)  = slurb_tile%t_win_a_0(nzt_win,i,j) * (1 / exnf(k_topo))
+    slurb_tile%shf_win_a(i,j) = -f_shf_a * ( slurb_tile%t_can_m(i,j) - slurb_tile%t_win_a_0(nzt_win,i,j) )
+
+
+
+    CALL calc_heat_diffusion( slurb_tile%t_win_a_m(:,i,j), slurb_tile%t_win_a_0(:,i,j),                              &
                               slurb_tile%tt_win_a(:,i,j), slurb_tile%c_win(:,i,j),                                 &
                               slurb_tile%conductivity_win(:,i,j), slurb_tile%t_indoor(i,j),                        &
                               slurb_tile%rad_sw_net_win_a(i,j), slurb_tile%absorption_win(:,i,j) )
 
+
     slurb_tile%ghf_win_a(i,j) = slurb_tile%conductivity_win(nzb_win,i,j) *                                         &
-                        ( slurb_tile%t_win_a_p(nzb_win,i,j) - slurb_tile%t_indoor(i,j) )
+                        ( slurb_tile%t_win_a_0(nzb_win,i,j) - slurb_tile%t_indoor(i,j) )
 
     IF ( slurb_tile%anisotropic_canyon(i,j) )  THEN
-       slurb_tile%pt_win_b(i,j)  = slurb_tile%t_win_b_p(nzt_win,i,j) * (1 / exnf(k_topo))
-       slurb_tile%shf_win_b(i,j) = -f_shf_b * ( slurb_tile%t_can(i,j) - slurb_tile%t_win_b_p(nzt_win,i,j) )
+       slurb_tile%pt_win_b(i,j)  = slurb_tile%t_win_b_0(nzt_win,i,j) * (1 / exnf(k_topo))
+       slurb_tile%shf_win_b(i,j) = -f_shf_b * ( slurb_tile%t_can_m(i,j) - slurb_tile%t_win_b_0(nzt_win,i,j) )
 
-       CALL calc_heat_diffusion( slurb_tile%t_win_b(:,i,j), slurb_tile%t_win_b_p(:,i,j),                           &
+
+       CALL calc_heat_diffusion( slurb_tile%t_win_b_m(:,i,j), slurb_tile%t_win_b_0(:,i,j),                           &
                                  slurb_tile%tt_win_b(:,i,j), slurb_tile%c_win(:,i,j),                              &
                                  slurb_tile%conductivity_win(:,i,j), slurb_tile%t_indoor(i,j),                     &
                                  slurb_tile%rad_sw_net_win_b(i,j), slurb_tile%absorption_win(:,i,j) )
 
        slurb_tile%ghf_win_b(i,j) = slurb_tile%conductivity_win(nzb_win,i,j) *                                      &
-                           ( slurb_tile%t_win_b_p(nzb_win,i,j) - slurb_tile%t_indoor(i,j) )
+                           ( slurb_tile%t_win_b_0(nzb_win,i,j) - slurb_tile%t_indoor(i,j) )
 
        slurb_tile%rad_lw_net_win_a(i,j) = slurb_tile%rad_lw_net_win_a(i,j)                                         &
-                                  + slurb_tile%lw_win_coef(1,i,j) * slurb_tile%t_win_a(nzt_win,i,j)**4             &
-                                  - 4.0_field_r * slurb_tile%lw_win_coef(1,i,j) * slurb_tile%t_win_a(nzt_win,i,j)**3    &
-                                     * ( slurb_tile%t_win_a(nzt_win,i,j) - slurb_tile%t_win_a_p(nzt_win,i,j) )
+                                  + slurb_tile%lw_win_coef(1,i,j) * slurb_tile%t_win_a_m(nzt_win,i,j)**4             &
+                                  - 4.0_field_r * slurb_tile%lw_win_coef(1,i,j) * slurb_tile%t_win_a_m(nzt_win,i,j)**3    &
+                                     * ( slurb_tile%t_win_a_m(nzt_win,i,j) - slurb_tile%t_win_a_0(nzt_win,i,j) )
 
        slurb_tile%rad_lw_net_win_b(i,j) = slurb_tile%rad_lw_net_win_b(i,j)                                         &
-                                  + slurb_tile%lw_win_coef(1,i,j) * slurb_tile%t_win_b(nzt_win,i,j)**4             &
-                                  - 4.0_field_r * slurb_tile%lw_win_coef(1,i,j) * slurb_tile%t_win_b(nzt_win,i,j)**3    &
-                                     * ( slurb_tile%t_win_b(nzt_win,i,j) - slurb_tile%t_win_b_p(nzt_win,i,j) )
+                                  + slurb_tile%lw_win_coef(1,i,j) * slurb_tile%t_win_b_m(nzt_win,i,j)**4             &
+                                  - 4.0_field_r * slurb_tile%lw_win_coef(1,i,j) * slurb_tile%t_win_b_m(nzt_win,i,j)**3    &
+                                     * ( slurb_tile%t_win_b_m(nzt_win,i,j) - slurb_tile%t_win_b_0(nzt_win,i,j) )
     ELSE
-       slurb_tile%t_win_b_p(:,i,j) = slurb_tile%t_win_a_p(:,i,j)
+       slurb_tile%t_win_b_0(:,i,j) = slurb_tile%t_win_a_0(:,i,j)
        slurb_tile%tt_win_b(:,i,j)  = slurb_tile%tt_win_a(:,i,j)
        slurb_tile%pt_win_b(i,j)    = slurb_tile%pt_win_a(i,j)
        slurb_tile%shf_win_b(i,j)   = slurb_tile%shf_win_a(i,j)
@@ -4331,10 +4005,10 @@ end subroutine slurb_update_external_vars
 
        slurb_tile%rad_lw_net_win_a(i,j) = slurb_tile%rad_lw_net_win_a(i,j)                                         &
                                   + ( slurb_tile%lw_win_coef(1,i,j) + slurb_tile%lw_win_coef(3,i,j) )              &
-                                     * slurb_tile%t_win_a(nzt_win,i,j)**4                                  &
+                                     * slurb_tile%t_win_a_m(nzt_win,i,j)**4                                  &
                                   - 4.0_field_r * ( slurb_tile%lw_win_coef(1,i,j) + slurb_tile%lw_win_coef(3,i,j) )     &
-                                  * slurb_tile%t_win_a(nzt_win,i,j)**3                                     &
-                                  * ( slurb_tile%t_win_a(nzt_win,i,j) - slurb_tile%t_win_a_p(nzt_win,i,j) )
+                                  * slurb_tile%t_win_a_m(nzt_win,i,j)**3                                     &
+                                  * ( slurb_tile%t_win_a_m(nzt_win,i,j) - slurb_tile%t_win_a_0(nzt_win,i,j) )
        slurb_tile%rad_lw_net_win_b(i,j) = slurb_tile%rad_lw_net_win_a(i,j)
     ENDIF
 
@@ -4348,7 +4022,7 @@ end subroutine slurb_update_external_vars
 !--------------------------------------------------------------------------------------------------!
  PURE FUNCTION q_surf( q_s, rah, q_a, f_qsws )
 
-    REAL(field_r), INTENT(IN) ::  f_qsws  !< factor for the latent heat flux
+    REAL(field_r), INTENT(IN) ::  f_qsws  !< factor for the latent heat flux (W m^-2)
     REAL(field_r), INTENT(IN) ::  q_a     !< mixing ratio of adjacent air
     REAL(field_r), INTENT(IN) ::  q_s     !< saturation mixing ratio at the surface
     REAL(field_r), INTENT(IN) ::  rah     !< aerodynamic resistance for heat (and for water vapor)
@@ -4381,27 +4055,33 @@ end subroutine slurb_update_external_vars
 !> Compute the dynamical conditions (wind speed, pt, q, vpt) in the street canyon.
 !--------------------------------------------------------------------------------------------------!
 SUBROUTINE slurb_canyon_model
-    use modglobal, only : i1, j1, cp, rlv, rhow, rk3step, rdt, ep
+    use modglobal, only : i1, j1, cp, rlv, rk3step, rdt
     INTEGER ::  i       !< loop index (x-direction)
     INTEGER ::  j       !< loop index (y-direction)
     INTEGER ::  k_topo  !< k index of topography
     INTEGER ::  k_atm   !< k index of the first atmospheric level
-    INTEGER ::  m       !< running SLUrb tile index
 
     LOGICAL  ::  runge_l  !< timestep scheme switch for vectorization
 
-    REAL(field_r) ::  c          !< total heat capacity of canyon air column per square metre (J K^-1 m^-2)
-    REAL(field_r) ::  coef_1     !< coefficient A for the prognostic equation (W m^-2)
-    REAL(field_r) ::  coef_2     !< coefficient B for the prognostic equation (W m^-2 K^-1)
-    REAL(field_r) ::  f_shf      !< factor for the sensible heat flux  (W m^-2 K^-1)
-    REAL(field_r) ::  f_qsws     !< factor for the latent heat flux
-    REAL(field_r) ::  qsws_surf  !< aggregated latent heat flux from canyon surfaces per unit area (W m^-2)
-    REAL(field_r) ::  shf_surf   !< aggregated sensible heat flux from canyon surfaces per unit area (W m^-2)
-    REAL(field_r) ::  tq_new     !< mixing ratio tendency for the new RK3 time step
-    REAL(field_r) ::  tt_new     !< temperature tendency for the new RK3 time step
-    REAL(field_r) ::  vtws       !< buoyancy flux (m K s^-1)
-    REAL(field_r) ::  ws         !< free-convection scale (m/s)
+    REAL(field_r) ::  c           !< total heat capacity of canyon air column per square metre (J K^-1 m^-2)
+    REAL(field_r) ::  coef_1      !< coefficient A for the prognostic equation (W m^-2)
+    REAL(field_r) ::  coef_2      !< coefficient B for the prognostic equation (W m^-2 K^-1)
+    REAL(field_r) ::  f_shf       !< factor for the sensible heat flux  (W m^-2 K^-1)
+    REAL(field_r) ::  f_qsws      !< factor for the latent heat flux (W m^-2)
+    REAL(field_r) ::  qsws_surf   !< aggregated latent heat flux from canyon surfaces per unit area (W m^-2)
+    REAL(field_r) ::  shf_surf    !< aggregated sensible heat flux from canyon surfaces per unit area (W m^-2)
+    REAL(field_r) ::  tq_new      !< mixing ratio tendency for the new RK3 time step
+    REAL(field_r) ::  tt_new      !< temperature tendency for the new RK3 time step
+    REAL(field_r) ::  vtws        !< buoyancy flux (m K s^-1)
+    REAL(field_r) ::  ws          !< free-convection scale (m/s)
+    REAL(field_r) ::  q_can_p_imp !< mixing ratio for the new RK3 time step
+    REAL(field_r) ::  t_can_p_imp !< temperature for the new RK3 time step
+
+    real :: rk3coef !< (s)
     real :: rho_cp !< cp * rho (J m^-3 K^-1)
+
+    rk3coef = rdt / (4. - dble(rk3step))
+
     k_topo = 1
     k_atm = 1
     rho_cp = cp * rho_air_zw(k_topo)
@@ -4472,25 +4152,38 @@ SUBROUTINE slurb_canyon_model
         !  write (*,*) i,j,coef_2
         ! K = (w m^-2 s + J k^-1 m^-2 K) / (J K^-1 m^-2 + W m^-2 K^-1 s)
         ! K = (J m^-2 + J m^-2) / (J K^-1 m^-2 + J m^-2 K^-1)
-         slurb_tile%t_can_p(i,j) = ( coef_1 * (rdt / 3) * tsc(2) + c * slurb_tile%t_can(i,j) ) /                         &
-                           ( c + coef_2 * (rdt / 3) * tsc(2) )
+        t_can_p_imp = (coef_1 * rk3coef + c * slurb_tile%t_can_0(i,j)) / (c + coef_2 * rk3coef)
+        slurb_tile%tt_can(i,j) = (t_can_p_imp - slurb_tile%t_can_0(i,j)) / rk3coef
+        slurb_tile%t_can_0(i,j) = t_can_p_imp
 
-         slurb_tile%t_can_p(i,j) = slurb_tile%t_can_p(i,j) + (rdt / 3) * tsc(3) * slurb_tile%tt_can(i,j)
+        !  slurb_tile%t_can_m(i,j) = rk3coef * coef_1 / coef_2 + slurb_tile%t_can_m(i,j) / coef_2
+        ! slurb_tile%t_can_m(i,j) = (coef_1 * rdt + c * slurb_tile%t_can_0(i,j)) / ( c + coef_2 * rdt)
+        ! slurb_tile%t_can_m(i,j) = rdt*coef_1/coef_2 + slurb_tile%t_can_0(i,j)/coef_2
+        ! slurb_tile%tt_can(i,j)  = (coef_1/coef_2 + t_can/coef_2 - t_can) / rdt
 
-         tt_new = ( slurb_tile%t_can_p(i,j) - slurb_tile%t_can(i,j) - (rdt / 3) * tsc(3) * slurb_tile%tt_can(i,j) ) /            &
-                  ( (rdt / 3)  * tsc(2) )
-   !
-   !--    Compute the weighted RK3 tendency to be used in next time step.
-         IF ( runge_l )  THEN
-            IF ( rk3step == 1 )  THEN
-               slurb_tile%tt_can(i,j) = tt_new
-            ELSEIF ( rk3step < 3 )  THEN
-               slurb_tile%tt_can(i,j) = -9.5625_field_r * tt_new + 5.3125_field_r * slurb_tile%tt_can(i,j)
-            ENDIF
-         ENDIF
+
+        ! t_can_p = (coef_1 * rdt + c * t) / (c + coef_2 * rdt)
+        !  c* t_can_p + coef_2 * rdt*t_can_p   = coef_1 * rdt + c * t
+
+!          slurb_tile%t_can_m(i,j) = ( coef_1 * (rdt) * tsc(2) + c * slurb_tile%t_can_0(i,j) ) /                         &
+!                            ( c + coef_2 * (rdt) * tsc(2) )
+
+!          slurb_tile%t_can_m(i,j) = slurb_tile%t_can_m(i,j) + (rdt) * tsc(3) * slurb_tile%tt_can(i,j)
+
+!          tt_new = ( slurb_tile%t_can_m(i,j) - slurb_tile%t_can_0(i,j) - (rdt) * tsc(3) * slurb_tile%tt_can(i,j) ) /            &
+!                   ( (rdt)  * tsc(2) )
+!    !
+!    !--    Compute the weighted RK3 tendency to be used in next time step.
+!          IF ( runge_l )  THEN
+!             IF ( rk3step == 1 )  THEN
+!                slurb_tile%tt_can(i,j) = tt_new
+!             ELSEIF ( rk3step < 3 )  THEN
+!                slurb_tile%tt_can(i,j) = -9.5625_field_r * tt_new + 5.3125_field_r * slurb_tile%tt_can(i,j)
+!             ENDIF
+!          ENDIF
 
         ! write(*,*) "t_can_p"
-        !  write (*,*) i,j,slurb_tile%t_can_p(i,j)
+        !  write (*,*) i,j,slurb_tile%t_can_m(i,j)
         ! write(*,*) "exnf(k_topo)"
         !  write(*,*) exnf(k_topo)
         !  write(*,*) "pt1"
@@ -4499,7 +4192,7 @@ SUBROUTINE slurb_canyon_model
         !  write (*,*) i,j,f_shf
          !
          !--    Calculate new pt and shf from canyon to atmosphere.
-         slurb_tile%pt_can(i,j) = slurb_tile%t_can_p(i,j) * (1 / exnf(k_topo))
+         slurb_tile%pt_can(i,j) = slurb_tile%t_can_0(i,j) * (1 / exnf(k_topo))
          slurb_tile%shf_can(i,j) = -f_shf * ( slurb_tile%pt1(i,j) - slurb_tile%pt_can(i,j) )
          
         !  write(*,*) "pt_can"
@@ -4509,48 +4202,62 @@ SUBROUTINE slurb_canyon_model
          IF ( moist_physics )  THEN
 
             f_qsws = rho_lv / slurb_tile%rah_can(i,j)
-   !
-   !--       Here our "latent heat capacity" is the canyon air column total mass.
-            c = rho_lv * slurb_tile%h_bld(i,j)
+
    !
    !--       Same for the latent heat flux. Currently only the roads, walls are always dry.
    !--       This is a placeholder aggregation for street canyon vegetation,
    !--       e.g. green walls, low vegetation etc.
-            qsws_surf = slurb_tile%qsws_road(i,j)
+            ! qsws_surf = slurb_tile%qsws_road(i,j)
    !
    !--       Aggregated flux doesn't contain l_v yet.
-            qsws_surf = slurb_tile%qsws_road(i,j) * rlv
+            ! qsws_surf = 
    !
    !--       Compute new prognostic canyon mixing ratio.
-            coef_1 = f_qsws * slurb_tile%q1(i,j) + qsws_surf
+            coef_1 = f_qsws * slurb_tile%q1(i,j) + slurb_tile%qsws_road(i,j)
             coef_2 = f_qsws
 
-            slurb_tile%q_can_p(i,j) = ( coef_1 * (rdt / 3) * tsc(2) + c * slurb_tile%q_can(i,j) ) /                      &
-                              ( c + coef_2 * (rdt / 3) * tsc(2) )
+            ! slurb_tile%q_can_m(i,j) = ( coef_1 * (rdt) * tsc(2) + c * slurb_tile%q_can_0(i,j) ) /                      &
+            !                   ( c + coef_2 * (rdt) * tsc(2) )
 
-            slurb_tile%q_can_p(i,j) = slurb_tile%q_can_p(i,j) + (rdt / 3) * tsc(3) * slurb_tile%tq_can(i,j)
-   !
-   !--       Prevent negative mixing ratios due to temporal discretization. This is done before
-   !--       the computation of tq_new in order to conserve energy.
-            ! write(*,*) "q_can_p"
-            ! write(*,*) i,j,slurb_tile%q_can_p(i,j)
-            IF ( slurb_tile%q_can_p(i,j) < 0.0_field_r )  slurb_tile%q_can_p(i,j) = 0.0_field_r
+            
+            ! slurb_tile%q_can_m(i,j) = slurb_tile%q_can_m(i,j) + (rdt) * tsc(3) * slurb_tile%tq_can(i,j)
+            !
+            !--       Prevent negative mixing ratios due to temporal discretization. This is done before
+            !--       the computation of tq_new in order to conserve energy.
+            ! write(*,*) "q_can_m"
+            ! write(*,*) i,j,slurb_tile%q_can_m(i,j)
+            
 
-            tq_new = ( slurb_tile%q_can_p(i,j) - slurb_tile%q_can(i,j) - (rdt / 3) * tsc(3) * slurb_tile%tq_can(i,j) ) /         &
-                     ( (rdt / 3)  * tsc(2) )
+            ! t_new_implicit = ( ( coef_1 * (rk3coef) + c * t_0 )  / ( c + coef_2 * (rk3coef)  ))
+            ! tt_new = (t_new_implicit - t_0) / rk3coef
+            ! t_0 = t_new_implicit
+            
+            ! tt_current = tt_new*(-4.25)
+            !
+            !--       Here our "latent heat capacity" is the canyon air column total mass.
+            c = rho_lv * slurb_tile%h_bld(i,j)
+
+            q_can_p_imp = (( coef_1 * rk3coef + c * slurb_tile%q_can_0(i,j) ) / ( c + coef_2 * rk3coef ))
+            IF ( q_can_p_imp < 0.0_field_r )  q_can_p_imp = 0.0_field_r
+            slurb_tile%tq_can(i,j) = (q_can_p_imp - slurb_tile%q_can_0(i,j)) / rk3coef
+            slurb_tile%q_can_0(i,j) = q_can_p_imp
+
+            ! tq_new = ( slurb_tile%q_can_(i,j) - slurb_tile%q_can_0(i,j) - (rdt) * tsc(3) * slurb_tile%tq_can(i,j) ) /         &
+            !          ( (rdt)  * tsc(2) )
    !
    !--       Compute the weighted RK3 tendency to be used in next time step.
-            IF ( runge_l )  THEN
-               IF ( rk3step == 1 )  THEN
-                  slurb_tile%tq_can(i,j) = tq_new
-               ELSEIF ( rk3step < 3 )  THEN
-                  slurb_tile%tq_can(i,j) = -9.5625_field_r * tq_new + 5.3125_field_r * slurb_tile%tq_can(i,j)
-               ENDIF
-            ENDIF
+            ! slurb_tile%tq_can(i,j) = tq_new
+            ! IF ( runge_l )  THEN
+            !    IF ( rk3step == 1 )  THEN
+            !       slurb_tile%tq_can(i,j) = tq_new
+            !    ELSEIF ( rk3step < 3 )  THEN
+            !       slurb_tile%tq_can(i,j) = -9.5625_field_r * tq_new + 5.3125_field_r * slurb_tile%tq_can(i,j)
+            !    ENDIF
+            ! ENDIF
 
-            slurb_tile%q_can(i,j) = slurb_tile%q_can_p(i,j)
-            slurb_tile%vpt_can(i,j) = slurb_tile%pt_can(i,j) * ( 1.0_field_r + 0.61_field_r * slurb_tile%q_can_p(i,j) )
-            slurb_tile%qsws_can(i,j) = - f_qsws * ( slurb_tile%q1(i,j) - slurb_tile%q_can_p(i,j) ) / rlv
+            ! slurb_tile%q_can_0(i,j) = slurb_tile%q_can_m(i,j)
+            slurb_tile%vpt_can(i,j) = slurb_tile%pt_can(i,j) * ( 1.0_field_r + 0.61_field_r * slurb_tile%q_can_0(i,j) )
+            slurb_tile%qsws_can(i,j) = - f_qsws * ( slurb_tile%q1(i,j) - slurb_tile%q_can_0(i,j) )
 
          ENDIF
    !
@@ -4567,7 +4274,7 @@ SUBROUTINE slurb_canyon_model
         !  write(*,*) "qsws_can"
         !  write (*,*) i,j,slurb_tile%qsws_can(i,j)
          IF ( moist_physics )  THEN
-            vtws =  (1/(rho_cp)) * slurb_tile%shf_can(i,j) + (rlv/cp) * slurb_tile%qsws_can(i,j)
+            vtws =  (1/(rho_cp)) * slurb_tile%shf_can(i,j) + (1/(rho_cp)) * slurb_tile%qsws_can(i,j)
          ELSE
             vtws =  (1/(rho_cp)) * slurb_tile%shf_can(i,j)
          ENDIF
@@ -4604,7 +4311,6 @@ SUBROUTINE slurb_canyon_model
     INTEGER ::  j       !< running index
     INTEGER ::  k_topo  !< k index of topography
     INTEGER ::  k_atm   !< k index of the first atmospheric level
-    INTEGER ::  m       !< running index of surface tiles
 
     LOGICAL ::  runge_l  !< flag for timestep scheme to allow vectorization
     real :: rhocp_i, rholv_i
@@ -4711,35 +4417,35 @@ SUBROUTINE slurb_canyon_model
 !-- First, compute the bulk heat transfer coefficients.
     IF ( calc_t_h )  THEN
        c_h_roof = ABS( slurb_tile%shf_roof(i,j) / ( rho * slurb_tile%uv_eff1(i,j) *                             &
-                       ( slurb_tile%t_roof_p(nzt_roof,i,j) - slurb_tile%pt1(i,j) * exnf(k_atm) ) ) )
+                       ( slurb_tile%t_roof_0(nzt_roof,i,j) - slurb_tile%pt1(i,j) * exnf(k_atm) ) ) )
 
        c_h_wall_a = ABS( slurb_tile%shf_wall_a(i,j) / ( rho * slurb_tile%uv_eff1(i,j) *                         &
-                         ( slurb_tile%t_wall_a_p(nzt_wall,i,j) - slurb_tile%pt1(i,j) * exnf(k_atm) ) ) )
+                         ( slurb_tile%t_wall_a_0(nzt_wall,i,j) - slurb_tile%pt1(i,j) * exnf(k_atm) ) ) )
 
        c_h_wall_b = ABS( slurb_tile%shf_wall_b(i,j) / ( rho * slurb_tile%uv_eff1(i,j) *                         &
-                         ( slurb_tile%t_wall_b_p(nzt_wall,i,j) - slurb_tile%pt1(i,j) * exnf(k_atm) ) ) )
+                         ( slurb_tile%t_wall_b_0(nzt_wall,i,j) - slurb_tile%pt1(i,j) * exnf(k_atm) ) ) )
 
        c_h_win_a = ABS( slurb_tile%shf_win_a(i,j) / ( rho * slurb_tile%uv_eff1(i,j) *                           &
-                        ( slurb_tile%t_win_a_p(nzt_win,i,j) - slurb_tile%pt1(i,j) * exnf(k_atm) ) ) )
+                        ( slurb_tile%t_win_a_0(nzt_win,i,j) - slurb_tile%pt1(i,j) * exnf(k_atm) ) ) )
 
        c_h_win_b = ABS( slurb_tile%shf_win_b(i,j) / ( rho * slurb_tile%uv_eff1(i,j) *                           &
-                        ( slurb_tile%t_win_b_p(nzt_win,i,j) - slurb_tile%pt1(i,j) * exnf(k_atm) ) ) )
+                        ( slurb_tile%t_win_b_0(nzt_win,i,j) - slurb_tile%pt1(i,j) * exnf(k_atm) ) ) )
 
        c_h_road = ABS( slurb_tile%shf_road(i,j) / ( rho * slurb_tile%uv_eff1(i,j) *                             &
-                       ( slurb_tile%t_road_p(nzt_road,i,j) - slurb_tile%pt1(i,j) * exnf(k_atm) ) ) )
+                       ( slurb_tile%t_road_0(nzt_road,i,j) - slurb_tile%pt1(i,j) * exnf(k_atm) ) ) )
 
        slurb_tile%t_h_urb(i,j) = ( ( 1.0_field_r - slurb_tile%f_bld(i,j) ) *                                            &
                            ( slurb_tile%hw_can(i,j) * (                                                    &
                                                 ( 1.0_field_r - slurb_tile%f_win(i,j) ) *                       &
-                                                ( c_h_wall_a * slurb_tile%t_wall_a_p(nzt_wall,i,j)         &
-                                                + c_h_wall_b * slurb_tile%t_wall_b_p(nzt_wall,i,j) )       &
+                                                ( c_h_wall_a * slurb_tile%t_wall_a_0(nzt_wall,i,j)         &
+                                                + c_h_wall_b * slurb_tile%t_wall_b_0(nzt_wall,i,j) )       &
                                               + slurb_tile%f_win(i,j) *                                    &
-                                                ( c_h_win_a * slurb_tile%t_win_a_p(nzt_win,i,j)            &
-                                                + c_h_win_b * slurb_tile%t_win_b_p(nzt_win,i,j) )          &
+                                                ( c_h_win_a * slurb_tile%t_win_a_0(nzt_win,i,j)            &
+                                                + c_h_win_b * slurb_tile%t_win_b_0(nzt_win,i,j) )          &
                                               )                                                    &
-                           + c_h_road * slurb_tile%t_road_p(nzt_road,i,j)                                  &
+                           + c_h_road * slurb_tile%t_road_0(nzt_road,i,j)                                  &
                            )                                                                       &
-                         + slurb_tile%f_bld(i,j) * c_h_roof * slurb_tile%t_roof_p(nzt_roof,i,j)                    &
+                         + slurb_tile%f_bld(i,j) * c_h_roof * slurb_tile%t_roof_0(nzt_roof,i,j)                    &
                          ) /                                                                       &
                          ( ( 1.0_field_r - slurb_tile%f_bld(i,j) ) *                                            &
                            ( slurb_tile%hw_can(i,j) * (                                                    &
@@ -4763,13 +4469,13 @@ SUBROUTINE slurb_canyon_model
     IF ( calc_t_c )  THEN
        slurb_tile%t_c_urb(i,j) = ( ( 1.0_field_r - slurb_tile%f_bld(i,j) ) *                                            &
                            ( slurb_tile%hw_can(i,j) * ( ( 1.0_field_r - slurb_tile%f_win(i,j) ) *                       &
-                                     ( slurb_tile%t_wall_a_p(nzt_wall,i,j) + slurb_tile%t_wall_b_p(nzt_wall,i,j) ) &
+                                     ( slurb_tile%t_wall_a_0(nzt_wall,i,j) + slurb_tile%t_wall_b_0(nzt_wall,i,j) ) &
                                      + slurb_tile%f_win(i,j) *                                             &
-                                     ( slurb_tile%t_win_a_p(nzt_win,i,j)   + slurb_tile%t_win_b_p(nzt_win,i,j)   ) &
+                                     ( slurb_tile%t_win_a_0(nzt_win,i,j)   + slurb_tile%t_win_b_0(nzt_win,i,j)   ) &
                                               )                                                    &
-                           + slurb_tile%t_road_p(nzt_road,i,j)                                             &
+                           + slurb_tile%t_road_0(nzt_road,i,j)                                             &
                            )                                                                       &
-                           + slurb_tile%f_bld(i,j) * slurb_tile%t_roof_p(nzt_roof,i,j)                             &
+                           + slurb_tile%f_bld(i,j) * slurb_tile%t_roof_0(nzt_roof,i,j)                             &
                          ) /                                                                       &
                          ( ( 1.0_field_r - slurb_tile%f_bld(i,j) ) * ( 2.0_field_r * slurb_tile%hw_can(i,j) + 1.0_field_r )       &
                            + slurb_tile%f_bld(i,j)                                                         &
@@ -4780,11 +4486,18 @@ SUBROUTINE slurb_canyon_model
 !-- 4) Theoretical 2 m temperature extrapolated using MOST.
     IF ( calc_t_2m )  THEN
        IF ( moist_physics )  THEN
-          vtws =  (1/(rho*cp)) * slurb_tile%shf_can(i,j) + (rlv/cp) * slurb_tile%qsws_can(i,j)
+          vtws =  (1/(rho_cp)) * slurb_tile%shf_can(i,j) + (1/(rho_cp)) * slurb_tile%qsws_can(i,j)
        ELSE
-          vtws =  (1/(rho*cp)) * slurb_tile%shf_can(i,j)
+          vtws =  (1/(rho_cp)) * slurb_tile%shf_can(i,j)
+          ! m K s^-1 = (kg m^-3 J kg^-1 K^-1)^-1 W m^-2
+          ! m K s^-1 = m^3 J^-1 K W m^-2
+          ! m K s^-1 = m K s^-1
+          ! for the moist case:
+          ! m K s^-1 = J kg^-1 J^-1 kg K W m^-2
+          ! m K s^-1 = K J s^-1 m^-2
+          ! need to multiply by J^-1 m^3
        ENDIF
-       ts = -vtws * (1 / rhof(k_atm)) / slurb_tile%us_urb(i,j)
+       ts = -vtws / slurb_tile%us_urb(i,j)
 
        slurb_tile%t_2m_urb(i,j) = ts / kappa *                                                             &
                           ( LOG( 2.0_field_r / ( slurb_tile%z_mo(i,j) + slurb_tile%h_bld(i,j) ) ) -                     &
@@ -4809,15 +4522,12 @@ SUBROUTINE slurb_canyon_model
  SUBROUTINE slurb_radiation_model
     use modglobal, only : i1,j1,xtime,rtimee,xday,xlat,xlon
     use modraddata, only : zenith_lon_lat
-    INTEGER ::  day_of_year  !< day of year for the current day
     INTEGER ::  i            !< loop index
     INTEGER ::  j            !< loop index
     INTEGER ::  k_topo       !< k index of topography top
     INTEGER ::  k_atm        !< k index of the first atmospheric level
-    INTEGER ::  m            !< running index of surface tiles
 
     REAL(field_r) ::  azimuth        !< solar azimuth angle
-    REAL(field_r) ::  second_of_day  !< second of the current day
     REAL(field_r) ::  tan_zenith     !< tangent of the solar zenith angle
     REAL(field_r) ::  zenith         !< solar zenith angle
     real :: sun_dir_lon, sun_dir_lat, cos_zenith
@@ -4905,10 +4615,10 @@ SUBROUTINE slurb_canyon_model
 
 
     slurb_tile%rad_lw_net_road(i,j) = slurb_tile%lw_road_coef(2,i,j) * slurb_tile%rad_lw_in_urb(i,j) +                     &
-                              slurb_tile%lw_road_coef(3,i,j) * slurb_tile%t_wall_a(nzt_wall,i,j)**4 +              &
-                              slurb_tile%lw_road_coef(3,i,j) * slurb_tile%t_wall_b(nzt_wall,i,j)**4 +              &
-                              slurb_tile%lw_road_coef(4,i,j) * slurb_tile%t_win_a(nzt_win,i,j)**4 +                &
-                              slurb_tile%lw_road_coef(4,i,j) * slurb_tile%t_win_b(nzt_win,i,j)**4
+                              slurb_tile%lw_road_coef(3,i,j) * slurb_tile%t_wall_a_0(nzt_wall,i,j)**4 +              &
+                              slurb_tile%lw_road_coef(3,i,j) * slurb_tile%t_wall_b_0(nzt_wall,i,j)**4 +              &
+                              slurb_tile%lw_road_coef(4,i,j) * slurb_tile%t_win_a_0(nzt_win,i,j)**4 +                &
+                              slurb_tile%lw_road_coef(4,i,j) * slurb_tile%t_win_b_0(nzt_win,i,j)**4
 
 !
 !-- The term dependent on t_wall_b is omitted at this stage, as for isotropic canyons the mean wall
@@ -4916,15 +4626,15 @@ SUBROUTINE slurb_canyon_model
 !-- t_wall_a and t_wall_b have to be included in linearization. For anisotropic canyons there is
 !-- no direct dependence, so it can be directly added (see below).
     slurb_tile%rad_lw_net_wall_a(i,j) = slurb_tile%lw_wall_coef(2,i,j) * slurb_tile%rad_lw_in_urb(i,j) +                   &
-                                slurb_tile%lw_wall_coef(4,i,j) * slurb_tile%t_win_a(nzt_win,i,j)**4 +              &
-                                slurb_tile%lw_wall_coef(5,i,j) * slurb_tile%t_win_b(nzt_win,i,j)**4 +              &
-                                slurb_tile%lw_wall_coef(6,i,j) * slurb_tile%t_road(nzt_road,i,j)**4
+                                slurb_tile%lw_wall_coef(4,i,j) * slurb_tile%t_win_a_0(nzt_win,i,j)**4 +              &
+                                slurb_tile%lw_wall_coef(5,i,j) * slurb_tile%t_win_b_0(nzt_win,i,j)**4 +              &
+                                slurb_tile%lw_wall_coef(6,i,j) * slurb_tile%t_road_0(nzt_road,i,j)**4
 
     IF ( slurb_tile%f_win(i,j) > 0.0_field_r )  THEN
        slurb_tile%rad_lw_net_win_a(i,j) = slurb_tile%lw_win_coef(2,i,j) * slurb_tile%rad_lw_in_urb(i,j) +                  &
-                                  slurb_tile%lw_win_coef(4,i,j) * slurb_tile%t_wall_a(nzt_wall,i,j)**4 +           &
-                                  slurb_tile%lw_win_coef(5,i,j) * slurb_tile%t_wall_b(nzt_wall,i,j)**4 +           &
-                                  slurb_tile%lw_win_coef(6,i,j) * slurb_tile%t_road(nzt_road,i,j)**4
+                                  slurb_tile%lw_win_coef(4,i,j) * slurb_tile%t_wall_a_0(nzt_wall,i,j)**4 +           &
+                                  slurb_tile%lw_win_coef(5,i,j) * slurb_tile%t_wall_b_0(nzt_wall,i,j)**4 +           &
+                                  slurb_tile%lw_win_coef(6,i,j) * slurb_tile%t_road_0(nzt_road,i,j)**4
     ENDIF
 
 !
@@ -4935,25 +4645,25 @@ SUBROUTINE slurb_canyon_model
 !--    prognostic equation, and thus it's contribution to longwave balance can be directly added
 !--    to the net longwave radiation before prognostic equations. Vice versa for t_wall_b.
        slurb_tile%rad_lw_net_wall_a(i,j) = slurb_tile%rad_lw_net_wall_a(i,j) +                                     &
-                                   slurb_tile%lw_wall_coef(3,i,j) * slurb_tile%t_wall_b(nzt_wall,i,j)**4
+                                   slurb_tile%lw_wall_coef(3,i,j) * slurb_tile%t_wall_b_0(nzt_wall,i,j)**4
 
 !
 !--    Note that for wall (and window) B the coefficients 4 and 5 are also swapped.
        slurb_tile%rad_lw_net_wall_b(i,j) = slurb_tile%lw_wall_coef(2,i,j) * slurb_tile%rad_lw_in_urb(i,j) +                &
-                                   slurb_tile%lw_wall_coef(3,i,j) * slurb_tile%t_wall_a(nzt_wall,i,j)**4 +         &
-                                   slurb_tile%lw_wall_coef(4,i,j) * slurb_tile%t_win_b(nzt_win,i,j)**4 +           &
-                                   slurb_tile%lw_wall_coef(5,i,j) * slurb_tile%t_win_a(nzt_win,i,j)**4 +           &
-                                   slurb_tile%lw_wall_coef(6,i,j) * slurb_tile%t_road(nzt_road,i,j)**4
+                                   slurb_tile%lw_wall_coef(3,i,j) * slurb_tile%t_wall_a_0(nzt_wall,i,j)**4 +         &
+                                   slurb_tile%lw_wall_coef(4,i,j) * slurb_tile%t_win_b_0(nzt_win,i,j)**4 +           &
+                                   slurb_tile%lw_wall_coef(5,i,j) * slurb_tile%t_win_a_0(nzt_win,i,j)**4 +           &
+                                   slurb_tile%lw_wall_coef(6,i,j) * slurb_tile%t_road_0(nzt_road,i,j)**4
 
        IF ( slurb_tile%f_win(i,j) > 0.0_field_r )  THEN
           slurb_tile%rad_lw_net_win_a(i,j) = slurb_tile%rad_lw_net_win_a(i,j) +                                    &
-                                     slurb_tile%lw_win_coef(3,i,j) * slurb_tile%t_win_b(nzt_win,i,j)**4
+                                     slurb_tile%lw_win_coef(3,i,j) * slurb_tile%t_win_b_0(nzt_win,i,j)**4
 
           slurb_tile%rad_lw_net_win_b(i,j) = slurb_tile%lw_win_coef(2,i,j) * slurb_tile%rad_lw_in_urb(i,j) +               &
-                                     slurb_tile%lw_win_coef(3,i,j) * slurb_tile%t_win_a(nzt_win,i,j)**4 +          &
-                                     slurb_tile%lw_win_coef(4,i,j) * slurb_tile%t_wall_b(nzt_wall,i,j)**4 +        &
-                                     slurb_tile%lw_win_coef(5,i,j) * slurb_tile%t_wall_a(nzt_wall,i,j)**4 +        &
-                                     slurb_tile%lw_win_coef(6,i,j) * slurb_tile%t_road(nzt_road,i,j)**4
+                                     slurb_tile%lw_win_coef(3,i,j) * slurb_tile%t_win_a_0(nzt_win,i,j)**4 +          &
+                                     slurb_tile%lw_win_coef(4,i,j) * slurb_tile%t_wall_b_0(nzt_wall,i,j)**4 +        &
+                                     slurb_tile%lw_win_coef(5,i,j) * slurb_tile%t_wall_a_0(nzt_wall,i,j)**4 +        &
+                                     slurb_tile%lw_win_coef(6,i,j) * slurb_tile%t_road_0(nzt_road,i,j)**4
        ENDIF
     ELSE
        slurb_tile%rad_lw_net_wall_b(i,j) = slurb_tile%rad_lw_net_wall_a(i,j)

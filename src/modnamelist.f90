@@ -3,6 +3,7 @@ module modnamelist
 
   use modchecksim,     only: checksim_read_namelist
   use modmicrophysics, only: microphysics_read_namelist
+  use modslurb,        only: slurb_read_namelist
 
   implicit none
 
@@ -19,6 +20,8 @@ contains
 
     ! Core modules
     call checksim_read_namelist(nml_filename)
+
+    call slurb_read_namelist(nml_filename)
 
     ! Add-on modules
     call microphysics_read_namelist(nml_filename)

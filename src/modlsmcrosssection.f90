@@ -213,8 +213,9 @@ contains
         fname4(11:18) = cmyid
         fname4(20:22) = cexpnr
         
-        nvar4 = 162
+        nvar4 = 145
         nvars3d4 = 21
+        nvar4 = nvar4 + nvars3d4
         nrec4=0
 
         allocate(ncname4(nvar4,4))
@@ -239,14 +240,14 @@ contains
             call ncinfo(ncname4( 17,:),'vsws_urb', 'urban momentum flux ', 'v-component', 'tt0t')
             call ncinfo(ncname4( 18,:),'thlskin', 'urban skin liquid water potential temperature', '', 'tt0t')
             call ncinfo(ncname4( 19,:),'qtskin', 'urban skin specific humidity TODOSELF', '', 'tt0t')
-            call ncinfo(ncname4( 20,:),'m_liq_road', 'liquid water reservoir on roads', '', 'tt0t')
-            call ncinfo(ncname4( 21,:),'m_liq_road_p', 'prog. liquid water reservoir on roads', '', 'tt0t')
-            call ncinfo(ncname4( 22,:),'m_liq_roof', 'liquid water reservoir on roofs', '', 'tt0t')
-            call ncinfo(ncname4( 23,:),'m_liq_roof_p', 'prog. liquid water reservoir on roofs', '', 'tt0t')
-            call ncinfo(ncname4( 24,:),'q_can', 'canyon mixing ratio ', 'kg/kg', 'tt0t')
-            call ncinfo(ncname4( 25,:),'q_can_p', 'prognostic canyon mixing ratio ', 'kg/kg', 'tt0t')
-            call ncinfo(ncname4( 26,:),'t_can', 'canyon air temperature ', 'K', 'tt0t')
-            call ncinfo(ncname4( 27,:),'t_can_p', 'prog. canyon temperature ', 'K', 'tt0t')
+            call ncinfo(ncname4( 20,:),'m_liq_road_0', 'liquid water reservoir on roads', '', 'tt0t')
+            call ncinfo(ncname4( 21,:),'m_liq_road_m', 'prev. liquid water reservoir on roads', '', 'tt0t')
+            call ncinfo(ncname4( 22,:),'m_liq_roof_0', 'liquid water reservoir on roofs', '', 'tt0t')
+            call ncinfo(ncname4( 23,:),'m_liq_roof_m', 'prev. liquid water reservoir on roofs', '', 'tt0t')
+            call ncinfo(ncname4( 24,:),'q_can_0', 'canyon mixing ratio ', 'kg/kg', 'tt0t')
+            call ncinfo(ncname4( 25,:),'q_can_m', 'previous canyon mixing ratio ', 'kg/kg', 'tt0t')
+            call ncinfo(ncname4( 26,:),'t_can_0', 'canyon air temperature ', 'K', 'tt0t')
+            call ncinfo(ncname4( 27,:),'t_can_m', 'prev. canyon temperature ', 'K', 'tt0t')
             call ncinfo(ncname4( 28,:),'tm_liq_road', 'road liquid water reservoir tendency', '', 'tt0t')
             call ncinfo(ncname4( 29,:),'tm_liq_roof', 'roof liquid water reservoir tendency', '', 'tt0t')
             call ncinfo(ncname4( 30,:),'tq_can', 'canyon mixing ratio tendency ', 'kg/kg/s', 'tt0t')
@@ -362,31 +363,37 @@ contains
             call ncinfo(ncname4( 139,:),'wall_hor_a_ratio', 'wall-to-horizontal area ratio', '', 'tt0t')
             call ncinfo(ncname4( 140,:),'z_mo', 'reference height for MOST for the atmosphere', '', 'tt0t')
             call ncinfo(ncname4( 141,:),'z_mo_can', 'canyon reference height for MOST ', 'canyon half-height', 'tt0t')
+            call ncinfo(ncname4( 142,:),'tm_roof_runoff', 'tm_roof_runoff', 'm s^-1', 'tt0t')
+            call ncinfo(ncname4( 143,:),'tm_road_runoff', 'tm_road_runoff', 'm s^-1', 'tt0t')
+            call ncinfo(ncname4( 144,:),'tm_roof_precep', 'tm_roof_precep', 'm s^-1', 'tt0t')
+            call ncinfo(ncname4( 145,:),'tm_road_precep', 'tm_road_precep', 'm s^-1', 'tt0t')
 
-            call ncinfo(ncname4( 142,:),'tt_wall_a', 'tendency wall a ', 'tt_wall_a', 'tttts_slurb')
-            call ncinfo(ncname4( 143,:),'tt_wall_b', 'tendency wall b ', 'tt_wall_b', 'tttts_slurb')
-            call ncinfo(ncname4( 144,:),'tt_roof', 'tendency roof a ', 'tt_roof', 'tttts_slurb')
+            call ncinfo(ncname4( nvar4-nvars3d4+1,:),'tt_wall_a', 'tendency wall a ', 'tt_wall_a', 'tttts_slurb')
+            call ncinfo(ncname4( nvar4-nvars3d4+2,:),'tt_wall_b', 'tendency wall b ', 'tt_wall_b', 'tttts_slurb')
+            call ncinfo(ncname4( nvar4-nvars3d4+3,:),'tt_roof', 'tendency roof a ', 'tt_roof', 'tttts_slurb')
             ! call ncinfo(ncname4( 145,:),'tt_roof_b', 'tendency roof b ', 'tt_roof_b', 'tt0t')
-            call ncinfo(ncname4( 145,:),'tt_win_a', 'tendency win a ', 'tt_win_a', 'tttts_slurb')
-            call ncinfo(ncname4( 146,:),'tt_win_b', 'tendency win b ', 'tt_win_b', 'tttts_slurb')
-            call ncinfo(ncname4( 147,:),'tt_road', 'tendency road a ', 'tt_road', 'tttts_slurb')
+            call ncinfo(ncname4( nvar4-nvars3d4+4,:),'tt_win_a', 'tendency win a ', 'tt_win_a', 'tttts_slurb')
+            call ncinfo(ncname4( nvar4-nvars3d4+5,:),'tt_win_b', 'tendency win b ', 'tt_win_b', 'tttts_slurb')
+            call ncinfo(ncname4( nvar4-nvars3d4+6,:),'tt_road', 'tendency road a ', 'tt_road', 'tttts_slurb')
             ! call ncinfo(ncname4( 149,:),'tt_road_b', 'tendency road b ', 'tt_road_b', 'tt0t')
-            call ncinfo(ncname4( 148,:),'c_wall', 'c_wall ', 'c_wall', 'tttts_slurb')
-            call ncinfo(ncname4( 149,:),'c_roof', 'c_roof ', 'c_roof', 'tttts_slurb')
-            call ncinfo(ncname4( 150,:),'c_win', 'c_win ', 'c_win', 'tttts_slurb')
-            call ncinfo(ncname4( 151,:),'c_road', 'c_road ', 'c_road', 'tttts_slurb')
-            call ncinfo(ncname4( 152,:),'absorption_win', 'absorption_win ', 'absorption_win', 'tttts_slurb')
-            call ncinfo(ncname4( 153,:),'dz_wall', 'dz_wall ', 'dz_wall', 'tttts_slurb')
-            call ncinfo(ncname4( 154,:),'dz_roof', 'dz_roof ', 'dz_roof', 'tttts_slurb')
-            call ncinfo(ncname4( 155,:),'dz_win', 'dz_win ', 'dz_win', 'tttts_slurb')
-            call ncinfo(ncname4( 156,:),'dz_road', 'dz_road ', 'dz_road', 'tttts_slurb')
-            call ncinfo(ncname4( 157,:),'t_wall_a', 'temperature wall a ', 't_wall_a', 'tttts_slurb')
-            call ncinfo(ncname4( 158,:),'t_wall_b', 'temperature wall b ', 't_wall_b', 'tttts_slurb')
-            call ncinfo(ncname4( 159,:),'t_roof', 'temperature roof a ', 't_roof', 'tttts_slurb')
+            call ncinfo(ncname4( nvar4-nvars3d4+7,:),'c_wall', 'c_wall ', 'c_wall', 'tttts_slurb')
+            call ncinfo(ncname4( nvar4-nvars3d4+8,:),'c_roof', 'c_roof ', 'c_roof', 'tttts_slurb')
+            call ncinfo(ncname4( nvar4-nvars3d4+9,:),'c_win', 'c_win ', 'c_win', 'tttts_slurb')
+            call ncinfo(ncname4( nvar4-nvars3d4+10,:),'c_road', 'c_road ', 'c_road', 'tttts_slurb')
+            call ncinfo(ncname4( nvar4-nvars3d4+11,:),'absorption_win', 'absorption_win ', 'absorption_win', 'tttts_slurb')
+            call ncinfo(ncname4( nvar4-nvars3d4+12,:),'dz_wall', 'dz_wall ', 'dz_wall', 'tttts_slurb')
+            call ncinfo(ncname4( nvar4-nvars3d4+13,:),'dz_roof', 'dz_roof ', 'dz_roof', 'tttts_slurb')
+            call ncinfo(ncname4( nvar4-nvars3d4+14,:),'dz_win', 'dz_win ', 'dz_win', 'tttts_slurb')
+            call ncinfo(ncname4( nvar4-nvars3d4+15,:),'dz_road', 'dz_road ', 'dz_road', 'tttts_slurb')
+            call ncinfo(ncname4( nvar4-nvars3d4+16,:),'t_wall_a', 'temperature wall a ', 't_wall_a', 'tttts_slurb')
+            call ncinfo(ncname4( nvar4-nvars3d4+17,:),'t_wall_b', 'temperature wall b ', 't_wall_b', 'tttts_slurb')
+            call ncinfo(ncname4( nvar4-nvars3d4+18,:),'t_roof', 'temperature roof a ', 't_roof', 'tttts_slurb')
             ! call ncinfo(ncname4( 145,:),'tt_roof_b', 'tendency roof b ', 'tt_roof_b', 'tt0t')
-            call ncinfo(ncname4( 160,:),'t_win_a', 'temperature win a ', 't_win_a', 'tttts_slurb')
-            call ncinfo(ncname4( 161,:),'t_win_b', 'temperature win b ', 't_win_b', 'tttts_slurb')
-            call ncinfo(ncname4( 162,:),'t_road', 'temperature road a ', 't_road', 'tttts_slurb')
+            call ncinfo(ncname4( nvar4-nvars3d4+19,:),'t_win_a', 'temperature win a ', 't_win_a', 'tttts_slurb')
+            call ncinfo(ncname4( nvar4-nvars3d4+20,:),'t_win_b', 'temperature win b ', 't_win_b', 'tttts_slurb')
+            call ncinfo(ncname4( nvar4-nvars3d4+21,:),'t_road', 'temperature road a ', 't_road', 'tttts_slurb')
+
+            
 
 
             call open_nc(trim(output_prefix)//fname4,  ncid4,nrec4,n1=imax,n2=jmax,ns=4)
@@ -593,7 +600,7 @@ contains
   end subroutine wrtsurf
   
   subroutine wrtslurb
-    use modglobal, only : imax,jmax,i1,j1,cexpnr,ifoutput,rtimee,rlv,cp
+    use modglobal, only : imax,jmax,i1,j1,rtimee,rlv,cp
     use modfields, only : rhof
     use modslurbdata, only : slurb_tile
     use modslurb, only : facade_rah_doe
@@ -601,7 +608,6 @@ contains
     implicit none
 
     ! LOCAL
-    integer i,j
     real, allocatable :: vars(:,:,:)
     real, allocatable :: vars3d(:,:,:,:)
 
@@ -612,7 +618,7 @@ contains
         vars(:,:,1) = slurb_tile%albedo_urb(2:i1,2:j1)
         vars(:,:,2) = slurb_tile%emiss_urb(2:i1,2:j1)
         vars(:,:,3) = slurb_tile%ol_urb(2:i1,2:j1)
-        vars(:,:,4) = slurb_tile%qsws_urb(2:i1,2:j1)*rlv
+        vars(:,:,4) = slurb_tile%qsws_urb(2:i1,2:j1)
         vars(:,:,5) = slurb_tile%rad_lw_in_urb(2:i1,2:j1)
         vars(:,:,6) = slurb_tile%rad_lw_out_urb(2:i1,2:j1)
         vars(:,:,7) = slurb_tile%rad_sw_in_urb(2:i1,2:j1)
@@ -628,17 +634,17 @@ contains
         vars(:,:,17) = slurb_tile%vsws_urb(2:i1,2:j1)
         vars(:,:,18) = slurb_tile%thlskin(2:i1,2:j1)
         vars(:,:,19) = slurb_tile%qtskin(2:i1,2:j1)
-        vars(:,:,20) = slurb_tile%m_liq_road(2:i1,2:j1)
-        vars(:,:,21) = slurb_tile%m_liq_road_p(2:i1,2:j1)
-        vars(:,:,22) = slurb_tile%m_liq_roof(2:i1,2:j1)
-        vars(:,:,23) = slurb_tile%m_liq_roof_p(2:i1,2:j1)
-        vars(:,:,24) = slurb_tile%q_can(2:i1,2:j1)
-        vars(:,:,25) = slurb_tile%q_can_p(2:i1,2:j1)
-        vars(:,:,26) = slurb_tile%t_can(2:i1,2:j1)
-        vars(:,:,27) = slurb_tile%t_can_p(2:i1,2:j1)
+        vars(:,:,20) = slurb_tile%m_liq_road_0(2:i1,2:j1)
+        vars(:,:,21) = slurb_tile%m_liq_road_m(2:i1,2:j1)
+        vars(:,:,22) = slurb_tile%m_liq_roof_0(2:i1,2:j1)
+        vars(:,:,23) = slurb_tile%m_liq_roof_m(2:i1,2:j1)
+        vars(:,:,24) = slurb_tile%q_can_0(2:i1,2:j1)
+        vars(:,:,25) = slurb_tile%q_can_m(2:i1,2:j1)
+        vars(:,:,26) = slurb_tile%t_can_0(2:i1,2:j1)
+        vars(:,:,27) = slurb_tile%t_can_m(2:i1,2:j1)
         vars(:,:,28) = slurb_tile%tm_liq_road(2:i1,2:j1)
         vars(:,:,29) = slurb_tile%tm_liq_roof(2:i1,2:j1)
-        vars(:,:,30) = slurb_tile%tq_can(2:i1,2:j1)
+        vars(:,:,30) = slurb_tile%tq_can(2:i1,2:j1) * rhof(1)
         ! K s^-1 * J K^-1 kg^-1 * kg m^-3
         !  W m^-3
         vars(:,:,31) = slurb_tile%tt_can(2:i1,2:j1) * cp * rhof(1)
@@ -663,12 +669,12 @@ contains
         vars(:,:,49) = slurb_tile%shf_wall_b(2:i1,2:j1)
         vars(:,:,50) = slurb_tile%shf_win_a(2:i1,2:j1)
         vars(:,:,51) = slurb_tile%shf_win_b(2:i1,2:j1)
-        vars(:,:,52) = slurb_tile%qsws_can(2:i1,2:j1)*rlv
-        vars(:,:,53) = slurb_tile%qsws_external(2:i1,2:j1)*rlv
+        vars(:,:,52) = slurb_tile%qsws_can(2:i1,2:j1)
+        vars(:,:,53) = slurb_tile%qsws_external(2:i1,2:j1)
         vars(:,:,54) = slurb_tile%qsws_liq_road(2:i1,2:j1)
-        vars(:,:,55) = slurb_tile%qsws_liq_roof(2:i1,2:j1)*rlv
-        vars(:,:,56) = slurb_tile%qsws_road(2:i1,2:j1)*rlv
-        vars(:,:,57) = slurb_tile%qsws_roof(2:i1,2:j1)*rlv
+        vars(:,:,55) = slurb_tile%qsws_liq_roof(2:i1,2:j1)
+        vars(:,:,56) = slurb_tile%qsws_road(2:i1,2:j1)
+        vars(:,:,57) = slurb_tile%qsws_roof(2:i1,2:j1)
         vars(:,:,58) = slurb_tile%c_liq_road(2:i1,2:j1)
         vars(:,:,59) = slurb_tile%c_liq_roof(2:i1,2:j1)
         vars(:,:,60) = slurb_tile%ghf_road(2:i1,2:j1)
@@ -761,6 +767,10 @@ contains
         vars(:,:,139) = 0!slurb_tile%wall_hor_a_ratio(2:i1,2:j1)
         vars(:,:,140) = slurb_tile%z_mo(2:i1,2:j1)
         vars(:,:,141) = slurb_tile%z_mo_can(2:i1,2:j1)
+        vars(:,:,142) = slurb_tile%tm_roof_runoff(2:i1,2:j1)
+        vars(:,:,143) = slurb_tile%tm_road_runoff(2:i1,2:j1)
+        vars(:,:,144) = slurb_tile%tm_roof_precep(2:i1,2:j1) * rhof(1)
+        vars(:,:,145) = slurb_tile%tm_road_precep(2:i1,2:j1) * rhof(1)
 
         vars3d(:,:,:,1) = slurb_tile%tt_wall_a(:,2:i1,2:j1)
         vars3d(:,:,:,2) = slurb_tile%tt_wall_b(:,2:i1,2:j1)
@@ -779,13 +789,13 @@ contains
         vars3d(:,:,:,13) = slurb_tile%dz_roof(:,2:i1,2:j1)
         vars3d(:,:,:,14) = slurb_tile%dz_win(:,2:i1,2:j1)
         vars3d(:,:,:,15) = slurb_tile%dz_road(:,2:i1,2:j1)
-        vars3d(:,:,:,16) = slurb_tile%t_wall_a(:,2:i1,2:j1)
-        vars3d(:,:,:,17) = slurb_tile%t_wall_b(:,2:i1,2:j1)
-        vars3d(:,:,:,18) = slurb_tile%t_roof(:,2:i1,2:j1)
+        vars3d(:,:,:,16) = slurb_tile%t_wall_a_0(:,2:i1,2:j1)
+        vars3d(:,:,:,17) = slurb_tile%t_wall_b_0(:,2:i1,2:j1)
+        vars3d(:,:,:,18) = slurb_tile%t_roof_0(:,2:i1,2:j1)
         ! vars(:,:,145) = slurb_tile%tt_roof_b(1,2:i1,2:j1)
-        vars3d(:,:,:,19) = slurb_tile%t_win_a(:,2:i1,2:j1)
-        vars3d(:,:,:,20) = slurb_tile%t_win_b(:,2:i1,2:j1)
-        vars3d(:,:,:,21) = slurb_tile%t_road(:,2:i1,2:j1)
+        vars3d(:,:,:,19) = slurb_tile%t_win_a_0(:,2:i1,2:j1)
+        vars3d(:,:,:,20) = slurb_tile%t_win_b_0(:,2:i1,2:j1)
+        vars3d(:,:,:,21) = slurb_tile%t_road_0(:,2:i1,2:j1)
 
 
 

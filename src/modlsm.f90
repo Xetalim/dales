@@ -30,7 +30,7 @@ contains
 
 subroutine lsm
   use modglobal, only : ldrydep, ntrun
-  use modslurb, only : slurb_radiation_model, slurb_canyon_model, slurb_energy_balance_model, slurb_swap_timelevel, calc_canyon_resistances, calc_urban_resistances, slurb_urban_aggregation_model, slurb_update_external_vars
+  use modslurb, only : slurb_timestep_control, slurb_radiation_model, slurb_canyon_model, slurb_energy_balance_model, slurb_swap_timelevel, calc_canyon_resistances, calc_urban_resistances, slurb_urban_aggregation_model, slurb_update_external_vars
   implicit none
 
     if (.not. llsm) return
@@ -60,6 +60,10 @@ subroutine lsm
 
     ! Calculate aerodynamic resistance (and u*, obuk).
     call calc_stability
+
+    call slurb_swap_timelevel()
+
+    call slurb_timestep_control
 
     call slurb_update_external_vars
 
@@ -99,7 +103,7 @@ subroutine lsm
 
     ! CALL slurb_atmospheric_model_coupler
     
-    call slurb_swap_timelevel(mod(ntrun, 2))
+    
 
     ! call do_slurb
 
@@ -991,7 +995,7 @@ subroutine calc_bulk_bcs
               qskin(i,j)  = qskin(i,j) + tile(ilu)%frac(i,j) * tile(ilu)%qtskin(i,j)
             enddo
             H(i,j)      = H(i,j)     + fraction_slurb(i,j) * slurb_tile%shf_urb(i,j)
-            LE(i,j)     = LE(i,j)    + fraction_slurb(i,j) * slurb_tile%qsws_urb(i,j) * rlv ! in SLURB the internal SHF is calculated without rlv
+            LE(i,j)     = LE(i,j)    + fraction_slurb(i,j) * slurb_tile%qsws_urb(i,j)
             ! G0(i,j)     = G0(i,j)    + tile(ilu)%frac(i,j) * tile(ilu)%G(i,j)
             ustar(i,j)  = ustar(i,j) + fraction_slurb(i,j) * slurb_tile%us_urb(i,j)
             tskin(i,j)  = tskin(i,j) + fraction_slurb(i,j) * slurb_tile%thlskin(i,j)
