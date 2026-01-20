@@ -261,22 +261,9 @@ module modslurb
     logical :: calc_t_c = .true.
     logical :: calc_t_h = .true.
 
-    REAL(field_r) ::  tsc(10) = (/ 1.0_field_r, 1.0_field_r, 0.0_field_r, 0.0_field_r, &    !< array used for controlling time-integration at different substeps
-                 0.0_field_r, 0.0_field_r, 0.0_field_r, 0.0_field_r, 0.0_field_r, 0.0_field_r /)
-
     
 
 contains
-subroutine slurb_timestep_control
-    use modglobal, only : rk3step
-    IF ( rk3step == 1 )  THEN
-        tsc(1:5) = (/ 1.0_field_r,  1.0_field_r /  3.0_field_r,          0.0_field_r, 0.0_field_r, 0.0_field_r /)
-    ELSEIF ( rk3step == 2 )  THEN
-        tsc(1:5) = (/ 1.0_field_r, 15.0_field_r / 16.0_field_r, -25.0_field_r/48.0_field_r, 0.0_field_r, 0.0_field_r /)
-    ELSE
-        tsc(1:5) = (/ 1.0_field_r,  8.0_field_r / 15.0_field_r,   1.0_field_r/15.0_field_r, 0.0_field_r, 1.0_field_r /)
-    ENDIF
-end subroutine slurb_timestep_control
 
 subroutine slurb_read_namelist(nml_filename)
     use modglobal,   only : ifnamopt, checknamelisterror
@@ -1107,33 +1094,13 @@ subroutine exitslurb
 
 end subroutine exitslurb
 
-! subroutine do_slurb
-!     use modglobal, only: ntrun
 
-!     call slurb_update_external_vars
-
-!     call calc_urban_resistances
-
-!     call calc_canyon_resistances
-
-!     call slurb_energy_balance_model
-
-!     CALL slurb_canyon_model
-
-!     CALL slurb_urban_aggregation_model
-
-!     ! CALL slurb_atmospheric_model_coupler
-
-!     call slurb_swap_timelevel(mod(ntrun, 2))
-! end subroutine do_slurb
-
-
-!--------------------------------------------------------------------------------------------------!
-! Description:
-! ------------
-!> Updates model external variables, e.g. the variables defined at the first atmospheric level based
-!> on atmospheric simulation state as well as the temporally dynamic SLUrb input variables.
-!--------------------------------------------------------------------------------------------------!
+    !--------------------------------------------------------------------------------------------------!
+    ! Description:
+    ! ------------
+    !> Updates model external variables, e.g. the variables defined at the first atmospheric level based
+    !> on atmospheric simulation state as well as the temporally dynamic SLUrb input variables.
+    !--------------------------------------------------------------------------------------------------!
  SUBROUTINE slurb_update_external_vars
 
     use modglobal, only : cp, rlv, cu, cv, i1, j1
@@ -1142,8 +1109,6 @@ end subroutine exitslurb
     INTEGER ::  i      !< loop index
     INTEGER::  j      !< loop index
     INTEGER ::  k_atm  !< k index of the first atmospheric level
-    ! INTEGER ::  t      !< current timestep index
-    ! INTEGER ::  tm     !< previous timestep index
 
     ! REAL(field_r) ::  fac_dt  !< factor for linear interpolation between timesteps
     REAL(field_r) ::  vtws    !< buoyancy flux (m K s^-1)
@@ -1158,29 +1123,9 @@ end subroutine exitslurb
     do j=2,j1
       do i=2,i1
         k_atm = 1
-    !        i = slurb_tile%i(m)
-    !        j = slurb_tile%j(m)
-    !        k_atm = topo_top_ind(j,i,0) + 1
-    ! !
-    ! !--    Calculate the pt, vpt and q for atmosphere depending on what modules are enabled.
-    !        IF ( bulk_cloud_model )  THEN
-    !           slurb_tile%pt1(m) = pt(k_atm,j,i) + lv_d_cp * (1 / exnf(k_atm)) * ql(k_atm,j,i)
-    !           slurb_tile%q1(m) = q(k_atm,j,i) - ql(k_atm,j,i)
-    !           slurb_tile%vpt1(m) = slurb_tile%pt1(m) * ( 1.0_field_r + 0.61_field_r * slurb_tile%q1(m) )
-    !        ELSEIF ( cloud_droplets )  THEN
-    !           slurb_tile%pt1(m) = pt(k_atm,j,i) + lv_d_cp * (1 / exnf(k_atm)) * ql(k_atm,j,i)
-    !           slurb_tile%q1(m) = q(k_atm,j,i)
-    !           slurb_tile%vpt1(m) = slurb_tile%pt1(m) * ( 1.0_field_r + 0.61_field_r * slurb_tile%q1(m) )
-    !        ELSE
-    !           slurb_tile%pt1(m) = pt(k_atm,j,i)
-    !           IF ( moist_physics )  THEN
-    !              slurb_tile%q1(m) = q(k_atm,j,i)
-    !              slurb_tile%vpt1(m) = slurb_tile%pt1(m) * ( 1.0_field_r + 0.61_field_r * slurb_tile%q1(m) )
-    !           ENDIF
-    !        ENDIF
 
-    !        slurb_tile%uv_abs1(m) = SQRT( ( 0.5 * ( u(k_atm,j,i) + u(k_atm,j,i+1) ) )**2 +                    &
-    !                                ( 0.5 * ( v(k_atm,j,i) + v(k_atm,j+1,i) ) )**2 )
+    !        k_atm = topo_top_ind(j,i,0) + 1
+
 
             ! K = K + J/kg /(J/kg K^-1) * (kg/kg)
             slurb_tile%pt1(i,j)  = thl0(i, j, k_atm) + (rlv/(cp * exnf(k_atm)))  * ql0(i,j,k_atm)
@@ -1216,8 +1161,6 @@ end subroutine exitslurb
             ! m/s = (m^3 s^-3)^(1/3)
             ws = ( g / slurb_tile%pt1(i,j) * slurb_tile%z_mo(i,j) * vtws )**( 1.0_field_r / 3.0_field_r )  ! (m s^-1)
 
-            !    slurb_tile%uv_eff1(m) = SQRT( ( 0.5 * ( u(k_atm,j,i) + u(k_atm,j,i+1) ) )**2 +                    &
-            !                            ( 0.5 * ( v(k_atm,j,i) + v(k_atm,j+1,i) ) )**2 + ws**2 )
             slurb_tile%uv_eff1(i, j) = sqrt(du**2 + dv**2 + ws**2)
         enddo
     enddo
@@ -1225,11 +1168,11 @@ end subroutine exitslurb
     ! IF ( slurb_dynamic%ntime > 0 )  CALL update_dynamic_inputs
 
 end subroutine slurb_update_external_vars
-!--------------------------------------------------------------------------------------------------!
-! Description:
-! ------------
-!> Computes the heat and momentum fluxes between the atmosphere and the urban surface.
-!--------------------------------------------------------------------------------------------------!
+    !--------------------------------------------------------------------------------------------------!
+    ! Description:
+    ! ------------
+    !> Computes the heat and momentum fluxes between the atmosphere and the urban surface.
+    !--------------------------------------------------------------------------------------------------!
  SUBROUTINE calc_urban_resistances
     use modglobal, only : i1, j1
     implicit none
@@ -1347,8 +1290,6 @@ end subroutine slurb_update_external_vars
             ! write(*,*), "alldone"
         enddo
     enddo
-    ! calc_obuk_dirichlet( &
-    !                 tile%obuk(i,j), du_tot(i,j), tile%db(i,j), real(zf(1), 8), tile%z0m(i,j), tile%z0h(i,j))
 
     !
     !-- Compute the local friction velocity for roof and canyon.
@@ -1399,11 +1340,11 @@ end subroutine slurb_update_external_vars
 
 
 
-!--------------------------------------------------------------------------------------------------!
-! Description:
-! ------------
-!> Model for the surface resistances within the street canyon.
-!--------------------------------------------------------------------------------------------------!
+    !--------------------------------------------------------------------------------------------------!
+    ! Description:
+    ! ------------
+    !> Model for the surface resistances within the street canyon.
+    !--------------------------------------------------------------------------------------------------!
  SUBROUTINE calc_canyon_resistances
     use modglobal, only : i1, j1
     implicit none
@@ -1552,11 +1493,11 @@ end subroutine slurb_update_external_vars
 
 
 
-!--------------------------------------------------------------------------------------------------!
-! Description:
-! ------------
-!> Calculate the Obukhov length (L).
-!--------------------------------------------------------------------------------------------------!
+    !--------------------------------------------------------------------------------------------------!
+    ! Description:
+    ! ------------
+    !> Calculate the Obukhov length (L).
+    !--------------------------------------------------------------------------------------------------!
  SUBROUTINE calc_ol(ln_z_z0, ln_z_z0h, ol, rib, z0, z0h, z_mo )
 
     IMPLICIT NONE
@@ -1677,11 +1618,11 @@ end subroutine slurb_update_external_vars
 
 
 
-!--------------------------------------------------------------------------------------------------!
-! Description:
-! ------------
-!> Calculate the bulk Richardson number for given surface (z0) temperature.
-!--------------------------------------------------------------------------------------------------!
+    !--------------------------------------------------------------------------------------------------!
+    ! Description:
+    ! ------------
+    !> Calculate the bulk Richardson number for given surface (z0) temperature.
+    !--------------------------------------------------------------------------------------------------!
  SUBROUTINE calc_rib( pt1, pt_surface, rib, uvw_abs, z_mo )
     implicit none
 
@@ -1703,11 +1644,11 @@ end subroutine slurb_update_external_vars
 
 
 
-!--------------------------------------------------------------------------------------------------!
-! Description:
-! ------------
-!> Integrated stability function for momentum.
-!--------------------------------------------------------------------------------------------------!
+    !--------------------------------------------------------------------------------------------------!
+    ! Description:
+    ! ------------
+    !> Integrated stability function for momentum.
+    !--------------------------------------------------------------------------------------------------!
  PURE FUNCTION psi_m( zeta )
 
     IMPLICIT NONE
@@ -1732,19 +1673,19 @@ end subroutine slurb_update_external_vars
     ELSE
 
        psi_m = - b * ( zeta - c_d_d ) * EXP( -d * zeta ) - a * zeta - bc_d_d
-!
-!--    Old version for stable conditions (only valid for z/L < 0.5) psi_m = - 5.0_field_r * zeta
+    !
+    !--    Old version for stable conditions (only valid for z/L < 0.5) psi_m = - 5.0_field_r * zeta
 
     ENDIF
 
  END FUNCTION psi_m
 
 
-!--------------------------------------------------------------------------------------------------!
-! Description:
-!------------
-!> Integrated stability function for heat and moisture.
-!--------------------------------------------------------------------------------------------------!
+    !--------------------------------------------------------------------------------------------------!
+    ! Description:
+    !------------
+    !> Integrated stability function for heat and moisture.
+    !--------------------------------------------------------------------------------------------------!
  PURE FUNCTION psi_h( zeta )
 
     IMPLICIT NONE
@@ -1768,21 +1709,21 @@ end subroutine slurb_update_external_vars
     ELSE
        psi_h = - b * ( zeta - c_d_d ) * EXP( -d * zeta ) - (1.0_field_r                                 &
                + 0.66666666666_field_r * a * zeta )**1.5_field_r - bc_d_d + 1.0_field_r
-!
-!--    Old version for stable conditions (only valid for z/L < 0.5)
-!--    psi_h = - 5.0_field_r * zeta
+    !
+    !--    Old version for stable conditions (only valid for z/L < 0.5)
+    !--    psi_h = - 5.0_field_r * zeta
     ENDIF
 
  END FUNCTION psi_h
 
 
-!--------------------------------------------------------------------------------------------------!
-! Description:
-! ------------
-!> Calculates stability function for momentum
-!>
-!> @author Hauke Wurps
-!--------------------------------------------------------------------------------------------------!
+    !--------------------------------------------------------------------------------------------------!
+    ! Description:
+    ! ------------
+    !> Calculates stability function for momentum
+    !>
+    !> @author Hauke Wurps
+    !--------------------------------------------------------------------------------------------------!
  PURE FUNCTION phi_m( zeta )
 
     IMPLICIT NONE
@@ -1804,13 +1745,13 @@ end subroutine slurb_update_external_vars
 
 
 
-!--------------------------------------------------------------------------------------------------!
-! Description:
-! ------------
-!> Compute aerodynamic resistance for heat for vertical surfaces following DOE-2 parametrization,
-!> which takes natural convection into account. Average of leeward and windward sides.
-!> Source: EnegyPlus 23.2.0 Engineering Reference p.68.
-!--------------------------------------------------------------------------------------------------!
+    !--------------------------------------------------------------------------------------------------!
+    ! Description:
+    ! ------------
+    !> Compute aerodynamic resistance for heat for vertical surfaces following DOE-2 parametrization,
+    !> which takes natural convection into account. Average of leeward and windward sides.
+    !> Source: EnegyPlus 23.2.0 Engineering Reference p.68.
+    !--------------------------------------------------------------------------------------------------!
  PURE FUNCTION rah_doe2( k_topo, t_air, t_surf, u_eff, rough )
 
     LOGICAL, INTENT(IN) ::  rough  !< flag for rough surface, true for walls, false for windows
@@ -1846,12 +1787,12 @@ end subroutine slurb_update_external_vars
  END FUNCTION rah_doe2
 
 
-!--------------------------------------------------------------------------------------------------!
-! Description:
-! ------------
-!> Compute aerodynamic resistance for heat for vertical surfaces following
-!> Krayenhoff & Voogt (2007).
-!--------------------------------------------------------------------------------------------------!
+    !--------------------------------------------------------------------------------------------------!
+    ! Description:
+    ! ------------
+    !> Compute aerodynamic resistance for heat for vertical surfaces following
+    !> Krayenhoff & Voogt (2007).
+    !--------------------------------------------------------------------------------------------------!
  PURE FUNCTION rah_kray( k_topo, z0, u_eff )
 
     integer, INTENT(IN) ::  k_topo  !< k-index of topography
@@ -1863,8 +1804,8 @@ end subroutine slurb_update_external_vars
     REAL(field_r) ::  rah_kray    !< resulting resistance
 
 
-!
-!-- Compute denominator first, ensuring it is a positive number.
+    !
+    !-- Compute denominator first, ensuring it is a positive number.
     kray_coeff = MAX( z0 * 1000.0_field_r * ( 11.8_field_r + 4.2_field_r * u_eff ) - 4.0_field_r, 1.0E-3_field_r )
 
     rah_kray = cp * rho_air_zw(k_topo) / kray_coeff
@@ -1874,10 +1815,10 @@ end subroutine slurb_update_external_vars
 
 
  !--------------------------------------------------------------------------------------------------!
-! Description:
-! ------------
-!> Process parameters dependent on the building/pavement type and properties.
-!--------------------------------------------------------------------------------------------------!
+    ! Description:
+    ! ------------
+    !> Process parameters dependent on the building/pavement type and properties.
+    !--------------------------------------------------------------------------------------------------!
  SUBROUTINE process_surface_parameters
     use modglobal, only: i1, j1, i2, j2, cexpnr, zf
     use modslurbdata, only : slurb_default_pars, building_pars_slurb, pavement_pars_slurb
@@ -2095,9 +2036,9 @@ end subroutine slurb_update_external_vars
     enddo
     DEALLOCATE( type_tmp )
 
-!
-!-- Process material layer information such as thickness, heat capacities, if given.
-!-- By default, use information provided on building type.
+    !
+    !-- Process material layer information such as thickness, heat capacities, if given.
+    !-- By default, use information provided on building type.
     if (lread_from_netcdf) then
         call read_nc_field(ncid, 'albedo_roof', slurb_tile%albedo_roof(2:i1,2:j1), requirefill=.false.)
         call check_grid_variable("albedo_roof", slurb_tile%albedo_roof(2:i1,2:j1), 0.0_field_r, 1.0_field_r )
@@ -2240,11 +2181,11 @@ end subroutine slurb_update_external_vars
 
 
 
-!--------------------------------------------------------------------------------------------------!
-! Description:
-! ------------
-!> Initializes SLUrb model variables.
-!--------------------------------------------------------------------------------------------------!
+    !--------------------------------------------------------------------------------------------------!
+    ! Description:
+    ! ------------
+    !> Initializes SLUrb model variables.
+    !--------------------------------------------------------------------------------------------------!
  SUBROUTINE init_slurb_variables
     use modfields, only : thl0, ql0, qt0, u0, v0, exnf
     use modglobal, only : cp, rlv, cu, cv, i1, j1, ep
@@ -2334,11 +2275,11 @@ end subroutine slurb_update_external_vars
         slurb_tile%shf_external(i,j) = shf_external
         slurb_tile%qsws_external(i,j) = qsws_external
 
-!
-!--       For subsurface temps, a steady-state 1D heat equation solution will be used as the
-!--       initial temperature profile. This might or might not speed up the spinup process.
-!--       In case of windowless facade, set window temps to fill value to prevent meaningless
-!--       output values. Vice versa for the opposite case.
+    !
+    !--       For subsurface temps, a steady-state 1D heat equation solution will be used as the
+    !--       initial temperature profile. This might or might not speed up the spinup process.
+    !--       In case of windowless facade, set window temps to fill value to prevent meaningless
+    !--       output values. Vice versa for the opposite case.
         IF ( slurb_tile%f_win(i,j) < 1.0_field_r )  THEN
             slurb_tile%t_wall_a_0(:,i,j) = calc_1d_heat_equation( SIZE( slurb_tile%t_wall_a_0, 1 ), bc_atm,         &
                                                         slurb_tile%t_indoor(i,j),                         &
@@ -2558,11 +2499,11 @@ end subroutine slurb_update_external_vars
  END SUBROUTINE init_slurb_variables
 
  !--------------------------------------------------------------------------------------------------!
-! Description:
-! ------------
-!> This function computes the magnus formula (Press et al., 1992).
-!> The magnus formula is needed to calculate the saturation vapor pressure.
-!--------------------------------------------------------------------------------------------------!
+    ! Description:
+    ! ------------
+    !> This function computes the magnus formula (Press et al., 1992).
+    !> The magnus formula is needed to calculate the saturation vapor pressure.
+    !--------------------------------------------------------------------------------------------------!
  FUNCTION magnus( t )
     !$ACC ROUTINE SEQ
 
@@ -2572,19 +2513,19 @@ end subroutine slurb_update_external_vars
 
     REAL(field_r) ::  magnus
 
-!
-!-- Saturation vapor pressure for a specific temperature:
+    !
+    !-- Saturation vapor pressure for a specific temperature:
     magnus =  611.2_field_r * EXP( 17.62_field_r * ( t - 273.15_field_r ) / ( t - 29.65_field_r  ) )
 
  END FUNCTION magnus
 
-!--------------------------------------------------------------------------------------------------!
-! Description:
-! ------------
-!> Computes a steady-state solution for 1D heat equation using Gauss-Seidel iteration.
-!> This is used to initialize the material temperatures for roofs, walls, windows and roads,
-!> shortening the time required for the spinup. For windows, SW absorption is not considered.
-!--------------------------------------------------------------------------------------------------!
+    !--------------------------------------------------------------------------------------------------!
+    ! Description:
+    ! ------------
+    !> Computes a steady-state solution for 1D heat equation using Gauss-Seidel iteration.
+    !> This is used to initialize the material temperatures for roofs, walls, windows and roads,
+    !> shortening the time required for the spinup. For windows, SW absorption is not considered.
+    !--------------------------------------------------------------------------------------------------!
  !TODOSELF PURE
  FUNCTION calc_1d_heat_equation( result_size , t_bc_1, t_bc_2, lambda ) RESULT( t_result )
 
@@ -2608,20 +2549,20 @@ end subroutine slurb_update_external_vars
     REAL(field_r), DIMENSION(1:result_size+1) ::  t     !< intermediate t array containing also the BCs
 
 
-!
-!-- Set boundary conditions for the iteration array. The layer against the atmosphere will have a
-!-- constant boundary condition and the other boundary is treated similarly to the inner layer
-!-- boundary condition in prognostic equations. Thus, an extra layer is neeeded for the inner
-!-- temperature array for iteration.
+    !
+    !-- Set boundary conditions for the iteration array. The layer against the atmosphere will have a
+    !-- constant boundary condition and the other boundary is treated similarly to the inner layer
+    !-- boundary condition in prognostic equations. Thus, an extra layer is neeeded for the inner
+    !-- temperature array for iteration.
     t(LBOUND( t, 1 )) = t_bc_1
     t(UBOUND( t, 1 )) = t_bc_2
 
-!
-!-- Set initial guess for temperature for subsurface layers.
+    !
+    !-- Set initial guess for temperature for subsurface layers.
     t(LBOUND( t, 1 )+1:UBOUND( t, 1 )-1) = (t_bc_1 + t_bc_2) / 2.0_field_r
  
-!
-!-- Gauss-Seidel iteration.
+    !
+    !-- Gauss-Seidel iteration.
     DO  ix = 1, 1000
        DO  kx = LBOUND( t, 1 )+1, UBOUND( t, 1 )-1
           t_old = t(kx)
@@ -2630,22 +2571,22 @@ end subroutine slurb_update_external_vars
                   ( lambda(kx) + lambda(kx-1) ) * omega + t(kx)
           res = MAX( res, ABS( t(kx) - t_old ) )
        ENDDO
-!
-!--    Check for convergence using the stored maximum residual.
+    !
+    !--    Check for convergence using the stored maximum residual.
        IF ( res < tol )  EXIT
     ENDDO
-!
-!-- Return the solution.
+    !
+    !-- Return the solution.
     t_result(:) = t(LBOUND( t, 1 ):UBOUND( t, 1 )-1)
 
  END FUNCTION calc_1d_heat_equation
 
 
-!--------------------------------------------------------------------------------------------------!
-! Description:
-! ------------
-! Swap timelevel of the SLUrb model.
-!--------------------------------------------------------------------------------------------------!
+    !--------------------------------------------------------------------------------------------------!
+    ! Description:
+    ! ------------
+    ! Swap timelevel of the SLUrb model.
+    !--------------------------------------------------------------------------------------------------!
  SUBROUTINE slurb_swap_timelevel()
     use modglobal, only: rk3step
     modcount = mod(modcount, 2)
@@ -2715,11 +2656,11 @@ end subroutine slurb_update_external_vars
  END SUBROUTINE slurb_swap_timelevel
 
 
-!--------------------------------------------------------------------------------------------------!
-! Description:
-! ------------
-!> Computes latent variables which can be inferred from the inputs.
-!--------------------------------------------------------------------------------------------------!
+    !--------------------------------------------------------------------------------------------------!
+    ! Description:
+    ! ------------
+    !> Computes latent variables which can be inferred from the inputs.
+    !--------------------------------------------------------------------------------------------------!
  SUBROUTINE precompute_latent_variables
 
     use modfields, only: rhof
@@ -2739,8 +2680,8 @@ end subroutine slurb_update_external_vars
     real :: dt_slurb_individual
 
     integer i,j,k
-!
-!-- Precompute model constants.
+    !
+    !-- Precompute model constants.
     rho_lv = rlv * rhof(1)
     drho_l_lv = 1.0_field_r / (rhow * rlv)
 
@@ -2752,8 +2693,8 @@ end subroutine slurb_update_external_vars
     !     enddo
     ! ENDDO
     
-!
-!-- Check street canyon height-to-width ratio.
+    !
+    !-- Check street canyon height-to-width ratio.
     
     ! do j=2,j1
     !     do i=2,i1
@@ -2766,8 +2707,8 @@ end subroutine slurb_update_external_vars
     !     enddo
     ! ENDDO
 
-!
-!-- Precompute layer total conductivities from layer thicknesses and thermal conductivities.
+    !
+    !-- Precompute layer total conductivities from layer thicknesses and thermal conductivities.
     do j=2,j1
         do i=2,i1
             DO  k = nzt_roof, nzb_roof-1
@@ -2803,8 +2744,8 @@ end subroutine slurb_update_external_vars
         enddo
     ENDDO
 
-!
-!-- Precompute sky-view factors.
+    !
+    !-- Precompute sky-view factors.
     slurb_tile%svf_road(:,:) = 0.0_field_r
     slurb_tile%svf_wall(:,:) = 0.0_field_r
 
@@ -2817,8 +2758,8 @@ end subroutine slurb_update_external_vars
         enddo
     ENDDO
 
-!
-!-- Precompute urban emissivity based on SVFs.
+    !
+    !-- Precompute urban emissivity based on SVFs.
     do j=2,j1
         do i=2,i1
             slurb_tile%emiss_urb(i,j) = slurb_tile%f_bld(i,j) * slurb_tile%emiss_roof(i,j)                                      &
@@ -2830,13 +2771,13 @@ end subroutine slurb_update_external_vars
         enddo
     ENDDO
 
-!
-!-- Preompute the longwave interaction coefficients for surface elements as these are
-!-- static in time. Based on Johnson et al. (1991) general formula. Absorption from reflected
-!-- radiation is taken into account only after first reflection. The first reflections contribute
-!-- around 5% of the total LW budget, while higher order reflections would contribute only <0.5%.
-!-- Coefficients are grouped per variable, so they can be effectively used in time-stepping
-!-- without wasting too much computational time or memory.
+    !
+    !-- Preompute the longwave interaction coefficients for surface elements as these are
+    !-- static in time. Based on Johnson et al. (1991) general formula. Absorption from reflected
+    !-- radiation is taken into account only after first reflection. The first reflections contribute
+    !-- around 5% of the total LW budget, while higher order reflections would contribute only <0.5%.
+    !-- Coefficients are grouped per variable, so they can be effectively used in time-stepping
+    !-- without wasting too much computational time or memory.
     do j=2,j1
         do i=2,i1
         !
@@ -3016,8 +2957,8 @@ end subroutine slurb_update_external_vars
     ! slurb_tile%lw_wall_coef(:,:,:) = 0
     ! slurb_tile%lw_roof_coef(:,:,:) = 0
     ! slurb_tile%lw_road_coef(:,:,:) = 0
-!
-!-- Precompute shortwave radiation reflection denominator.
+    !
+    !-- Precompute shortwave radiation reflection denominator.
     do j=2,j1
         do i=2,i1
             slurb_tile%sw_ref_denom(i,j) = 1.0_field_r - slurb_tile%albedo_road(i,j)                                         &
@@ -3027,12 +2968,12 @@ end subroutine slurb_update_external_vars
         enddo
     ENDDO
 
-!
-!-- Compute window layer shortwave absorption based on USM documentation.
-!-- @todo This computation needs checking. Now sw_transmitted is not simply equal to
-!-- sw_net_win*transmissivity, as 1.0_field_r - SUM(absorption(:,i,j)) != transmissivity(i,j). This is
-!-- mitigated for now at the output side. No side effects for the model, as the transmitted
-!-- radiation is purely an output.
+    !
+    !-- Compute window layer shortwave absorption based on USM documentation.
+    !-- @todo This computation needs checking. Now sw_transmitted is not simply equal to
+    !-- sw_net_win*transmissivity, as 1.0_field_r - SUM(absorption(:,i,j)) != transmissivity(i,j). This is
+    !-- mitigated for now at the output side. No side effects for the model, as the transmitted
+    !-- radiation is purely an output.
     do j=2,j1
         do i=2,i1
             win_nonrefl_1side = 1.0 - (slurb_tile%albedo_win(i,j) + slurb_tile%transmissivity_win(i,j)                  &
@@ -3061,8 +3002,8 @@ end subroutine slurb_update_external_vars
         enddo
     ENDDO
 
-!
-!-- Coefficient for the canyon wind speed Krayenhoff & Voogt (2007) Eq. (9).
+    !
+    !-- Coefficient for the canyon wind speed Krayenhoff & Voogt (2007) Eq. (9).
     IF ( uv_can_factor_kray )  THEN
         do j=2,j1
             do i=2,i1
@@ -3071,8 +3012,8 @@ end subroutine slurb_update_external_vars
                                     EXP( -slurb_tile%f_bld_frn(i,j) / ( 2.0_field_r * ( 1.0_field_r - slurb_tile%f_bld(i,j) ) ) )
             enddo
        ENDDO
-!
-!-- Coefficient for the canyon windspeed as derived in Masson (2000) (original TEB)
+    !
+    !-- Coefficient for the canyon windspeed as derived in Masson (2000) (original TEB)
     ELSEIF ( uv_can_factor_masson )  THEN
         do j=2,j1
             do i=2,i1
@@ -3081,8 +3022,8 @@ end subroutine slurb_update_external_vars
                                     EXP( -slurb_tile%hw_can(i,j) / 4.0_field_r )
             enddo
        ENDDO
-!
-!-- Coefficient for the canyon windspeed as implemented in SURFEX v8.1
+    !
+    !-- Coefficient for the canyon windspeed as implemented in SURFEX v8.1
     ELSEIF ( uv_can_factor_surfex )  THEN
         do j=2,j1
             do i=2,i1
@@ -3102,8 +3043,8 @@ end subroutine slurb_update_external_vars
     ! slurb_tile%conductivity_roof(:,:,:) = 0.001
     ! slurb_tile%conductivity_wall(:,:,:) = 0.001
     ! slurb_tile%conductivity_win(:,:,:) = 0.001
-!
-!-- Compute minimum timestep based on SLUrb internal diffusivities.
+    !
+    !-- Compute minimum timestep based on SLUrb internal diffusivities.
     do j=2,j1
         do i=2,i1
 
@@ -3128,24 +3069,24 @@ end subroutine slurb_update_external_vars
         enddo
 
     ENDDO
-!
-!-- Consider a pre-factor (1/8) for the diffusion criterion.
+    !
+    !-- Consider a pre-factor (1/8) for the diffusion criterion.
     dt_slurb_individual = MINVAL( slurb_tile%dt_max(2:i1,2:j1) ) * 0.125_field_r
     ! IF ( collective_wait )  CALL MPI_BARRIER( comm2d, ierr )
     CALL D_MPI_ALLREDUCE( dt_slurb, dt_slurb_individual, 1, mpi_min, comm3d, mpierr )
     write(*,*) 'max_dt for slurb'
     write(*,*) dt_slurb
-! #endif
+    ! #endif
 
  END SUBROUTINE precompute_latent_variables
 
 
 
-!--------------------------------------------------------------------------------------------------!
-! Description:
-! ------------
-!> Surface and subsurface energy balance computations of roofs, walls, windows and roads.
-!--------------------------------------------------------------------------------------------------!
+    !--------------------------------------------------------------------------------------------------!
+    ! Description:
+    ! ------------
+    !> Surface and subsurface energy balance computations of roofs, walls, windows and roads.
+    !--------------------------------------------------------------------------------------------------!
  SUBROUTINE slurb_energy_balance_model
    use modglobal, only : i1, j1, cp, rlv, rhow, rk3step, rdt, ep
    use modfields, only : exnf, rhobf, ql0, rhof
@@ -3178,8 +3119,8 @@ end subroutine slurb_update_external_vars
       !  k_atm = topo_top_ind(j,i,0) + 1
 
 
-!
-!--    Call specific models for all the facets.
+    !
+    !--    Call specific models for all the facets.
        CALL roof_model
        CALL wall_model
        IF ( slurb_tile%f_win(i,j) /= 0.0_field_r )  CALL window_model
@@ -3213,11 +3154,11 @@ end subroutine slurb_update_external_vars
 
  END SUBROUTINE calc_tend_surf_t_p
 
-!--------------------------------------------------------------------------------------------------!
-! Description:
-! ------------
-!> Computes the new surface prognostic temperature for current time step using RK3.
-!--------------------------------------------------------------------------------------------------!
+    !--------------------------------------------------------------------------------------------------!
+    ! Description:
+    ! ------------
+    !> Computes the new surface prognostic temperature for current time step using RK3.
+    !--------------------------------------------------------------------------------------------------!
  SUBROUTINE calc_surf_t_p ( t_m, t_0, tt_current, coef_1, coef_2, c )
     use modglobal, only : rk3step, rdt
     implicit none
@@ -3242,7 +3183,7 @@ end subroutine slurb_update_external_vars
     rdt3 = rdt / 3
 
     rk3coef = rdt / (4. - dble(rk3step))
-!-- Compute the RK3 tendency for next time step.
+    !-- Compute the RK3 tendency for next time step.
     IF ( c /= 0.0_field_r )  THEN
         t_new_implicit = ( ( coef_1 * (rk3coef) + c * t_0 )  / ( c + coef_2 * (rk3coef)  ))
         tt_new = (t_new_implicit - t_0) / rk3coef
@@ -3254,11 +3195,11 @@ end subroutine slurb_update_external_vars
     ENDIF
 
  END SUBROUTINE calc_surf_t_p
-!--------------------------------------------------------------------------------------------------!
-! Description:
-! ------------
-!> Computes the new layer prognostic temperature by solving the Fourier diffusion equation.
-!--------------------------------------------------------------------------------------------------!
+    !--------------------------------------------------------------------------------------------------!
+    ! Description:
+    ! ------------
+    !> Computes the new layer prognostic temperature by solving the Fourier diffusion equation.
+    !--------------------------------------------------------------------------------------------------!
  SUBROUTINE calc_heat_diffusion ( t_m, t_0, tt_current, c, lambda, t_bc, sw_in, phi )
     use modglobal, only : rk3step, rdt
     REAL(field_r), INTENT(IN) ::  t_bc  !< temperature boundary condition (K)
@@ -3286,31 +3227,31 @@ end subroutine slurb_update_external_vars
     rk3coef = rdt / (4. - dble(rk3step))
 
 
-!
-!-- Loop through non-boundary layers of the material.
-!-- @todo Split loop into three to move IFs out for better vecotrization.
+    !
+    !-- Loop through non-boundary layers of the material.
+    !-- @todo Split loop into three to move IFs out for better vecotrization.
     DO  k = LBOUND( t_0, 1 ) + 1, UBOUND( t_0, 1 )
-!
-!--    New prognostic layer temperature.
-!--    Compute the t between neighbouring layers.
+    !
+    !--    New prognostic layer temperature.
+    !--    Compute the t between neighbouring layers.
        IF ( k /= UBOUND( t_0 , 1 ) )  THEN
           tt_new = ( 1.0_field_r / c(k) ) * ( lambda(k) * ( t_0(k+1) - t_0(k) ) +                           &
                    lambda(k-1) * ( t_0(k-1) - t_0(k) ) )
        else
-!
-!--    Use a constant value boundary condition (skin temperature) for the innermost layer.
+    !
+    !--    Use a constant value boundary condition (skin temperature) for the innermost layer.
             ! (J^-1 m^2 K) (J s^-1 m^-2 K^-1) * K
             ! K s^-1
           tt_new = ( 1.0_field_r / c(k) ) * ( lambda(k) * ( t_bc - t_0(k) ) +                             &
                    lambda(k-1) * ( t_0(k-1) - t_0(k) ) )
        endif
-!
-!--    Add tendency from absorbed shortwave radiation.
+    !
+    !--    Add tendency from absorbed shortwave radiation.
        IF ( PRESENT( sw_in ) )  THEN
           tt_new = tt_new + ( 1.0_field_r / c(k) ) * sw_in * phi(k)
        ENDIF
-!
-!--    Compute the prognostic temperature and RK3 tendency for next time step.
+    !
+    !--    Compute the prognostic temperature and RK3 tendency for next time step.
     !    t_p(k) = t(k) + (rdt) * ( tsc(2) * tt_new + tsc(3) * tt_current(k) )
     !    temp1(k) = t(k) + (rdt) * ( tsc(2) * tt_new + tsc(3) * tt_current(k) )
 
@@ -3345,11 +3286,11 @@ end subroutine slurb_update_external_vars
  END SUBROUTINE calc_heat_diffusion
 
 
-!--------------------------------------------------------------------------------------------------!
-! Description:
-! ------------
-!> Computes the weighted RK3 tendency for the next timestep
-!--------------------------------------------------------------------------------------------------!
+    !--------------------------------------------------------------------------------------------------!
+    ! Description:
+    ! ------------
+    !> Computes the weighted RK3 tendency for the next timestep
+    !--------------------------------------------------------------------------------------------------!
  SUBROUTINE calc_rk3_tend ( tend_current, tend_new )
 
     REAL(field_r), INTENT(IN) ::  tend_new  !< new RK3 tendency
@@ -3368,11 +3309,11 @@ end subroutine slurb_update_external_vars
  END SUBROUTINE calc_rk3_tend
 
 
-!--------------------------------------------------------------------------------------------------!
-! Description:
-! ------------
-!> Models the surface energy balance and subsurface heat diffusion for roofs.
-!--------------------------------------------------------------------------------------------------!
+    !--------------------------------------------------------------------------------------------------!
+    ! Description:
+    ! ------------
+    !> Models the surface energy balance and subsurface heat diffusion for roofs.
+    !--------------------------------------------------------------------------------------------------!
  SUBROUTINE roof_model
 
     REAL(field_r) ::  coef_1              !< coefficient A of the prognostic equation
@@ -3389,22 +3330,22 @@ end subroutine slurb_update_external_vars
     rk3coef = rdt / (4. - dble(rk3step))
 
 
-!
-!-- Surface sensible heat flux factor.
+    !
+    !-- Surface sensible heat flux factor.
     f_shf = rho_cp / slurb_tile%rah_roof(i,j)
 
-!
-!-- Compute the nominator and denominator coefficients in
-!-- the prognostic equation for the moist case.
+    !
+    !-- Compute the nominator and denominator coefficients in
+    !-- the prognostic equation for the moist case.
     IF ( moist_physics )  THEN
-!
-!--    Computation of factor for the latent heat flux due to
-!--    liquid water reservoir evaporation/condensation.
+    !
+    !--    Computation of factor for the latent heat flux due to
+    !--    liquid water reservoir evaporation/condensation.
        e_s = ps * slurb_tile%qs_roof(i,j) / ( slurb_tile%qs_roof(i,j) + ep )
 
-!
-!--    In case of evaporation, evaporate only for the liquid water coverage area,
-!--    in case of condensation, use the total surface.
+    !
+    !--    In case of evaporation, evaporate only for the liquid water coverage area,
+    !--    in case of condensation, use the total surface.
        IF ( slurb_tile%qs_roof(i,j) > slurb_tile%q1(i,j) )  THEN
           f_qsws_liq = rho_lv * slurb_tile%c_liq_roof(i,j) / slurb_tile%rah_roof(i,j)
        ELSE
@@ -3418,8 +3359,8 @@ end subroutine slurb_update_external_vars
 
        dq_s_dt = ep * e_s_dt / ( ps - e_s_dt )
 
-!
-!--    The coefficients for the moist prognostic equation for temperature.
+    !
+    !--    The coefficients for the moist prognostic equation for temperature.
        coef_1 = slurb_tile%rad_sw_net_roof(i,j) + slurb_tile%rad_lw_net_roof(i,j)                                  &
                 - 3.0_field_r * slurb_tile%lw_roof_coef(1,i,j) * slurb_tile%t_roof_0(nzt_roof,i,j)**4                     &
                 + f_shf * slurb_tile%pt1(i,j)                                                              &
@@ -3433,8 +3374,8 @@ end subroutine slurb_update_external_vars
                 + slurb_tile%conductivity_roof(nzt_roof,i,j)
 
     ELSE
-!
-!-- The coefficients for the dry prognostic equation for temperature.
+    !
+    !-- The coefficients for the dry prognostic equation for temperature.
        coef_1 = slurb_tile%rad_sw_net_roof(i,j) + slurb_tile%rad_lw_net_roof(i,j)                                  &
                 -3.0_field_r * slurb_tile%lw_roof_coef(1,i,j) * slurb_tile%t_roof_0(nzt_roof,i,j)**4                      &
                 + f_shf * slurb_tile%pt1(i,j)                                                              &
@@ -3448,16 +3389,13 @@ end subroutine slurb_update_external_vars
     CALL calc_surf_t_p( slurb_tile%t_roof_m(nzt_roof,i,j), slurb_tile%t_roof_0(nzt_roof,i,j),                        &
                         slurb_tile%tt_roof(nzt_roof,i,j), coef_1, coef_2, slurb_tile%c_roof(nzt_roof,i,j) )
 
-!
-!-- Explicit solution of the Fourier heat equation for the subsurface layers.
+    !
+    !-- Explicit solution of the Fourier heat equation for the subsurface layers.
     CALL calc_heat_diffusion( slurb_tile%t_roof_m(:,i,j), slurb_tile%t_roof_0(:,i,j), slurb_tile%tt_roof(:,i,j),             &
                               slurb_tile%c_roof(:,i,j), slurb_tile%conductivity_roof(:,i,j), slurb_tile%t_indoor(i,j) )
 
-    ! call calc_tend_surf_t_p(slurb_tile%t_roof_0(nzt_roof,i,j), slurb_tile%tt_roof(nzt_roof,i,j), coef_1, coef_2, slurb_tile%c_roof(nzt_roof,i,j))
-    ! call calc_tend_heat_diffusion(slurb_tile%t_roof_0(:,i,j), slurb_tile%tt_roof(:,i,j),slurb_tile%c_roof(:,i,j), slurb_tile%conductivity_roof(:,i,j), slurb_tile%t_indoor(i,j))
-    ! call apply_tend(slurb_tile%t_roof_0(:,i,j), slurb_tile%t_roof_m(:,i,j), slurb_tile%tt_roof(:,i,j))
-!
-!-- Compute the diagnostic fluxes for the roof surface.
+    !
+    !-- Compute the diagnostic fluxes for the roof surface.
     slurb_tile%ghf_roof(i,j) = slurb_tile%conductivity_roof(nzb_roof,i,j) *                                        &
                        ( slurb_tile%t_roof_0(nzb_roof,i,j) - slurb_tile%t_indoor(i,j) )
 
@@ -3465,15 +3403,15 @@ end subroutine slurb_update_external_vars
 
     slurb_tile%shf_roof(i,j) = -f_shf * ( slurb_tile%pt1(i,j) - slurb_tile%pt_roof(i,j) )
 
-!
-!-- Update longwave radiative flux following linearization.
+    !
+    !-- Update longwave radiative flux following linearization.
     slurb_tile%rad_lw_net_roof(i,j) = slurb_tile%rad_lw_net_roof(i,j)                                              &
                               + slurb_tile%lw_roof_coef(1,i,j) * slurb_tile%t_roof_m(nzt_roof,i,j)**4                &
                               - 4.0_field_r * slurb_tile%lw_roof_coef(1,i,j) * slurb_tile%t_roof_0(nzt_roof,i,j)**3       &
                               * ( slurb_tile%t_roof_m(nzt_roof,i,j) - slurb_tile%t_roof_0(nzt_roof,i,j) )
 
-!
-!-- Compute the water vapor flux from/to liquid water reservoir and the prognostic reservoir level.
+    !
+    !-- Compute the water vapor flux from/to liquid water reservoir and the prognostic reservoir level.
     IF ( moist_physics )  THEN
        slurb_tile%qsws_liq_roof(i,j) = -f_qsws_liq * ( slurb_tile%q1(i,j) - slurb_tile%qs_roof(i,j) +                      &
                                                dq_s_dt * slurb_tile%t_roof_m(nzt_roof,i,j) -                 &
@@ -3481,65 +3419,60 @@ end subroutine slurb_update_external_vars
                                              )
 
        slurb_tile%qsws_roof(i,j) = slurb_tile%qsws_liq_roof(i,j)
-!
-!
-!--    Modification due to precipitiation. If the liquid reservoir is full, the liquid water
-!--    is assumed to be drained into the drainage system (liquid water is not conserved).
-!--    The precipitation flux is not included in the surface-atmosphere latent heat flux (qsws).
+    !
+    !
+    !--    Modification due to precipitiation. If the liquid reservoir is full, the liquid water
+    !--    is assumed to be drained into the drainage system (liquid water is not conserved).
+    !--    The precipitation flux is not included in the surface-atmosphere latent heat flux (qsws).
        if (imicro == 0 .or. imicro == 1) then
             slurb_tile%qsws_liq_roof(i,j) = slurb_tile%qsws_roof(i,j)
         else
             !   IF ( slurb_tile%m_liq_roof_0(i,j) < m_liq_max_roof )  THEN
             slurb_tile%tm_roof_precep(i,j) = precep(i,j,k_atm)
             slurb_tile%qsws_liq_roof(i,j) = (slurb_tile%qsws_roof(i,j) - slurb_tile%tm_roof_precep(i,j) * rhof(k_atm) * rlv)
-        !   ENDIF
+  
 
           !todoself even morme assume precipitation
        ENDIF
           !todoself assume precipitation
-!
-!--    Compute the total latent heat flux.
+    !
+    !--    Compute the total latent heat flux.
        slurb_tile%qsws_roof(i,j) = slurb_tile%qsws_roof(i,j)
-!
-!--    Compute the prognostic liquid water reservoir.
+    !
+    !--    Compute the prognostic liquid water reservoir.
        tm_new = - slurb_tile%qsws_liq_roof(i,j) * drho_l_lv
-    !    slurb_tile%m_liq_roof_0(i,j) = slurb_tile%m_liq_roof_m(i,j) +                                                 &
-    !                           (rdt) * ( tsc(2) * tm_new + tsc(3) * slurb_tile%tm_liq_roof(i,j) )
        slurb_tile%m_liq_roof_0(i,j)  = slurb_tile%m_liq_roof_m(i,j) + rk3coef * tm_new
-!
-!--    Check if the liquid water reservoir is overfull. If so, drain excess to the
-!--    assumed drainage system (water is not conserved here).
+    !
+    !--    Check if the liquid water reservoir is overfull. If so, drain excess to the
+    !--    assumed drainage system (water is not conserved here).
 
-       
-    !    if (rk3step = 3) then
 
-            if ((slurb_tile%m_liq_roof_0(i,j) > m_liq_max_roof)) then
-                ! tm_new = (m_liq_max_roof - slurb_tile%m_liq_roof_m(i,j)) / rk3coef
-                slurb_tile%tm_roof_runoff(i,j) = (slurb_tile%m_liq_roof_0(i,j) - m_liq_max_roof) / rk3coef
-                slurb_tile%m_liq_roof_0(i,j) = m_liq_max_roof
-            else
-                slurb_tile%tm_roof_runoff(i,j) = 0
-            endif
-        ! else
-        !     slurb_tile%m_liq_roof_0(i,j) = MIN( slurb_tile%m_liq_roof_0(i,j), m_liq_max_roof )
-        ! endif
-!
-!--    Check for negative water reservoir. @todo store the removed water as runoff for output.
+
+    if ((slurb_tile%m_liq_roof_0(i,j) > m_liq_max_roof)) then
+        ! tm_new = (m_liq_max_roof - slurb_tile%m_liq_roof_m(i,j)) / rk3coef
+        slurb_tile%tm_roof_runoff(i,j) = (slurb_tile%m_liq_roof_0(i,j) - m_liq_max_roof) / rk3coef
+        slurb_tile%m_liq_roof_0(i,j) = m_liq_max_roof
+    else
+        slurb_tile%tm_roof_runoff(i,j) = 0
+    endif
+
+    !
+    !--    Check for negative water reservoir. @todo store the removed water as runoff for output.
        slurb_tile%m_liq_roof_0(i,j) = MAX( slurb_tile%m_liq_roof_0(i,j), 0.0_field_r )
-!
-!--    Compute RK3 tendency.
+    !
+    !--    Compute RK3 tendency.
     !    CALL calc_rk3_tend( slurb_tile%tm_liq_roof(i,j), tm_new )
        
        slurb_tile%tm_liq_roof(i,j) = tm_new
-!
-!--    Compute the new liquid water coverage.
+    !
+    !--    Compute the new liquid water coverage.
        slurb_tile%c_liq_roof(i,j) = MIN( 1.0_field_r, ( slurb_tile%m_liq_roof_0(i,j) / m_liq_max_roof )**0.67 )
-!
-!--    Compute new saturation mixing ratio.
+    !
+    !--    Compute new saturation mixing ratio.
        e_s = magnus( MIN( slurb_tile%t_roof_0(nzt_roof,i,j), 333.15_field_r ) )
        slurb_tile%qs_roof(i,j) = ep * e_s / ( ps - e_s )
-!
-!--    Calculate new mixing ratio and vpt at roof surface.
+    !
+    !--    Calculate new mixing ratio and vpt at roof surface.
        slurb_tile%q_roof(i,j) = q_surf( slurb_tile%qs_roof(i,j), slurb_tile%rah_roof(i,j), slurb_tile%q1(i,j), f_qsws_liq )
        slurb_tile%vpt_roof(i,j) = slurb_tile%pt_roof(i,j) * ( 1.0_field_r + 0.61_field_r * slurb_tile%q_roof(i,j) )
 
@@ -3548,11 +3481,11 @@ end subroutine slurb_update_external_vars
  END SUBROUTINE roof_model
 
 
-!--------------------------------------------------------------------------------------------------!
-! Description:
-! ------------
-!> Models the surface energy balance and subsurface heat diffusion for roads.
-!--------------------------------------------------------------------------------------------------!
+    !--------------------------------------------------------------------------------------------------!
+    ! Description:
+    ! ------------
+    !> Models the surface energy balance and subsurface heat diffusion for roads.
+    !--------------------------------------------------------------------------------------------------!
  SUBROUTINE road_model
     REAL(field_r) ::  coef_1              !< coefficient A of the prognostic equation
     REAL(field_r) ::  coef_2              !< coefficient B of the prognostic equation
@@ -3567,21 +3500,21 @@ end subroutine slurb_update_external_vars
 
     rk3coef = rdt / (4. - dble(rk3step))
 
-!
-!-- Surface sensible heat flux factor.
+    !
+    !-- Surface sensible heat flux factor.
     f_shf = rho_cp / slurb_tile%rah_road(i,j)
-!
-!-- Compute the nominator and denominator coefficients in
-!-- the prognostic equation for the moist case.
+    !
+    !-- Compute the nominator and denominator coefficients in
+    !-- the prognostic equation for the moist case.
     IF ( moist_physics )  THEN
-!
-!--    Computation of factor for the latent heat flux due to
-!--    liquid water reservoir evaporation/condensation.
+    !
+    !--    Computation of factor for the latent heat flux due to
+    !--    liquid water reservoir evaporation/condensation.
        e_s = ps * slurb_tile%qs_road(i,j) / ( slurb_tile%qs_road(i,j) + ep )
 
-!
-!--    In case of evaporation, evaporate only for the liquid water coverage area,
-!--    in case of condensation, use the total surface.
+    !
+    !--    In case of evaporation, evaporate only for the liquid water coverage area,
+    !--    in case of condensation, use the total surface.
        IF ( slurb_tile%qs_road(i,j) > slurb_tile%q_can_0(i,j) )  THEN
           f_qsws_liq = rho_lv * slurb_tile%c_liq_road(i,j) / slurb_tile%rah_road(i,j)
        ELSE
@@ -3595,9 +3528,9 @@ end subroutine slurb_update_external_vars
 
        dq_s_dt = ep * e_s_dt / ( ps - e_s_dt )
 
-!
-!--    The coefficients for the moist prognostic equation for temperature. For the longwave balance,
-!--    both direct emission and the effect of backreflection are linearized.
+    !
+    !--    The coefficients for the moist prognostic equation for temperature. For the longwave balance,
+    !--    both direct emission and the effect of backreflection are linearized.
        coef_1 = slurb_tile%rad_sw_net_road(i,j) + slurb_tile%rad_lw_net_road(i,j)                                  &
                 -3.0_field_r * slurb_tile%lw_road_coef(1,i,j) * slurb_tile%t_road_0(nzt_road,i,j)**4                      &
                 + f_shf * slurb_tile%t_can_0(i,j)                                                            &
@@ -3611,8 +3544,8 @@ end subroutine slurb_update_external_vars
                 + slurb_tile%conductivity_road(nzt_road,i,j)
 
     ELSE
-!
-!--    The coefficients for the dry prognostic equation for temperature.
+    !
+    !--    The coefficients for the dry prognostic equation for temperature.
        coef_1 = slurb_tile%rad_sw_net_road(i,j) + slurb_tile%rad_lw_net_road(i,j)                                  &
                 -3.0_field_r * slurb_tile%lw_road_coef(1,i,j) * slurb_tile%t_road_0(nzt_road,i,j)**4                      &
                 + f_shf * slurb_tile%t_can_0(i,j)                                                            &
@@ -3626,18 +3559,12 @@ end subroutine slurb_update_external_vars
     CALL calc_surf_t_p( slurb_tile%t_road_m(nzt_road,i,j), slurb_tile%t_road_0(nzt_road,i,j),                        &
                         slurb_tile%tt_road(nzt_road,i,j), coef_1, coef_2, slurb_tile%c_road(nzt_road,i,j) )
 
-!
-!-- Heat diffusion through subsurface layers.
+    !
+    !-- Heat diffusion through subsurface layers.
     CALL calc_heat_diffusion( slurb_tile%t_road_m(:,i,j), slurb_tile%t_road_0(:,i,j), slurb_tile%tt_road(:,i,j),             &
                               slurb_tile%c_road(:,i,j), slurb_tile%conductivity_road(:,i,j), slurb_tile%t_soil(i,j) )
 
 
-    ! write(*,*) "f_shf"
-    ! write (*,*) i,j,f_shf
-    ! write(*,*) "slurb_tile%t_road_m(nzt_road,i,j)"
-    ! write (*,*) i,j,slurb_tile%t_road_m(nzt_road,i,j)
-    ! write(*,*) "slurb_tile%t_can_0(i,j)"
-    ! write (*,*) i,j,slurb_tile%t_can_0(i,j)
     slurb_tile%shf_road(i,j) = -f_shf * ( slurb_tile%t_can_m(i,j) - slurb_tile%t_road_0(nzt_road,i,j) )
 
     slurb_tile%pt_road(i,j)  = slurb_tile%t_road_0(nzt_road,i,j) * (1 / exnf(k_topo))
@@ -3645,15 +3572,15 @@ end subroutine slurb_update_external_vars
     slurb_tile%ghf_road(i,j) = slurb_tile%conductivity_road(nzb_road,i,j) *                                        &
                        ( slurb_tile%t_road_0(nzb_road,i,j) - slurb_tile%t_soil(i,j) )
 
-!
-!-- Update longwave radiative flux following linearization.
+    !
+    !-- Update longwave radiative flux following linearization.
     slurb_tile%rad_lw_net_road(i,j) = slurb_tile%rad_lw_net_road(i,j)                                              &
                               + slurb_tile%lw_road_coef(1,i,j) * slurb_tile%t_road_m(nzt_road,i,j)**4                &
                               - 4.0_field_r * slurb_tile%lw_road_coef(1,i,j) * slurb_tile%t_road_m(nzt_road,i,j)**3       &
                               * ( slurb_tile%t_road_m(nzt_road,i,j) - slurb_tile%t_road_0(nzt_road,i,j) )
 
-!
-!-- Compute the water vapor flux from/to liquid water reservoir and the prognostic reservoir level.
+    !
+    !-- Compute the water vapor flux from/to liquid water reservoir and the prognostic reservoir level.
     IF ( moist_physics )  THEN
        slurb_tile%qsws_liq_road(i,j) = -f_qsws_liq * ( slurb_tile%q_can_0(i,j) - slurb_tile%qs_road(i,j) +                   &
                                                dq_s_dt * slurb_tile%t_road_m(nzt_road,i,j) -                 &
@@ -3661,93 +3588,53 @@ end subroutine slurb_update_external_vars
                                              )
 
        slurb_tile%qsws_road(i,j) = slurb_tile%qsws_liq_road(i,j)
-!
-!--    Modification due to precipitiation. If the liquid reservoir is full, the liquid water
-!--    is assumed to be drained into the drainage system (liquid water is not conserved).
-!--    The precipitation flux is not included in the surface-atmosphere latent heat flux (qsws).
-    !    IF ( precipitation )  THEN
-
-    !    ENDIF
-    if (imicro == 0 .or. imicro == 1) then
+    !
+    !--    Modification due to precipitiation. If the liquid reservoir is full, the liquid water
+    !--    is assumed to be drained into the drainage system (liquid water is not conserved).
+    !--    The precipitation flux is not included in the surface-atmosphere latent heat flux (qsws).
+    if (imicro == 0 .or. imicro == 1) then ! this should be the same as IF PRECIPITATION
         slurb_tile%qsws_liq_road(i,j) = slurb_tile%qsws_road(i,j)
     else
         ! IF ( slurb_tile%m_liq_road_0(i,j) < m_liq_max_road )  THEN
             slurb_tile%tm_road_precep(i,j) = precep(i,j,k_atm)
             slurb_tile%qsws_liq_road(i,j) = (slurb_tile%qsws_road(i,j) - slurb_tile%tm_road_precep(i,j) * rhof(k_atm) * rlv)
-            ! ?      = m s^-1 kg m^-3 kg^-1 m^3 J kg^-1
-            ! ?      = J s^-1
-            ! W m^-2 = W
-            ! however, we want this to be
-            ! W m^-2 = (kg m^-2 s^-1) (J kg^-1)??
-            ! a (kg m^-2 s^-1) can be formed like:
-            ! kg m^-2 s^-1 = precep(m s^-1) * rhobf(kg m^-3)
-            ! kg m^-2 s^-1 = kg m^-2 s^-1
-            ! then multiplying by rlv (J kg^-1) we get
-            ! W m^-2       = J kg^-1 kg m^-2 s^-1
-            ! W m^-2       = W m^-2
-        
         ! ENDIF
 
           !todoself even morme assume precipitation
     ENDIF
        ! liquid water reservoir is in m^3/m^2, rain rate in m/s (m^3/m^2 /s)
-!
-!--    Compute the total latent heat flux.
+    !
+    !--    Compute the total latent heat flux.
        slurb_tile%qsws_road(i,j) = slurb_tile%qsws_road(i,j)
-!
-!--    Compute the prognostic liquid water reservoir.
+    !
+    !--    Compute the prognostic liquid water reservoir.
        tm_new = - slurb_tile%qsws_liq_road(i,j) * drho_l_lv
-    !    slurb_tile%m_liq_road_0(i,j) = slurb_tile%m_liq_road_m(i,j) +                                                 &
-    !                           (rdt) * ( tsc(2) * tm_new + tsc(3) * slurb_tile%tm_liq_road(i,j) )
        slurb_tile%m_liq_road_0(i,j) = slurb_tile%m_liq_road_m(i,j) + rk3coef * tm_new
-!
-!--    Check if the liquid water reservoir is overfull. If so, drain excess to the
-!--    assumed drainage system (water is not conserved here).
-    !    if ((slurb_tile%m_liq_road_0(i,j) > m_liq_max_road).and.(tm_new > 0)) then
-    !     ! slurb_tile%tm_road_runoff(i,j) = (slurb_tile%m_liq_road_0(i,j) - m_liq_max_road) / rk3coef
-    !     ! slurb_tile%m_liq_road_0(i,j) = m_liq_max_road
-    !     ! tm_new = tm_new - slurb_tile%tm_road_runoff(i,j)
-
-    !     tm_new_limited = (m_liq_max_road - slurb_tile%m_liq_road_m(i,j)) / rk3coef
-    !     slurb_tile%tm_road_runoff(i,j) = tm_new - tm_new_limited
-    !     tm_new = tm_new_limited
-    !     slurb_tile%m_liq_road_0(i,j) = slurb_tile%m_liq_road_m(i,j) + rk3coef * tm_new
-    !    endif
-        ! if (rk3step == 3) then
-
-            ! if ((slurb_tile%m_liq_road_0(i,j) > m_liq_max_road)) then
-            !     tm_new_limited = (m_liq_max_road - slurb_tile%m_liq_road_m(i,j)) / rk3coef
-            !     slurb_tile%tm_road_runoff(i,j) = tm_new - tm_new_limited
-            !     tm_new = tm_new_limited
-            !     slurb_tile%m_liq_road_0(i,j) = m_liq_max_road
-            ! else
-            !     slurb_tile%tm_roof_runoff(i,j) = 0
-            ! endif
-            if ((slurb_tile%m_liq_road_0(i,j) > m_liq_max_road)) then
-                slurb_tile%tm_road_runoff(i,j) = (slurb_tile%m_liq_road_0(i,j) - m_liq_max_road) / rk3coef
-                slurb_tile%m_liq_road_0(i,j) = m_liq_max_road
-            else
-                slurb_tile%tm_road_runoff(i,j) = 0
-            endif
-        ! else
-        !     slurb_tile%m_liq_road_0(i,j) = MIN( slurb_tile%m_liq_road_m(i,j), m_liq_max_road )
-        ! endif
-!
-!--    Check for negative water reservoir. Should we adjust qsws_road accordingly?
+    !
+    !--    Check if the liquid water reservoir is overfull. If so, drain excess to the
+    !--    assumed drainage system (water is not conserved here).
+    if ((slurb_tile%m_liq_road_0(i,j) > m_liq_max_road)) then
+        slurb_tile%tm_road_runoff(i,j) = (slurb_tile%m_liq_road_0(i,j) - m_liq_max_road) / rk3coef
+        slurb_tile%m_liq_road_0(i,j) = m_liq_max_road
+    else
+        slurb_tile%tm_road_runoff(i,j) = 0
+    endif
+    !
+    !--    Check for negative water reservoir. Should we adjust qsws_road accordingly?
        slurb_tile%m_liq_road_0(i,j) = MAX( slurb_tile%m_liq_road_0(i,j), 0.0_field_r )
-!
-!--    Compute RK3 tendency
+    !
+    !--    Compute RK3 tendency
     !    CALL calc_rk3_tend( slurb_tile%tm_liq_road(i,j), tm_new )
        slurb_tile%tm_liq_road(i,j) = tm_new
-!
-!--    Compute the new liquid water coverage.
+    !
+    !--    Compute the new liquid water coverage.
        slurb_tile%c_liq_road(i,j) = MIN( 1.0_field_r, ( slurb_tile%m_liq_road_0(i,j) / m_liq_max_road )**0.67 )
-!
-!--    Compute new saturation mixing ratio.
+    !
+    !--    Compute new saturation mixing ratio.
        e_s = magnus( MIN( slurb_tile%t_road_0(nzt_road,i,j), 333.15_field_r ) )
        slurb_tile%qs_road(i,j) = ep * e_s / ( ps - e_s )
-!
-!--    Calculate new mixing ratio and vpt at road surface.
+    !
+    !--    Calculate new mixing ratio and vpt at road surface.
        slurb_tile%q_road(i,j) = q_surf( slurb_tile%qs_road(i,j), slurb_tile%rah_road(i,j), slurb_tile%q1(i,j), f_qsws_liq )
        slurb_tile%vpt_road(i,j) = slurb_tile%pt_road(i,j) * ( 1.0_field_r + 0.61_field_r * slurb_tile%q_road(i,j) )
 
@@ -3756,11 +3643,11 @@ end subroutine slurb_update_external_vars
  END SUBROUTINE road_model
 
 
-!--------------------------------------------------------------------------------------------------!
-! Description:
-! ------------
-!> Models the surface energy balance and subsurface heat diffusion for both walls.
-!--------------------------------------------------------------------------------------------------!
+    !--------------------------------------------------------------------------------------------------!
+    ! Description:
+    ! ------------
+    !> Models the surface energy balance and subsurface heat diffusion for both walls.
+    !--------------------------------------------------------------------------------------------------!
  SUBROUTINE wall_model
 
    REAL(field_r) ::  coef_1   !< coefficient A of the prognostic equation
@@ -3777,11 +3664,11 @@ end subroutine slurb_update_external_vars
        IF ( slurb_tile%anisotropic_canyon(i,j) )  f_shf_b = f_shf_a
     ENDIF
 
-!
-!-- The coefficients for the moist prognostic equation for temperature. For the longwave balance,
-!-- both direct emission and the effect of backreflection are linearized. The linearization depends
-!-- if the canyon is isotropic or not as an average backreflection is used for isotropic canyons.
-!-- We consider the walls are dry in all cases, so moist physical processes are not considered.
+    !
+    !-- The coefficients for the moist prognostic equation for temperature. For the longwave balance,
+    !-- both direct emission and the effect of backreflection are linearized. The linearization depends
+    !-- if the canyon is isotropic or not as an average backreflection is used for isotropic canyons.
+    !-- We consider the walls are dry in all cases, so moist physical processes are not considered.
     IF ( slurb_tile%anisotropic_canyon(i,j) )  THEN
        coef_1 = slurb_tile%rad_sw_net_wall_a(i,j) + slurb_tile%rad_lw_net_wall_a(i,j)                              &
                 - 3.0_field_r * slurb_tile%lw_wall_coef(1,i,j) * slurb_tile%t_wall_a_0(nzt_wall,i,j)**4                   &
@@ -3807,11 +3694,11 @@ end subroutine slurb_update_external_vars
        CALL calc_surf_t_p( slurb_tile%t_wall_b_m(nzt_wall,i,j), slurb_tile%t_wall_b_0(nzt_wall,i,j),                 &
                            slurb_tile%tt_wall_b(nzt_wall,i,j), coef_1, coef_2, slurb_tile%c_wall(nzt_wall,i,j) )
     ELSE
-!
-!--    In case of isotropic canyon, wall A and B temperatures are averaged, and thus the prognostic
-!--    equation for t_wall_a is representative of both of the walls. Thus both the terms for
-!--    t_wall_a as well as for t_wall_b in the longwave radiation balance has a dependency on
-!--    the surface temperature.
+    !
+    !--    In case of isotropic canyon, wall A and B temperatures are averaged, and thus the prognostic
+    !--    equation for t_wall_a is representative of both of the walls. Thus both the terms for
+    !--    t_wall_a as well as for t_wall_b in the longwave radiation balance has a dependency on
+    !--    the surface temperature.
        coef_1 = slurb_tile%rad_sw_net_wall_a(i,j) + slurb_tile%rad_lw_net_wall_a(i,j)                              &
                 - 3.0_field_r * ( slurb_tile%lw_wall_coef(1,i,j) + slurb_tile%lw_wall_coef(3,i,j) )                     &
                    * slurb_tile%t_wall_a_0(nzt_wall,i,j)**4                                                  &
@@ -3837,8 +3724,8 @@ end subroutine slurb_update_external_vars
     slurb_tile%ghf_wall_a(i,j) = slurb_tile%conductivity_wall(nzb_wall,i,j) *                                      &
                          ( slurb_tile%t_wall_a_0(nzb_wall,i,j) - slurb_tile%t_indoor(i,j) )
 
-!
-!-- Same treatment for wall B if this is an anisotropic canyon, otherwise copy.
+    !
+    !-- Same treatment for wall B if this is an anisotropic canyon, otherwise copy.
     IF ( slurb_tile%anisotropic_canyon(i,j) )  THEN
        slurb_tile%pt_wall_b(i,j)  = slurb_tile%t_wall_b_0(nzt_wall,i,j) * (1 / exnf(k_topo))
        slurb_tile%shf_wall_b(i,j) = -f_shf_b * ( slurb_tile%t_can_m(i,j) - slurb_tile%t_wall_b_0(nzt_wall,i,j) )
@@ -3849,8 +3736,8 @@ end subroutine slurb_update_external_vars
 
     CALL calc_heat_diffusion( slurb_tile%t_wall_b_m(:,i,j), slurb_tile%t_wall_b_0(:,i,j), slurb_tile%tt_wall_b(:,i,j),    &
         slurb_tile%c_wall(:,i,j), slurb_tile%conductivity_wall(:,i,j), slurb_tile%t_indoor(i,j) )
-!
-!--    Update longwave radiative fluxes following linearization.
+    !
+    !--    Update longwave radiative fluxes following linearization.
        slurb_tile%rad_lw_net_wall_a(i,j) = slurb_tile%rad_lw_net_wall_a(i,j)                                       &
                                    + slurb_tile%lw_wall_coef(1,i,j) * slurb_tile%t_wall_a_m(nzt_wall,i,j)**4         &
                                    - 4.0_field_r * slurb_tile%lw_wall_coef(1,i,j)                               &
@@ -3863,17 +3750,17 @@ end subroutine slurb_update_external_vars
                                       * slurb_tile%t_wall_b_m(nzt_wall,i,j)**3                               &
                                    * ( slurb_tile%t_wall_b_m(nzt_wall,i,j) - slurb_tile%t_wall_b_0(nzt_wall,i,j) )
     ELSE
-!
-!--    Copy all layers including the surface for wall B.
+    !
+    !--    Copy all layers including the surface for wall B.
        slurb_tile%t_wall_b_0(:,i,j) = slurb_tile%t_wall_a_0(:,i,j)
        slurb_tile%tt_wall_b(:,i,j)  = slurb_tile%tt_wall_a(:,i,j)
        slurb_tile%pt_wall_b(i,j)    = slurb_tile%pt_wall_a(i,j)
        slurb_tile%shf_wall_b(i,j)   = slurb_tile%shf_wall_a(i,j)
        slurb_tile%ghf_wall_b(i,j)   = slurb_tile%ghf_wall_a(i,j)
 
-!
-!--    For longwave radiative flux, we need to add terms for both the t_wall_a and the t_wall_b
-!--    in the longwave balance, thus coefficients 1 and 3 are summed here.
+    !
+    !--    For longwave radiative flux, we need to add terms for both the t_wall_a and the t_wall_b
+    !--    in the longwave balance, thus coefficients 1 and 3 are summed here.
        slurb_tile%rad_lw_net_wall_a(i,j) = slurb_tile%rad_lw_net_wall_a(i,j)                                       &
                                    + ( slurb_tile%lw_wall_coef(1,i,j) + slurb_tile%lw_wall_coef(3,i,j) )           &
                                       * slurb_tile%t_wall_a_m(nzt_wall,i,j)**4                               &
@@ -3887,11 +3774,11 @@ end subroutine slurb_update_external_vars
  END SUBROUTINE wall_model
 
 
-!--------------------------------------------------------------------------------------------------!
-! Description:
-! ------------
-!> Models the surface energy balance, SW transmission and subsurface heat diffusion for windows.
-!--------------------------------------------------------------------------------------------------!
+    !--------------------------------------------------------------------------------------------------!
+    ! Description:
+    ! ------------
+    !> Models the surface energy balance, SW transmission and subsurface heat diffusion for windows.
+    !--------------------------------------------------------------------------------------------------!
  SUBROUTINE window_model
 
     REAL(field_r) ::  coef_1   !< coefficient A of the prognostic equation
@@ -3908,13 +3795,13 @@ end subroutine slurb_update_external_vars
        IF ( slurb_tile%anisotropic_canyon(i,j) )  f_shf_b = f_shf_a
     ENDIF
 
-!
-!-- Computation of the prognostic equation similarly to the walls, with exception of added
-!-- shortwave transmission component for surface and subsurface layers. Explanatory comments
-!-- are not repeated from the wall model, comments reflect differences specific to windows.
+    !
+    !-- Computation of the prognostic equation similarly to the walls, with exception of added
+    !-- shortwave transmission component for surface and subsurface layers. Explanatory comments
+    !-- are not repeated from the wall model, comments reflect differences specific to windows.
     IF ( slurb_tile%anisotropic_canyon(i,j) )  THEN
-!
-!--    For windows, some of the incoming shortwave radiation is transmitted through the material.
+    !
+    !--    For windows, some of the incoming shortwave radiation is transmitted through the material.
        coef_1 = slurb_tile%rad_sw_net_win_a(i,j) * slurb_tile%absorption_win(nzt_win,i,j)                          &
                 + slurb_tile%rad_lw_net_win_a(i,j)                                                         &
                 - 3.0_field_r * slurb_tile%lw_win_coef(1,i,j) * slurb_tile%t_win_a_0(nzt_win,i,j)**4                      &
@@ -3957,9 +3844,9 @@ end subroutine slurb_update_external_vars
        CALL calc_surf_t_p( slurb_tile%t_win_a_m(nzt_win,i,j), slurb_tile%t_win_a_0(nzt_win,i,j),                     &
                            slurb_tile%tt_win_a(nzt_win,i,j), coef_1, coef_2, slurb_tile%c_win(nzt_win,i,j) )
     ENDIF
-!
-!-- The transmitted shortwave radiation is included also in the prognostic equations for material
-!-- subsurface temperatures.
+    !
+    !-- The transmitted shortwave radiation is included also in the prognostic equations for material
+    !-- subsurface temperatures.
     slurb_tile%pt_win_a(i,j)  = slurb_tile%t_win_a_0(nzt_win,i,j) * (1 / exnf(k_topo))
     slurb_tile%shf_win_a(i,j) = -f_shf_a * ( slurb_tile%t_can_m(i,j) - slurb_tile%t_win_a_0(nzt_win,i,j) )
 
@@ -4015,11 +3902,11 @@ end subroutine slurb_update_external_vars
  END SUBROUTINE window_model
 
 
-!--------------------------------------------------------------------------------------------------!
-! Description:
-! ------------
-!> Calculate surface mixing ratio using resistance weighting.
-!--------------------------------------------------------------------------------------------------!
+    !--------------------------------------------------------------------------------------------------!
+    ! Description:
+    ! ------------
+    !> Calculate surface mixing ratio using resistance weighting.
+    !--------------------------------------------------------------------------------------------------!
  PURE FUNCTION q_surf( q_s, rah, q_a, f_qsws )
 
     REAL(field_r), INTENT(IN) ::  f_qsws  !< factor for the latent heat flux (W m^-2)
@@ -4031,29 +3918,23 @@ end subroutine slurb_update_external_vars
     REAL(field_r) ::  res     !< total surface resistance
 
 
-!
-!-- Total surface resistance.
+    !
+    !-- Total surface resistance.
     res = rah / ( rah + ABS( rho_lv / ( f_qsws + 1.0E-20_field_r ) - rah ) )
 
-!
-!-- Use the newly calculated total surface resistance to compute weighted surface mixing ratio.
-    ! IF ( bulk_cloud_model )  THEN
-!
-!--    Assume equal liquid water content in canyon as in air above.
-       q_surf = res * q_s + ( 1.0_field_r - res ) * ( q_a - ql0(i,j,k_atm) )
-    ! ELSE
-    !    q_surf = res * q_s + ( 1.0_field_r - res ) * q_a
-    ! ENDIF
+    !--    Assume equal liquid water content in canyon as in air above.
+    q_surf = res * q_s + ( 1.0_field_r - res ) * ( q_a - ql0(i,j,k_atm) )
+
 
  END FUNCTION q_surf
 
  END SUBROUTINE slurb_energy_balance_model
 
  !--------------------------------------------------------------------------------------------------!
-! Description:
-! ------------
-!> Compute the dynamical conditions (wind speed, pt, q, vpt) in the street canyon.
-!--------------------------------------------------------------------------------------------------!
+    ! Description:
+    ! ------------
+    !> Compute the dynamical conditions (wind speed, pt, q, vpt) in the street canyon.
+    !--------------------------------------------------------------------------------------------------!
 SUBROUTINE slurb_canyon_model
     use modglobal, only : i1, j1, cp, rlv, rk3step, rdt
     INTEGER ::  i       !< loop index (x-direction)
@@ -4086,11 +3967,6 @@ SUBROUTINE slurb_canyon_model
     k_atm = 1
     rho_cp = cp * rho_air_zw(k_topo)
 
-    ! IF ( debug_output_timestep )  THEN
-    !    WRITE( debug_string, * ) 'slurb_canyon_model'
-    !    CALL debug_message( debug_string, 'start' )
-    ! ENDIF
-
     ! runge_l = ( timestep_scheme(1:5) == 'runge' )
     runge_l = .true.
 
@@ -4107,20 +3983,6 @@ SUBROUTINE slurb_canyon_model
    !
    !--    Consider total air mass column within the street canyon.
          c = rho_cp * slurb_tile%h_bld(i,j)
-        !  write(*,*) "slurb_tile%hw_can(i,j)"
-        !  write (*,*) i,j,slurb_tile%hw_can(i,j)
-        !  write(*,*) "slurb_tile%f_win(i,j)"
-        !  write (*,*) i,j,slurb_tile%f_win(i,j)
-        !  write(*,*) "slurb_tile%shf_road(i,j)"
-        !  write (*,*) i,j,slurb_tile%shf_road(i,j)
-        !  write(*,*) "slurb_tile%shf_wall_a(i,j)"
-        !  write (*,*) i,j,slurb_tile%shf_wall_a(i,j)
-        !  write(*,*) "slurb_tile%shf_wall_b(i,j)"
-        !  write (*,*) i,j,slurb_tile%shf_wall_b(i,j)
-        !  write(*,*) "slurb_tile%shf_win_a(i,j)"
-        !  write (*,*) i,j,slurb_tile%shf_win_a(i,j)
-        !  write(*,*) "slurb_tile%shf_win_b(i,j)"
-        !  write (*,*) i,j,slurb_tile%shf_win_b(i,j)
    !
    !--    In canyon temperature prognostic equation, we use already computed fluxes from surfaces
    !--    in order to ensure consistency and conservation of energy. Thus, only the fluxes between
@@ -4135,105 +3997,37 @@ SUBROUTINE slurb_canyon_model
    !--    Aggregated flux doesn't contain c_p yet.
          shf_surf = shf_surf
 
-        !  write(*,*) "f_shf"
-        !  write (*,*) i,j,f_shf
-        !  write(*,*) "slurb_tile%pt1(i,j)"
-        !  write (*,*) i,j,slurb_tile%pt1(i,j)
-        !  write(*,*) "shf_surf"
-        !  write (*,*) i,j,shf_surf
    !
    !--    Coefficients for the prognostic equation of street canyon temperature.
          coef_1 = f_shf * slurb_tile%pt1(i,j) + (shf_surf)
          coef_2 = f_shf * (1 / exnf(k_topo))
 
-        !  write(*,*) "coef_1"
-        !  write (*,*) i,j,coef_1
-        !  write(*,*) "coef_2"
-        !  write (*,*) i,j,coef_2
-        ! K = (w m^-2 s + J k^-1 m^-2 K) / (J K^-1 m^-2 + W m^-2 K^-1 s)
-        ! K = (J m^-2 + J m^-2) / (J K^-1 m^-2 + J m^-2 K^-1)
         t_can_p_imp = (coef_1 * rk3coef + c * slurb_tile%t_can_0(i,j)) / (c + coef_2 * rk3coef)
         slurb_tile%tt_can(i,j) = (t_can_p_imp - slurb_tile%t_can_0(i,j)) / rk3coef
         slurb_tile%t_can_0(i,j) = t_can_p_imp
 
-        !  slurb_tile%t_can_m(i,j) = rk3coef * coef_1 / coef_2 + slurb_tile%t_can_m(i,j) / coef_2
-        ! slurb_tile%t_can_m(i,j) = (coef_1 * rdt + c * slurb_tile%t_can_0(i,j)) / ( c + coef_2 * rdt)
-        ! slurb_tile%t_can_m(i,j) = rdt*coef_1/coef_2 + slurb_tile%t_can_0(i,j)/coef_2
-        ! slurb_tile%tt_can(i,j)  = (coef_1/coef_2 + t_can/coef_2 - t_can) / rdt
-
-
-        ! t_can_p = (coef_1 * rdt + c * t) / (c + coef_2 * rdt)
-        !  c* t_can_p + coef_2 * rdt*t_can_p   = coef_1 * rdt + c * t
-
-!          slurb_tile%t_can_m(i,j) = ( coef_1 * (rdt) * tsc(2) + c * slurb_tile%t_can_0(i,j) ) /                         &
-!                            ( c + coef_2 * (rdt) * tsc(2) )
-
-!          slurb_tile%t_can_m(i,j) = slurb_tile%t_can_m(i,j) + (rdt) * tsc(3) * slurb_tile%tt_can(i,j)
-
-!          tt_new = ( slurb_tile%t_can_m(i,j) - slurb_tile%t_can_0(i,j) - (rdt) * tsc(3) * slurb_tile%tt_can(i,j) ) /            &
-!                   ( (rdt)  * tsc(2) )
-!    !
-!    !--    Compute the weighted RK3 tendency to be used in next time step.
-!          IF ( runge_l )  THEN
-!             IF ( rk3step == 1 )  THEN
-!                slurb_tile%tt_can(i,j) = tt_new
-!             ELSEIF ( rk3step < 3 )  THEN
-!                slurb_tile%tt_can(i,j) = -9.5625_field_r * tt_new + 5.3125_field_r * slurb_tile%tt_can(i,j)
-!             ENDIF
-!          ENDIF
-
-        ! write(*,*) "t_can_p"
-        !  write (*,*) i,j,slurb_tile%t_can_m(i,j)
-        ! write(*,*) "exnf(k_topo)"
-        !  write(*,*) exnf(k_topo)
-        !  write(*,*) "pt1"
-        !  write (*,*) i,j,slurb_tile%pt1(i,j)
-        !  write(*,*) "f_shf"
-        !  write (*,*) i,j,f_shf
          !
          !--    Calculate new pt and shf from canyon to atmosphere.
          slurb_tile%pt_can(i,j) = slurb_tile%t_can_0(i,j) * (1 / exnf(k_topo))
          slurb_tile%shf_can(i,j) = -f_shf * ( slurb_tile%pt1(i,j) - slurb_tile%pt_can(i,j) )
-         
-        !  write(*,*) "pt_can"
-        !  write (*,*) i,j,slurb_tile%pt_can(i,j)
+
    !
    !--    Compute prognostic street canyon mixing ratio.
          IF ( moist_physics )  THEN
 
             f_qsws = rho_lv / slurb_tile%rah_can(i,j)
-
    !
    !--       Same for the latent heat flux. Currently only the roads, walls are always dry.
    !--       This is a placeholder aggregation for street canyon vegetation,
    !--       e.g. green walls, low vegetation etc.
-            ! qsws_surf = slurb_tile%qsws_road(i,j)
-   !
-   !--       Aggregated flux doesn't contain l_v yet.
-            ! qsws_surf = 
    !
    !--       Compute new prognostic canyon mixing ratio.
             coef_1 = f_qsws * slurb_tile%q1(i,j) + slurb_tile%qsws_road(i,j)
             coef_2 = f_qsws
 
-            ! slurb_tile%q_can_m(i,j) = ( coef_1 * (rdt) * tsc(2) + c * slurb_tile%q_can_0(i,j) ) /                      &
-            !                   ( c + coef_2 * (rdt) * tsc(2) )
 
-            
-            ! slurb_tile%q_can_m(i,j) = slurb_tile%q_can_m(i,j) + (rdt) * tsc(3) * slurb_tile%tq_can(i,j)
-            !
             !--       Prevent negative mixing ratios due to temporal discretization. This is done before
             !--       the computation of tq_new in order to conserve energy.
-            ! write(*,*) "q_can_m"
-            ! write(*,*) i,j,slurb_tile%q_can_m(i,j)
-            
-
-            ! t_new_implicit = ( ( coef_1 * (rk3coef) + c * t_0 )  / ( c + coef_2 * (rk3coef)  ))
-            ! tt_new = (t_new_implicit - t_0) / rk3coef
-            ! t_0 = t_new_implicit
-            
-            ! tt_current = tt_new*(-4.25)
-            !
             !--       Here our "latent heat capacity" is the canyon air column total mass.
             c = rho_lv * slurb_tile%h_bld(i,j)
 
@@ -4242,20 +4036,6 @@ SUBROUTINE slurb_canyon_model
             slurb_tile%tq_can(i,j) = (q_can_p_imp - slurb_tile%q_can_0(i,j)) / rk3coef
             slurb_tile%q_can_0(i,j) = q_can_p_imp
 
-            ! tq_new = ( slurb_tile%q_can_(i,j) - slurb_tile%q_can_0(i,j) - (rdt) * tsc(3) * slurb_tile%tq_can(i,j) ) /         &
-            !          ( (rdt)  * tsc(2) )
-   !
-   !--       Compute the weighted RK3 tendency to be used in next time step.
-            ! slurb_tile%tq_can(i,j) = tq_new
-            ! IF ( runge_l )  THEN
-            !    IF ( rk3step == 1 )  THEN
-            !       slurb_tile%tq_can(i,j) = tq_new
-            !    ELSEIF ( rk3step < 3 )  THEN
-            !       slurb_tile%tq_can(i,j) = -9.5625_field_r * tq_new + 5.3125_field_r * slurb_tile%tq_can(i,j)
-            !    ENDIF
-            ! ENDIF
-
-            ! slurb_tile%q_can_0(i,j) = slurb_tile%q_can_m(i,j)
             slurb_tile%vpt_can(i,j) = slurb_tile%pt_can(i,j) * ( 1.0_field_r + 0.61_field_r * slurb_tile%q_can_0(i,j) )
             slurb_tile%qsws_can(i,j) = - f_qsws * ( slurb_tile%q1(i,j) - slurb_tile%q_can_0(i,j) )
 
@@ -4299,11 +4079,11 @@ SUBROUTINE slurb_canyon_model
  END SUBROUTINE slurb_canyon_model
 
 
-!--------------------------------------------------------------------------------------------------!
-! Description:
-! ------------
-!> SLUrb's internal model to model urban surface - atmosphere coupling.
-!--------------------------------------------------------------------------------------------------!
+    !--------------------------------------------------------------------------------------------------!
+    ! Description:
+    ! ------------
+    !> SLUrb's internal model to model urban surface - atmosphere coupling.
+    !--------------------------------------------------------------------------------------------------!
  SUBROUTINE slurb_urban_aggregation_model
     use modglobal, only : i1, j1, rlv, cp
     use modfields, only : u0, v0, rhof, qt0, thl0
@@ -4341,17 +4121,17 @@ SUBROUTINE slurb_canyon_model
                              ( 1.0_field_r - slurb_tile%f_bld(i,j) ) * slurb_tile%qsws_can(i,j) + slurb_tile%qsws_external(i,j)
        ENDIF
 
-!
-!--    Calculate momentum flux for horizontal wind components.
+    !
+    !--    Calculate momentum flux for horizontal wind components.
        slurb_tile%usws_urb(i,j) = -u0(i,j,k_atm) / slurb_tile%ram_urb(i,j) * rho_air_zw(k_topo)
        slurb_tile%vsws_urb(i,j) = -v0(i,j,k_atm) / slurb_tile%ram_urb(i,j) * rho_air_zw(k_topo)
 
-!
-!--    Aggregate radiative fluxes. Note that this aggregation is done here rather than in the
-!--    slurb_radiation_model on purpose to include the longwave term dependent on
-!--    the surface temperature of given surface.
-!
-!--    Compute the net LW radiation flux at canyon top and for urban surface.
+    !
+    !--    Aggregate radiative fluxes. Note that this aggregation is done here rather than in the
+    !--    slurb_radiation_model on purpose to include the longwave term dependent on
+    !--    the surface temperature of given surface.
+    !
+    !--    Compute the net LW radiation flux at canyon top and for urban surface.
        slurb_tile%rad_lw_net_can(i,j) = slurb_tile%rad_lw_net_road(i,j) + slurb_tile%hw_can(i,j) *                         &
                                 (   ( 1.0_field_r - slurb_tile%f_win(i,j) ) *                                   &
                                     ( slurb_tile%rad_lw_net_wall_a(i,j) + slurb_tile%rad_lw_net_wall_b(i,j) )      &
@@ -4361,11 +4141,11 @@ SUBROUTINE slurb_canyon_model
 
        slurb_tile%rad_lw_net_urb(i,j) = slurb_tile%f_bld(i,j) * slurb_tile%rad_lw_net_roof(i,j) +                          &
                                 ( 1.0_field_r - slurb_tile%f_bld(i,j) ) * slurb_tile%rad_lw_net_can(i,j)
-!
-!--    Outgoing LW flux.
+    !
+    !--    Outgoing LW flux.
        slurb_tile%rad_lw_out_urb(i,j) = slurb_tile%rad_lw_in_urb(i,j) - slurb_tile%rad_lw_net_urb(i,j)
-!
-!--    Calculate urban aggregated surface temperatures.
+    !
+    !--    Calculate urban aggregated surface temperatures.
        CALL calc_urban_aggregated_temperatures
 
         rhocp_i = 1. / (rhof(1) * cp)
@@ -4385,19 +4165,19 @@ SUBROUTINE slurb_canyon_model
  CONTAINS
 
 
-!--------------------------------------------------------------------------------------------------!
-! Description:
-! ------------
-!> Update the aggregated urban surface temperatures. These are diagnostic outputs and are not
-!> prognostic model variables. Four aggregated urban surface temperatures are computed:
-!> 1) Effective surface temperature T_H derived from conservation of heat flux contributions
-!> 2) Radiative surface temperature T_rad derived from the outgoing LW radiation
-!> 3) Complete surface temperature T_C which is an area-weighted temperature of all facets
-!> 4) Theoretical temperature at 2 m height extrapolated using stability-corrected log profile
-!> For 1-3 formulations of Kanda et al. 2005, adapted for SLUrb configuration, are used.
-!< Note that prognostic temperatures (suffix _p) are used. These are the ones that are output
-!> for current time step, as the timelevel is swapped right after the prognostic equation calls.
-!--------------------------------------------------------------------------------------------------!
+    !--------------------------------------------------------------------------------------------------!
+    ! Description:
+    ! ------------
+    !> Update the aggregated urban surface temperatures. These are diagnostic outputs and are not
+    !> prognostic model variables. Four aggregated urban surface temperatures are computed:
+    !> 1) Effective surface temperature T_H derived from conservation of heat flux contributions
+    !> 2) Radiative surface temperature T_rad derived from the outgoing LW radiation
+    !> 3) Complete surface temperature T_C which is an area-weighted temperature of all facets
+    !> 4) Theoretical temperature at 2 m height extrapolated using stability-corrected log profile
+    !> For 1-3 formulations of Kanda et al. 2005, adapted for SLUrb configuration, are used.
+    !< Note that prognostic temperatures (suffix _p) are used. These are the ones that are output
+    !> for current time step, as the timelevel is swapped right after the prognostic equation calls.
+    !--------------------------------------------------------------------------------------------------!
  SUBROUTINE calc_urban_aggregated_temperatures
     use modglobal, only : boltz, rlv, cp
     REAL(field_r) ::  c_h_roof    !< bulk heat transfer coefficient for roof (J kg^-1 K^-1)
@@ -4412,9 +4192,9 @@ SUBROUTINE slurb_canyon_model
     real :: rho !< (kg m^-3)
     rho_cp = cp * rho_air_zw(k_topo)
     rho = rho_air_zw(k_topo)
-!
-!-- 1) Effective surface temperature T_H.
-!-- First, compute the bulk heat transfer coefficients.
+    !
+    !-- 1) Effective surface temperature T_H.
+    !-- First, compute the bulk heat transfer coefficients.
     IF ( calc_t_h )  THEN
        c_h_roof = ABS( slurb_tile%shf_roof(i,j) / ( rho * slurb_tile%uv_eff1(i,j) *                             &
                        ( slurb_tile%t_roof_0(nzt_roof,i,j) - slurb_tile%pt1(i,j) * exnf(k_atm) ) ) )
@@ -4460,12 +4240,12 @@ SUBROUTINE slurb_canyon_model
                          )
     ENDIF
 
-!
-!-- 2) Radiative surface temperature T_rad.
+    !
+    !-- 2) Radiative surface temperature T_rad.
     slurb_tile%t_rad_urb(i,j) = SQRT( SQRT( slurb_tile%rad_lw_out_urb(i,j) / ( slurb_tile%emiss_urb(i,j) * boltz ) ) )
 
-!
-!-- 3) Complete surface temperature T_C, similarly to T_H but without the C_h weighting.
+    !
+    !-- 3) Complete surface temperature T_C, similarly to T_H but without the C_h weighting.
     IF ( calc_t_c )  THEN
        slurb_tile%t_c_urb(i,j) = ( ( 1.0_field_r - slurb_tile%f_bld(i,j) ) *                                            &
                            ( slurb_tile%hw_can(i,j) * ( ( 1.0_field_r - slurb_tile%f_win(i,j) ) *                       &
@@ -4482,8 +4262,8 @@ SUBROUTINE slurb_canyon_model
                          )
     ENDIF
 
-!
-!-- 4) Theoretical 2 m temperature extrapolated using MOST.
+    !
+    !-- 4) Theoretical 2 m temperature extrapolated using MOST.
     IF ( calc_t_2m )  THEN
        IF ( moist_physics )  THEN
           vtws =  (1/(rho_cp)) * slurb_tile%shf_can(i,j) + (1/(rho_cp)) * slurb_tile%qsws_can(i,j)
@@ -4515,10 +4295,10 @@ SUBROUTINE slurb_canyon_model
  END SUBROUTINE slurb_urban_aggregation_model
 
  !--------------------------------------------------------------------------------------------------!
-! Description:
-! ------------
-! Shortwave and longwave radiation parametrisations of the model.
-!--------------------------------------------------------------------------------------------------!
+    ! Description:
+    ! ------------
+    ! Shortwave and longwave radiation parametrisations of the model.
+    !--------------------------------------------------------------------------------------------------!
  SUBROUTINE slurb_radiation_model
     use modglobal, only : i1,j1,xtime,rtimee,xday,xlat,xlon
     use modraddata, only : zenith_lon_lat
@@ -4538,8 +4318,8 @@ SUBROUTINE slurb_canyon_model
     !    CALL debug_message( debug_string, 'start' )
     ! ENDIF
 
-!
-!-- Calculate solar angles if not already done by RTM.
+    !
+    !-- Calculate solar angles if not already done by RTM.
     ! IF ( .NOT. radiation_interactions )  THEN
     !    CALL get_date_time( time_since_reference_point, day_of_year = day_of_year,                  &
     !                        second_of_day = second_of_day )
@@ -4552,10 +4332,10 @@ SUBROUTINE slurb_canyon_model
     cos_zenith = COS(zenith)
 
 
-!
-!-- Split the incoming SW radiation into direct and diffuse parts.
-!-- Direct-diffuse SW split is quite weirdly done in the radiation mod if radiation
-!-- interactions are enabled. However, we do need it here even without interactions.
+    !
+    !-- Split the incoming SW radiation into direct and diffuse parts.
+    !-- Direct-diffuse SW split is quite weirdly done in the radiation mod if radiation
+    !-- interactions are enabled. However, we do need it here even without interactions.
    !  IF ( cos_zenith > 0.0_field_r )  CALL radiation_calc_diffusion_radiation
 
    do j=2,j1
@@ -4564,15 +4344,15 @@ SUBROUTINE slurb_canyon_model
        k_topo = 1
        k_atm = 1
 
-!
-!--    Update SLUrb internal radiative fluxes based on the new surface temperatures
-!--    Compute the internal longwave radiation interactions at every timestep.
+    !
+    !--    Update SLUrb internal radiative fluxes based on the new surface temperatures
+    !--    Compute the internal longwave radiation interactions at every timestep.
        CALL calc_rad_lw
 
-!
-!--    Compute the SW radiation fluxesd.
-!--    Do this only if the radiation model has updated SW fluxes at previous timestep,
-!--    as otherwise the computation would just yield the same fluxes.
+    !
+    !--    Compute the SW radiation fluxesd.
+    !--    Do this only if the radiation model has updated SW fluxes at previous timestep,
+    !--    as otherwise the computation would just yield the same fluxes.
     !    IF ( radiation_called  .OR.  first_call )  CALL calc_rad_sw TODOSELF
        call calc_rad_sw
     ENDDO
@@ -4583,34 +4363,34 @@ SUBROUTINE slurb_canyon_model
     !    CALL debug_message( debug_string, 'end' )
     ! ENDIF
 
-!
-!-- Private functions and subroutines of slurb_radiation_model.
+    !
+    !-- Private functions and subroutines of slurb_radiation_model.
     CONTAINS
 
 
-!--------------------------------------------------------------------------------------------------!
-! Description:
-! ------------
-!> Computes the LW radiative fluxes and their differentials for the time step.
-!--------------------------------------------------------------------------------------------------!
+    !--------------------------------------------------------------------------------------------------!
+    ! Description:
+    ! ------------
+    !> Computes the LW radiative fluxes and their differentials for the time step.
+    !--------------------------------------------------------------------------------------------------!
  SUBROUTINE calc_rad_lw
    use modglobal, only : boltz
    use modraddata, only : lwd
     REAL(field_r) ::  t_rad_sky  !< Radiative temperature of the sky
 
 
-!
-!-- Compute the effective radiative temperature of the incoming LW radiation.
+    !
+    !-- Compute the effective radiative temperature of the incoming LW radiation.
     slurb_tile%rad_lw_in_urb(i,j) = abs(lwd(i,j,1)) !TODOSELF
     ! lwd is positive in DALES
     t_rad_sky = SQRT( SQRT( slurb_tile%rad_lw_in_urb(i,j) / boltz ) )
 
-!
-!-- Computation of net LW fluxes based on Lemonsu et al. 2012 Eqs. (1-3) (+ windows).
-!-- Note that these are NOT YET the final net longwave fluxes for the surfaces, as the term
-!-- dependent on the surface's own surface temperature (coef=1) is omitted at this stage.
-!-- This term is added after computing the prognostic equation for the surface temperature,
-!-- as it is included in the prognostic equations in an linearized form.
+    !
+    !-- Computation of net LW fluxes based on Lemonsu et al. 2012 Eqs. (1-3) (+ windows).
+    !-- Note that these are NOT YET the final net longwave fluxes for the surfaces, as the term
+    !-- dependent on the surface's own surface temperature (coef=1) is omitted at this stage.
+    !-- This term is added after computing the prognostic equation for the surface temperature,
+    !-- as it is included in the prognostic equations in an linearized form.
     slurb_tile%rad_lw_net_roof(i,j) = slurb_tile%lw_roof_coef(2,i,j) * slurb_tile%rad_lw_in_urb(i,j)
 
 
@@ -4620,11 +4400,11 @@ SUBROUTINE slurb_canyon_model
                               slurb_tile%lw_road_coef(4,i,j) * slurb_tile%t_win_a_0(nzt_win,i,j)**4 +                &
                               slurb_tile%lw_road_coef(4,i,j) * slurb_tile%t_win_b_0(nzt_win,i,j)**4
 
-!
-!-- The term dependent on t_wall_b is omitted at this stage, as for isotropic canyons the mean wall
-!-- temperature is used, including both wall A and B interactions. Thus, the terms for both
-!-- t_wall_a and t_wall_b have to be included in linearization. For anisotropic canyons there is
-!-- no direct dependence, so it can be directly added (see below).
+    !
+    !-- The term dependent on t_wall_b is omitted at this stage, as for isotropic canyons the mean wall
+    !-- temperature is used, including both wall A and B interactions. Thus, the terms for both
+    !-- t_wall_a and t_wall_b have to be included in linearization. For anisotropic canyons there is
+    !-- no direct dependence, so it can be directly added (see below).
     slurb_tile%rad_lw_net_wall_a(i,j) = slurb_tile%lw_wall_coef(2,i,j) * slurb_tile%rad_lw_in_urb(i,j) +                   &
                                 slurb_tile%lw_wall_coef(4,i,j) * slurb_tile%t_win_a_0(nzt_win,i,j)**4 +              &
                                 slurb_tile%lw_wall_coef(5,i,j) * slurb_tile%t_win_b_0(nzt_win,i,j)**4 +              &
@@ -4637,18 +4417,18 @@ SUBROUTINE slurb_canyon_model
                                   slurb_tile%lw_win_coef(6,i,j) * slurb_tile%t_road_0(nzt_road,i,j)**4
     ENDIF
 
-!
-!-- Inverse for facade B, if anisotropic canyons are used. If not, copy.
+    !
+    !-- Inverse for facade B, if anisotropic canyons are used. If not, copy.
     IF ( slurb_tile%anisotropic_canyon(i,j) )  THEN
-!
-!--    In case of anisotropic canyons, t_wall_b doesn't have dependency on t_wall_a in the
-!--    prognostic equation, and thus it's contribution to longwave balance can be directly added
-!--    to the net longwave radiation before prognostic equations. Vice versa for t_wall_b.
+    !
+    !--    In case of anisotropic canyons, t_wall_b doesn't have dependency on t_wall_a in the
+    !--    prognostic equation, and thus it's contribution to longwave balance can be directly added
+    !--    to the net longwave radiation before prognostic equations. Vice versa for t_wall_b.
        slurb_tile%rad_lw_net_wall_a(i,j) = slurb_tile%rad_lw_net_wall_a(i,j) +                                     &
                                    slurb_tile%lw_wall_coef(3,i,j) * slurb_tile%t_wall_b_0(nzt_wall,i,j)**4
 
-!
-!--    Note that for wall (and window) B the coefficients 4 and 5 are also swapped.
+    !
+    !--    Note that for wall (and window) B the coefficients 4 and 5 are also swapped.
        slurb_tile%rad_lw_net_wall_b(i,j) = slurb_tile%lw_wall_coef(2,i,j) * slurb_tile%rad_lw_in_urb(i,j) +                &
                                    slurb_tile%lw_wall_coef(3,i,j) * slurb_tile%t_wall_a_0(nzt_wall,i,j)**4 +         &
                                    slurb_tile%lw_wall_coef(4,i,j) * slurb_tile%t_win_b_0(nzt_win,i,j)**4 +           &
@@ -4673,11 +4453,11 @@ SUBROUTINE slurb_canyon_model
  END SUBROUTINE calc_rad_lw
 
 
-!--------------------------------------------------------------------------------------------------!
-! Description:
-! ------------
-!> Computes the SW radiative fluxes for the time step.
-!--------------------------------------------------------------------------------------------------!
+    !--------------------------------------------------------------------------------------------------!
+    ! Description:
+    ! ------------
+    !> Computes the SW radiative fluxes for the time step.
+    !--------------------------------------------------------------------------------------------------!
  SUBROUTINE calc_rad_sw
    use modraddata, only : swdir, swdif
 
@@ -4694,8 +4474,8 @@ SUBROUTINE slurb_canyon_model
 
 
 
-!
-!-- Check if there is any shortwave radiation to take care of in the first place.
+    !
+    !-- Check if there is any shortwave radiation to take care of in the first place.
     IF ( .NOT. ( cos_zenith > 0.0_field_r ) )  THEN
        slurb_tile%rad_sw_in_urb(i,j)     = 0.0_field_r
        slurb_tile%rad_sw_net_urb(i,j)    = 0.0_field_r
@@ -4710,18 +4490,18 @@ SUBROUTINE slurb_canyon_model
     ! whatever radiation model we use, shortwave DOWN will always be positive, so we ensure that by taking absolute value.
     slurb_tile%rad_sw_in_urb(i,j) = abs(swdir(i,j,1)) + abs(swdif(i,j,1))
 
-!
-!-- Compute the net shortwave radiation for roofs, which is the simplest case.
+    !
+    !-- Compute the net shortwave radiation for roofs, which is the simplest case.
     slurb_tile%rad_sw_net_roof(i,j) = ( 1.0_field_r - slurb_tile%albedo_roof(i,j) ) * slurb_tile%rad_sw_in_urb(i,j)
 
-!
-!-- Next, compute then et shortwave radiation within the street canyon. This is quite complex,
-!-- including the effect of shading and within-canyon reflections. See Lemonsu et al. (2012)
-!-- for reference.
+    !
+    !-- Next, compute then et shortwave radiation within the street canyon. This is quite complex,
+    !-- including the effect of shading and within-canyon reflections. See Lemonsu et al. (2012)
+    !-- for reference.
 
-!
-!-- Calculate tangent of the zenith angle, with limiters and safety margins applied to prevent
-!-- floating point overflows and division by zero. Shouldn't affect the physics too much.
+    !
+    !-- Calculate tangent of the zenith angle, with limiters and safety margins applied to prevent
+    !-- floating point overflows and division by zero. Shouldn't affect the physics too much.
     IF ( ABS( 0.5_field_r * pi - zenith ) < 1.0E-6_field_r )  THEN
        IF ( 0.5_field_r * pi - zenith >  0.0_field_r )  tan_zenith = TAN( 0.5_field_r * pi - 1.0E-6_field_r )
        IF ( 0.5_field_r * pi - zenith <= 0.0_field_r )  tan_zenith = TAN( 0.5_field_r * pi + 1.0E-6_field_r )
@@ -4731,19 +4511,19 @@ SUBROUTINE slurb_canyon_model
        tan_zenith = TAN( zenith )
     ENDIF
 
-!
-!-- Direct SW radiation received by the walls (and windows), the road and vegetation.
+    !
+    !-- Direct SW radiation received by the walls (and windows), the road and vegetation.
     IF ( slurb_tile%anisotropic_canyon(i,j) )  THEN
-!
-!--    Lemonsu et al. (2012) Eq. (A1)
-!--    @note There is an error in this equation in the article. It should be that
-!--    the direct radiation on road should decrease when difference between the sun azimuth
-!--    angles increase, not vice versa.
+    !
+    !--    Lemonsu et al. (2012) Eq. (A1)
+    !--    @note There is an error in this equation in the article. It should be that
+    !--    the direct radiation on road should decrease when difference between the sun azimuth
+    !--    angles increase, not vice versa.
        rad_sw_dir_road = abs(swdir(i,j,1)) * MAX( 0.0_field_r, 1.0_field_r - slurb_tile%hw_can(i,j) *               &
                          tan_zenith *  SIN( ABS( azimuth - slurb_tile%theta_can(i,j) ) ) )
 
-!
-!--    Lemonsu et al. (2012) Eqs. (A2-A4)
+    !
+    !--    Lemonsu et al. (2012) Eqs. (A2-A4)
        rad_sw_dir_wall_a = ( abs(swdir(i,j,1)) - rad_sw_dir_road ) * 0.5_field_r / slurb_tile%hw_can(i,j)
 
        IF ( SIN( azimuth - slurb_tile%theta_can(i,j) ) > 0.0_field_r )  THEN
@@ -4755,14 +4535,14 @@ SUBROUTINE slurb_canyon_model
        ENDIF
 
     ELSE
-!
-!--    Revert to the anisotropic integrated solution by Masson (2000).
-!
-!--    Calculate the critical canyon orientation theta0 for anisotropic street canyons.
+    !
+    !--    Revert to the anisotropic integrated solution by Masson (2000).
+    !
+    !--    Calculate the critical canyon orientation theta0 for anisotropic street canyons.
        theta0 = ASIN( MIN( 1.0_field_r / ( tan_zenith * slurb_tile%hw_can(i,j) ), 1.0_field_r ) )
 
-!
-!--    Masson (2000) Eqs. (13-15)
+    !
+    !--    Masson (2000) Eqs. (13-15)
        rad_sw_dir_road = abs(swdir(i,j,1)) * ( 2.0_field_r * theta0 / pi -                             &
                          2.0_field_r * tan_zenith / pi * slurb_tile%hw_can(i,j) * ( 1.0_field_r - COS( theta0 ) ) )
 
@@ -4772,31 +4552,31 @@ SUBROUTINE slurb_canyon_model
 
    ENDIF
 
-!
-!-- Diffuse (from sky) solar radiation received by the surfaces.
+    !
+    !-- Diffuse (from sky) solar radiation received by the surfaces.
     rad_sw_diff_road   = abs(swdif(i,j,1)) * slurb_tile%svf_road(i,j)
     rad_sw_diff_wall_a = abs(swdif(i,j,1)) * slurb_tile%svf_wall(i,j)
     rad_sw_diff_wall_b = rad_sw_diff_wall_a
 
-!
-!-- Canyon internal scattering based on both Masson (2000) Eqs. (16-20) and
-!-- Lemonsu et al. (2012) Appendix A2. This has been modified to include windows: the weighted
-!-- average reflection from walls and windows is taken into account by using weighted average
-!-- albedo. The wall and window surfaces are assumed to be uniformly distributed.
+    !
+    !-- Canyon internal scattering based on both Masson (2000) Eqs. (16-20) and
+    !-- Lemonsu et al. (2012) Appendix A2. This has been modified to include windows: the weighted
+    !-- average reflection from walls and windows is taken into account by using weighted average
+    !-- albedo. The wall and window surfaces are assumed to be uniformly distributed.
 
-!
-!-- Nominator of the sum of reflections at infinity.
+    !
+    !-- Nominator of the sum of reflections at infinity.
     rad_sw_ref_nomin = slurb_tile%albedo_wall_win(i,j) * ( rad_sw_dir_wall_a + rad_sw_diff_wall_a +        &
                        rad_sw_dir_wall_b + rad_sw_diff_wall_b ) / 2.0_field_r +                         &
                        slurb_tile%albedo_wall_win(i,j) * slurb_tile%svf_wall(i,j) * slurb_tile%albedo_road(i,j) *          &
                        rad_sw_dir_road
 
-!
-!-- Sum of refelctions at infinity.
+    !
+    !-- Sum of refelctions at infinity.
     w_inf = rad_sw_ref_nomin / slurb_tile%sw_ref_denom(i,j)
 
-!
-!-- Total solar radiation absorbed after infinite reflections.
+    !
+    !-- Total solar radiation absorbed after infinite reflections.
     slurb_tile%rad_sw_in_road(i,j) = rad_sw_dir_road + rad_sw_diff_road +                                  &
                              ( 1.0_field_r - slurb_tile%svf_road(i,j) ) * w_inf
     slurb_tile%rad_sw_net_road(i,j) = ( 1.0_field_r - slurb_tile%albedo_road(i,j) ) * slurb_tile%rad_sw_in_road(i,j)
@@ -4828,8 +4608,8 @@ SUBROUTINE slurb_canyon_model
        slurb_tile%rad_sw_net_win_b(i,j) = slurb_tile%rad_sw_net_win_a(i,j)
     ENDIF
 
-!
-!-- Modification of reflected solar radiation for anisotropic street canyons.
+    !
+    !-- Modification of reflected solar radiation for anisotropic street canyons.
     IF ( slurb_tile%anisotropic_canyon(i,j) )  THEN
        rad_sw_wall_modifier = ( 1.0_field_r + slurb_tile%albedo_wall_win(i,j) *                                 &
                                 ( 1.0_field_r - 2.0_field_r * slurb_tile%svf_wall(i,j) ) /                           &
@@ -4853,10 +4633,10 @@ SUBROUTINE slurb_canyon_model
        ENDIF
     ENDIF
 
-!
-!-- The upward shortwave radiation is computed as residual of absorbed radiation per uniturban
-!-- area. Aggregated effective albedo of urban surface is computed so that the raditaiton models end
-!-- up with the same figure for outgoing shortwave radiation.
+    !
+    !-- The upward shortwave radiation is computed as residual of absorbed radiation per uniturban
+    !-- area. Aggregated effective albedo of urban surface is computed so that the raditaiton models end
+    !-- up with the same figure for outgoing shortwave radiation.
     slurb_tile%rad_sw_out_urb(i,j) = slurb_tile%rad_sw_in_urb(i,j) -                                               &
                              ( ( 1.0_field_r - slurb_tile%f_bld(i,j) ) *                                        &
                                ( slurb_tile%hw_can(i,j) * ( ( 1.0_field_r - slurb_tile%f_win(i,j) ) *                   &
@@ -4869,12 +4649,12 @@ SUBROUTINE slurb_canyon_model
                              + slurb_tile%f_bld(i,j) * slurb_tile%rad_sw_net_roof(i,j)                             &
                              )
 
-!
-!-- Compute the net SW flux for diagnostics and output.
+    !
+    !-- Compute the net SW flux for diagnostics and output.
     slurb_tile%rad_sw_net_urb(i,j) = slurb_tile%rad_sw_in_urb(i,j) - slurb_tile%rad_sw_out_urb(i,j)
 
-!
-!-- Save effective albedo for the radiation model.
+    !
+    !-- Save effective albedo for the radiation model.
     if (slurb_tile%rad_sw_in_urb(i,j) /= 0.0) then
      slurb_tile%albedo_urb(i,j) = slurb_tile%rad_sw_out_urb(i,j) / slurb_tile%rad_sw_in_urb(i,j)
     endif ! TODOSELF WHY IS SWD 0?
