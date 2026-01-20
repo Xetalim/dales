@@ -37,7 +37,6 @@ contains
 
 subroutine lsm
   use modglobal, only : ldrydep, ntrun
-<<<<<<< HEAD
   use modtimer,  only : timer_tic, timer_toc
   ! XXX: delete v
   use modsurfdata, only : &
@@ -47,9 +46,6 @@ subroutine lsm
        wl, wlm, phiwm
 
   use modslurb, only : slurb_radiation_model, slurb_canyon_model, slurb_energy_balance_model, slurb_swap_timelevel, calc_canyon_resistances, calc_urban_resistances, slurb_urban_aggregation_model, slurb_update_external_vars
-=======
-  use modslurb, only : slurb_timestep_control, slurb_radiation_model, slurb_canyon_model, slurb_energy_balance_model, slurb_swap_timelevel, calc_canyon_resistances, calc_urban_resistances, slurb_urban_aggregation_model, slurb_update_external_vars
->>>>>>> eae23ead (Energy balance closed, mostly closed for precipitation)
   implicit none
 
     if (.not. llsm) return
@@ -148,15 +144,7 @@ subroutine lsm
     call timer_tic('lsm_integrate_theta_soil', 0)
     call integrate_theta_soil
 
-<<<<<<< HEAD
     call slurb_swap_timelevel(mod(ntrun, 2))
-=======
-    
-
-    ! CALL slurb_atmospheric_model_coupler
-    
-    
->>>>>>> eae23ead (Energy balance closed, mostly closed for precipitation)
 
     call timer_toc('lsm_integrate_theta_soil')
 
