@@ -95,8 +95,6 @@ subroutine lsm
 
     call slurb_swap_timelevel()
 
-    call slurb_timestep_control
-
     call slurb_update_external_vars
 
     call slurb_radiation_model
@@ -144,7 +142,7 @@ subroutine lsm
     call timer_tic('lsm_integrate_theta_soil', 0)
     call integrate_theta_soil
 
-    call slurb_swap_timelevel(mod(ntrun, 2))
+    call slurb_swap_timelevel
 
     call timer_toc('lsm_integrate_theta_soil')
 
@@ -1110,7 +1108,6 @@ subroutine calc_bulk_bcs
            enddo
         enddo
     enddo
-    if 
 
     !$acc parallel loop collapse(2) default(present) async(1)
     do j=2,j1

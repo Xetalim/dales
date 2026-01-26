@@ -268,6 +268,8 @@ contains
 subroutine slurb_read_namelist(nml_filename)
     use modglobal,   only : ifnamopt, checknamelisterror
     use modmpi,      only : myid, comm3d, mpierr, D_MPI_BCAST
+    use fortran_support,       only: nnml_output
+    use modinputchecking, only: check_grid_variable
     implicit none
 
     character(len=*), intent(in) :: nml_filename
@@ -285,9 +287,12 @@ subroutine slurb_read_namelist(nml_filename)
         open(ifnamopt, file=nml_filename, status='old', iostat=ierr)
         read(ifnamopt, NAMSLURB, iostat=ierr)
         call checknamelisterror(ierr, ifnamopt, 'NAMSLURB')
-        write(6, NAMSLURB)
+        write(nnml_output, NAMSLURB)
         close(ifnamopt)
     end if
+
+    call check_grid_variable("deep_soil_temperature", deep_soil_temperature, 100.0, 400.0)
+    call check_grid_variable("building_indoor_temperature", building_indoor_temperature, 100.0, 400.0)
 
 
     ! Broadcast namelist values to all MPI tasks
@@ -2589,7 +2594,6 @@ end subroutine slurb_update_external_vars
     !--------------------------------------------------------------------------------------------------!
  SUBROUTINE slurb_swap_timelevel()
     use modglobal, only: rk3step
-    modcount = mod(modcount, 2)
 
     if (rk3step == 1) then
         slurb_tile%t_wall_a_m(:,:,:) = slurb_tile%t_wall_a_0(:,:,:)
@@ -2603,55 +2607,6 @@ end subroutine slurb_update_external_vars
         slurb_tile%m_liq_roof_m(:,:) = slurb_tile%m_liq_roof_0(:,:)
         slurb_tile%m_liq_road_m(:,:) = slurb_tile%m_liq_road_0(:,:)
     endif
-    ! SELECT CASE ( modcount )
-    !    CASE ( 0 ) !initialization phase
-    !     !   slurb_tile%q_can_0 => q_can_2; slurb_tile%q_can_m => q_can_1
-    !     !   slurb_tile%t_can_0 => t_can_2; slurb_tile%t_can_m => t_can_1
-    !     !   slurb_tile%m_liq_road_m => m_liq_road_2; slurb_tile%m_liq_road_0 => m_liq_road_1
-    !     !   slurb_tile%m_liq_roof_m => m_liq_roof_2; slurb_tile%m_liq_roof_0 => m_liq_roof_1
-    !     !   slurb_tile%t_wall_a_0 => t_wall_a_2; slurb_tile%t_wall_a_m => t_wall_a_1
-    !     !   slurb_tile%t_wall_b_0 => t_wall_b_2; slurb_tile%t_wall_b_m => t_wall_b_1
-    !     !   slurb_tile%t_win_a_0 => t_win_a_2; slurb_tile%t_win_a_m => t_win_a_1
-    !     !   slurb_tile%t_win_b_0 => t_win_b_2; slurb_tile%t_win_b_m => t_win_b_1
-    !     !   slurb_tile%t_roof_0 => t_roof_2; slurb_tile%t_roof_m => t_roof_1
-    !     !   slurb_tile%t_road_0 => t_road_2; slurb_tile%t_road_m => t_road_1
-    !    CASE ( 1 ) ! set q_can_0 to equal q_can_m
-    !     !   slurb_tile%q_can_0 => q_can_1; slurb_tile%q_can_m => q_can_2
-    !     !   slurb_tile%t_can_0 => t_can_1; slurb_tile%t_can_m => t_can_2
-    !     !   slurb_tile%m_liq_road_m => m_liq_road_1; slurb_tile%m_liq_road_0 => m_liq_road_2
-    !     !   slurb_tile%m_liq_roof_m => m_liq_roof_1; slurb_tile%m_liq_roof_0 => m_liq_roof_2
-    !     !   slurb_tile%t_wall_a_0 => t_wall_a_1; slurb_tile%t_wall_a_m => t_wall_a_2
-    !     !   slurb_tile%t_wall_b_0 => t_wall_b_1; slurb_tile%t_wall_b_m => t_wall_b_2
-    !     !   slurb_tile%t_win_a_0 => t_win_a_1; slurb_tile%t_win_a_m => t_win_a_2
-    !     !   slurb_tile%t_win_b_0 => t_win_b_1; slurb_tile%t_win_b_m => t_win_b_2
-    !     !   slurb_tile%t_road_0 => t_road_1; slurb_tile%t_road_m => t_road_2
-    !     !   slurb_tile%t_roof_0 => t_roof_1; slurb_tile%t_roof_m => t_roof_2
-
-    ! !    CASE ( 2 )
-    ! !       slurb_tile%q_can_0 => q_can_2; slurb_tile%q_can_m => q_can_1
-    ! !       slurb_tile%t_can_0 => t_can_2; slurb_tile%t_can_m => t_can_1
-    ! !       slurb_tile%m_liq_road_m => m_liq_road_2; slurb_tile%m_liq_road_0 => m_liq_road_1
-    ! !       slurb_tile%m_liq_roof_m => m_liq_roof_2; slurb_tile%m_liq_roof_0 => m_liq_roof_1
-    ! !       slurb_tile%t_wall_a_0 => t_wall_a_2; slurb_tile%t_wall_a_m => t_wall_a_1
-    ! !       slurb_tile%t_wall_b_0 => t_wall_b_2; slurb_tile%t_wall_b_m => t_wall_b_1
-    ! !       slurb_tile%t_win_a_0 => t_win_a_2; slurb_tile%t_win_a_m => t_win_a_1
-    ! !       slurb_tile%t_win_b_0 => t_win_b_2; slurb_tile%t_win_b_m => t_win_b_1
-    ! !       slurb_tile%t_roof_0 => t_roof_2; slurb_tile%t_roof_m => t_roof_1
-    ! !       slurb_tile%t_road_0 => t_road_2; slurb_tile%t_road_m => t_road_1
-        
-    !     ! CASE ( 3 )
-    !     !   slurb_tile%q_can_0 => q_can_2; slurb_tile%q_can_m => q_can_1
-    !     !   slurb_tile%t_can_0 => t_can_2; slurb_tile%t_can_m => t_can_1
-    !     !   slurb_tile%m_liq_road_m => m_liq_road_2; slurb_tile%m_liq_road_0 => m_liq_road_1
-    !     !   slurb_tile%m_liq_roof_m => m_liq_roof_2; slurb_tile%m_liq_roof_0 => m_liq_roof_1
-    !     !   slurb_tile%t_wall_a_0 => t_wall_a_2; slurb_tile%t_wall_a_m => t_wall_a_1
-    !     !   slurb_tile%t_wall_b_0 => t_wall_b_2; slurb_tile%t_wall_b_m => t_wall_b_1
-    !     !   slurb_tile%t_win_a_0 => t_win_a_2; slurb_tile%t_win_a_m => t_win_a_1
-    !     !   slurb_tile%t_win_b_0 => t_win_b_2; slurb_tile%t_win_b_m => t_win_b_1
-    !     !   slurb_tile%t_roof_0 => t_roof_2; slurb_tile%t_roof_m => t_roof_1
-    !     !   slurb_tile%t_road_0 => t_road_2; slurb_tile%t_road_m => t_road_1
-
-    ! END SELECT
 
  END SUBROUTINE slurb_swap_timelevel
 
