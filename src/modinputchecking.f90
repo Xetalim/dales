@@ -46,8 +46,8 @@ SUBROUTINE check_grid_variable_0d_int( varname, var, valid_min, valid_max )
     !
     !-- Check if the input is within allowed bounds.
     IF ( ( var < valid_min  .OR.  var > valid_max ) )  THEN
-        call finish(routine,'Input variable ' // varname // ' set to',   &
-                                    var, ' valid range is [', valid_min, valid_max, '].')
+        call finish(routine,'Input variable ' // varname // ' set to ',   &
+                                    var, ' valid range is [', valid_min, ', ', valid_max, '].')
     ENDIF
 
 END SUBROUTINE check_grid_variable_0d_int
@@ -69,8 +69,8 @@ SUBROUTINE check_grid_variable_0d_real( varname, var, valid_min, valid_max )
     !
     !-- Check if the input is within allowed bounds.
     IF ( ( var < valid_min  .OR.  var > valid_max ) )  THEN
-        call finish(routine,'Input variable ' // varname // ' set to',   &
-                                    var, ' valid range is [', valid_min, valid_max, '].')
+        call finish(routine,'Input variable ' // varname // ' set to ',   &
+                                    var, ' valid range is [', valid_min, ', ', valid_max, '].')
     ENDIF
 
 END SUBROUTINE check_grid_variable_0d_real
@@ -94,8 +94,8 @@ SUBROUTINE check_grid_variable_1d_int( varname, var, valid_min, valid_max )
     DO  i = LBOUND( var, 1 ), UBOUND( var, 1 )
         IF ( ( var(i) < valid_min  .OR.  var(i) > valid_max ) )  THEN
             call finish(routine,'Input variable ' // varname //                       &
-                                        ' for index (i) = ', i, ' set to',   &
-                                        var(i), ' valid range is [', valid_min, valid_max, '].')
+                                        ' for index (i) = ', i, ' set to ',   &
+                                        var(i), ' valid range is [', valid_min, ', ', valid_max, '].')
         ENDIF
     ENDDO
 
@@ -122,8 +122,8 @@ SUBROUTINE check_grid_variable_1d_real( varname, var, valid_min, valid_max )
     DO  i = LBOUND( var, 1 ), UBOUND( var, 1 )
         IF ( ( var(i) < valid_min  .OR.  var(i) > valid_max ) )  THEN
             call finish(routine,'Input variable ' // varname //                       &
-                                        ' for index (i) = ', i, ' set to',   &
-                                        var(i), ' valid range is [', valid_min, valid_max, '].')
+                                        ' for index (i) = ', i, ' set to ',   &
+                                        var(i), ' valid range is [', valid_min, ', ', valid_max, '].')
         ENDIF
     ENDDO
 
@@ -152,8 +152,8 @@ SUBROUTINE check_grid_variable_2d_real( varname, var, valid_min, valid_max )
             IF ( ( var(i,j) < valid_min  .OR.  var(i,j) > valid_max ) )  THEN
                 call finish(routine,'Input variable ' // varname //                       &
                                         ' for grid cell (i,j) = ', i,j,      &
-                                        ' set to', var(i,j), ' valid range is [',                  &
-                                        valid_min, valid_max, '].')
+                                        ' set to ', var(i,j), ' valid range is [',                  &
+                                        valid_min, ', ', valid_max, '].')
             ENDIF
         ENDDO
     ENDDO
@@ -182,8 +182,8 @@ SUBROUTINE check_grid_variable_2d_int( varname, var, valid_min, valid_max )
             IF ( ( var(i,j) < valid_min  .OR.  var(i,j) > valid_max ) )  THEN
                 call finish(routine,'Input variable ' // varname //                       &
                                         ' for grid cell (i,j) = ', i,j,      &
-                                        ' set to', var(i,j), ' valid range is [',                  &
-                                        valid_min, valid_max, '].')
+                                        ' set to ', var(i,j), ' valid range is [',                  &
+                                        valid_min, ', ', valid_max, '].')
             ENDIF
         ENDDO
     ENDDO
@@ -203,6 +203,7 @@ SUBROUTINE check_grid_variable_3d_real( varname, var, valid_min, valid_max )
 
     REAL(field_r), DIMENSION(:,:,:), INTENT(IN) ::  var   !< target variable
 
+    character(len=14) :: ijk !< "i,j,k"
 
     !
     !-- Check if the input is within allowed bounds
@@ -210,10 +211,11 @@ SUBROUTINE check_grid_variable_3d_real( varname, var, valid_min, valid_max )
         DO j = LBOUND( var, 2 ), UBOUND( var, 2 )
             DO  i = LBOUND( var, 1 ), UBOUND( var, 1 )
                 IF ( ( var(i,j,k) < valid_min  .OR.  var(i,j,k) > valid_max ) )  THEN
+                    write(ijk, *) i,',',j,',',k
                     call finish(routine,'Input variable ' // varname //                       &
-                                            ' for grid cell (i,j,k) = ', i,j,k,      &
-                                            ' set to', var(i,j,k), ' valid range is [',                  &
-                                            valid_min, valid_max, '].')
+                                            ' for grid cell (i,j,k) = ', ijk,      &
+                                            ' set to ', var(i,j,k), ' valid range is [',                  &
+                                            valid_min, ', ', valid_max, '].')
                 ENDIF
             ENDDO
         ENDDO
@@ -235,6 +237,7 @@ SUBROUTINE check_grid_variable_3d_int( varname, var, valid_min, valid_max )
 
     integer, DIMENSION(:,:,:), INTENT(IN) ::  var   !< target variable
 
+    character(len=14) :: ijk !< "i,j,k"
 
     !
     !-- Check if the input is within allowed bounds
@@ -242,10 +245,11 @@ SUBROUTINE check_grid_variable_3d_int( varname, var, valid_min, valid_max )
         DO j = LBOUND( var, 2 ), UBOUND( var, 2 )
             DO  i = LBOUND( var, 1 ), UBOUND( var, 1 )
                 IF ( ( var(i,j,k) < valid_min  .OR.  var(i,j,k) > valid_max ) )  THEN
+                    write(ijk, *) i,',',j,',',k
                     call finish(routine,'Input variable ' // varname //                       &
-                                            ' for grid cell (i,j,k) = ', i,j,k,      &
-                                            ' set to', var(i,j,k), ' valid range is [',                  &
-                                            valid_min, valid_max, '].')
+                                            ' for grid cell (i,j,k) = ', ijk,      &
+                                            ' set to ', var(i,j,k), ' valid range is [',                  &
+                                            valid_min, ', ', valid_max, '].')
                 ENDIF
             ENDDO
         ENDDO

@@ -43,27 +43,27 @@ module modslurbdata
         real(field_r), allocatable ::  qtskin(:,:)          !< urban skin specific humidity TODOSELF (kg kg^-1)
         !
         !--    Model prognostic variables.
-        real(field_r), pointer, contiguous ::  m_liq_road_0(:,:)  !< liquid water reservoir on roads (m^3 m^-2)
-        real(field_r), pointer, contiguous ::  m_liq_road_m(:,:)  !< prev. liquid water reservoir on roads (m^3 m^-2)
-        real(field_r), pointer, contiguous ::  m_liq_roof_0(:,:)  !< liquid water reservoir on roofs (m^3 m^-2)
-        real(field_r), pointer, contiguous ::  m_liq_roof_m(:,:)  !< prev. liquid water reservoir on roofs (m^3 m^-2)
-        real(field_r), pointer, contiguous ::  q_can_0(:,:)       !< canyon mixing ratio (kg kg^-1)
-        real(field_r), pointer, contiguous ::  q_can_m(:,:)       !< previous canyon mixing ratio (kg kg^-1)
-        real(field_r), pointer, contiguous ::  t_can_0(:,:)       !< canyon air temperature (K)
-        real(field_r), pointer, contiguous ::  t_can_m(:,:)       !< prev. canyon temperature (K)
+        real(field_r), allocatable ::  m_liq_road_0(:,:)  !< liquid water reservoir on roads (m^3 m^-2)
+        real(field_r), allocatable ::  m_liq_road_m(:,:)  !< prev. liquid water reservoir on roads (m^3 m^-2)
+        real(field_r), allocatable ::  m_liq_roof_0(:,:)  !< liquid water reservoir on roofs (m^3 m^-2)
+        real(field_r), allocatable ::  m_liq_roof_m(:,:)  !< prev. liquid water reservoir on roofs (m^3 m^-2)
+        real(field_r), allocatable ::  q_can_0(:,:)       !< canyon mixing ratio (kg kg^-1)
+        real(field_r), allocatable ::  q_can_m(:,:)       !< previous canyon mixing ratio (kg kg^-1)
+        real(field_r), allocatable ::  t_can_0(:,:)       !< canyon air temperature (K)
+        real(field_r), allocatable ::  t_can_m(:,:)       !< prev. canyon temperature (K)
 
-        real(field_r), pointer, contiguous ::  t_road_0(:,:,:)      !< road temperature (K)
-        real(field_r), pointer, contiguous ::  t_road_m(:,:,:)      !< prev. road temperature (K)
-        real(field_r), pointer, contiguous ::  t_roof_0(:,:,:)      !< roof temperature (K)
-        real(field_r), pointer, contiguous ::  t_roof_m(:,:,:)      !< prev. roof temperature (K)
-        real(field_r), pointer, contiguous ::  t_wall_a_0(:,:,:)    !< wall A temperature (K)
-        real(field_r), pointer, contiguous ::  t_wall_a_m(:,:,:)    !< prev. wall A temperature (K)
-        real(field_r), pointer, contiguous ::  t_wall_b_0(:,:,:)    !< wall B temperature (K)
-        real(field_r), pointer, contiguous ::  t_wall_b_m(:,:,:)    !< prev. wall B temperature (K)
-        real(field_r), pointer, contiguous ::  t_win_a_0(:,:,:)     !< window A temperature (K)
-        real(field_r), pointer, contiguous ::  t_win_a_m(:,:,:)     !< prev. window A temperature (K)
-        real(field_r), pointer, contiguous ::  t_win_b_0(:,:,:)     !< window B temperature (K)
-        real(field_r), pointer, contiguous ::  t_win_b_m(:,:,:)     !< prev. window B temperature (K)
+        real(field_r), allocatable ::  t_road_0(:,:,:)      !< road temperature (K)
+        real(field_r), allocatable ::  t_road_m(:,:,:)      !< prev. road temperature (K)
+        real(field_r), allocatable ::  t_roof_0(:,:,:)      !< roof temperature (K)
+        real(field_r), allocatable ::  t_roof_m(:,:,:)      !< prev. roof temperature (K)
+        real(field_r), allocatable ::  t_wall_a_0(:,:,:)    !< wall A temperature (K)
+        real(field_r), allocatable ::  t_wall_a_m(:,:,:)    !< prev. wall A temperature (K)
+        real(field_r), allocatable ::  t_wall_b_0(:,:,:)    !< wall B temperature (K)
+        real(field_r), allocatable ::  t_wall_b_m(:,:,:)    !< prev. wall B temperature (K)
+        real(field_r), allocatable ::  t_win_a_0(:,:,:)     !< window A temperature (K)
+        real(field_r), allocatable ::  t_win_a_m(:,:,:)     !< prev. window A temperature (K)
+        real(field_r), allocatable ::  t_win_b_0(:,:,:)     !< window B temperature (K)
+        real(field_r), allocatable ::  t_win_b_m(:,:,:)     !< prev. window B temperature (K)
         !
         !--    Tendencies of the prognostic variables.
         real(field_r), allocatable ::  tm_liq_road(:,:)     !< road liquid water reservoir tendency (m^3 m^-2 s^-1)
@@ -248,6 +248,109 @@ module modslurbdata
     end type surf_slurb
 
     type(surf_slurb) :: slurb_tile
+
+    real(field_r), allocatable ::  ln_z_z0_roof(:,:)   !< temporary array to store logarithm ZELFTODO (.)
+    real(field_r), allocatable ::  ln_z_z0h_roof(:,:)  !< temporary array to store logarithm (.)
+    real(field_r), allocatable ::  ln_z_z0_urb(:,:)    !< temporary array to store logarithm (.)
+    real(field_r), allocatable ::  pt_surface(:,:)     !< temporary array to store weighted temperature (K)
+    
+    real(field_r), allocatable ::  ln_z_z0_road(:,:)   !< temporary array to store logarithm ZELFTODO (.)
+    real(field_r), allocatable ::  ln_z_z0h_road(:,:)  !< temporary array to store logarithm (.)
+
+    REAL(field_r) ::  dt_slurb = HUGE( 1.0_field_r )  !< maximum allowed timestep of SLUrb
+
+    !
+    !-- Model constants.
+    REAL(field_r) ::  drho_l_lv  !< 1/(rho_l * l_v) (J^-1 m^3)
+    REAL(field_r) ::  rho_lv     !< rho_surface * l_v (J m^-3)
+
+    !
+    !-- Parameter defaults.
+    REAL(field_r), PARAMETER ::  m_liq_max_road = 1.0E-3_field_r  !< maximum capacity of the liquid water reservoir on roads (i,j) (m^3 m^-2)
+    REAL(field_r), PARAMETER ::  m_liq_max_roof = 1.0E-3_field_r  !< maximum capacity of the liquid water reservoir on roofs (i,j) (m^3 m^-2)
+    ! REAL(field_r), PARAMETER ::  m_liq_max_road = 100_field_r  !< maximum capacity of the liquid water reservoir on roads (i,j) (m^3 m^-2)
+    ! REAL(field_r), PARAMETER ::  m_liq_max_roof = 100_field_r  !< maximum capacity of the liquid water reservoir on roofs (i,j) (m^3 m^-2)
+    REAL(field_r), PARAMETER ::  rah_max   = 1.0E6_field_r        !< maximum aerodynamic resistance for scalars (s m^-1)
+    REAL(field_r), PARAMETER ::  rah_min   = 1.0_field_r          !< minimum aerodynamic resistance for scalars (s m^-1)
+    REAL(field_r), PARAMETER ::  ram_min   = 1.0_field_r          !< minimum aerodynamic resistance for momentum (s m^-1) (TODOSELF)
+    REAL(field_r), PARAMETER ::  urb_thres = 1.0E-2_field_r       !< minimum urban fraction to consider (1%) (.)
+    REAL(field_r), PARAMETER ::  us_min    = 1.0E-8_field_r       !< minimum friction velocity (m s^-1)
+    REAL(field_r), PARAMETER ::  zeta_min  = 1.0E-3_field_r       !< minimum stability parameter absolute value (neutral limit) (.)
+    !
+    !-- slurb_parameters namelist defaults.
+    CHARACTER(LEN=20) ::  aero_roughness_heat = 'kanda'                !< SLURrb namelist parameter
+    CHARACTER(LEN=20) ::  facade_resistance_parametrization = 'doe-2'  !< SLURrb namelist parameter
+    CHARACTER(LEN=20) ::  street_canyon_wspeed_factor = 'surfex'       !< SLURrb namelist parameter
+
+    integer ::  building_type = 2     !< SLURrb namelist parameter
+    integer ::  n_layers_roads = 4    !< SLURrb namelist parameter
+    integer ::  n_layers_roofs = 4    !< SLURrb namelist parameter
+    integer ::  n_layers_walls = 4    !< SLURrb namelist parameter
+    integer ::  n_layers_windows = 4  !< SLURrb namelist parameter
+    integer ::  pavement_type = 2     !< SLURrb namelist parameter
+
+    LOGICAL ::  anisotropic_street_canyons = .FALSE.  !< SLURrb namelist parameter
+    LOGICAL ::  moist_physics = .true.                !< SLURrb namelist parameter
+    logical ::  lread_from_netcdf = .true.             !< SLURrb namelist parameter
+
+    REAL(field_r) ::  building_frontal_area_fraction = -9999.0_field_r  !< SLURrb namelist parameter (.)
+    REAL(field_r) ::  building_height = -9999.0_field_r                 !< SLURrb namelist parameter (m)
+    REAL(field_r) ::  building_indoor_temperature =  -9999.0_field_r    !< SLURrb namelist parameter (K)
+    REAL(field_r) ::  building_plan_area_fraction = -9999.0_field_r     !< SLURrb namelist parameter (.)
+    REAl(field_r) ::  deep_soil_temperature = -9999.0_field_r           !< SLURrb namelist parameter (K)
+    REAL(field_r) ::  qsws_external = 0.0_field_r                       !< SLURrb namelist parameter (W m^-2 s^-1)
+    REAL(field_r) ::  shf_external = 0.0_field_r                        !< SLURrb namelist parameter (W m^-2 s^-1)
+    REAL(field_r) ::  shf_traffic = 0.0_field_r                         !< SLURrb namelist parameter (W m^-2 s^-1)
+    REAL(field_r) ::  street_canyon_aspect_ratio = -9999.0_field_r      !< SLURrb namelist parameter (.)
+    REAL(field_r) ::  street_canyon_orientation = -9999.0_field_r       !< SLURrb namelist parameter (.)
+    REAL(field_r) ::  urban_fraction = -9999.0_field_r                  !< SLURrb namelist parameter (.)
+    REAL(field_r) ::  urban_roughness_length = -9999.0_field_r          !< SLURrb namelist parameter (m)
+    REAL(field_r) ::  window_fraction = -9999.0_field_r                 !< SLURrb namelist parameter (.)
+
+
+    REAL(field_r), PARAMETER ::  ol_max   = 1.0E6_field_r   !< allowed absolute maximum value Obukhov length (m)
+    REAL(field_r), PARAMETER ::  ol_min   = 1.0E-6_field_r  !< allowed absolute minimum value Obukhov length (m)
+    REAL(field_r), PARAMETER ::  ol_tol   = 1.0E-4_field_r  !< convergence limit for Obukhov length, relative tolerance (m)
+    REAL(field_r), PARAMETER ::  rib_max  = 1.0E1_field_r   !< maximum bulk Richardson number (absolute value) (.)
+
+    integer :: ibc_pt_b = 0 ! indicates dirichlet bc
+    !SELFTODO NU 0 OM OL BETER TE BEREKENEN
+
+    ! CHARACTER (LEN=20)   ::  bc_pt_b = 'dirichlet'                        !< namelist parameter
+    ! CHARACTER (LEN=20)   ::  bc_pt_t = 'initial_gradient'                 !< namelist parameter
+
+
+    !-- Internal logical switches for character-based namelist settings.
+    !TODO ADD CHECKS
+    LOGICAL ::  facade_rah_doe       = .TRUE.  !< facade resistance parameterization using DOE-2
+    LOGICAL ::  facade_rah_kray      = .FALSE.  !< facade resistance parameterization using Krayenhoff&Voogt (2007)
+    LOGICAL ::  facade_rah_rowley    = .FALSE.  !< facade resistance parameterization using Rowley (1932)
+    LOGICAL ::  roughness_kanda      = .FALSE.  !< roughness parameterization of horizontal surfaces using Kanda et al. (2007)
+    LOGICAL ::  uv_can_factor_kray   = .TRUE.  !< street canyon wind speed factor following Krayenhoff&Voogt (2007)
+    LOGICAL ::  uv_can_factor_masson = .FALSE.  !< street canyon wind speed factor following Masson (2000)
+    LOGICAL ::  uv_can_factor_surfex = .FALSE.  !< street canyon wind speed factor following the SURFEX model
+
+    !-- Default subsurface layer configuration.
+    INTEGER ::  nzt_wall  !< top of the wall model (outer surface)
+    INTEGER ::  nzb_wall  !< bottom of the wall model (inside surface)
+    INTEGER ::  nzt_win   !< top of the window model (outer surface)
+    INTEGER ::  nzb_win   !< bottom of the window model (inside surface)
+    INTEGER ::  nzt_roof  !< top of the roof model (outer surface)
+    INTEGER ::  nzb_roof  !< bottom the roof model (inside surface)
+    INTEGER ::  nzt_road  !< top of the road model
+    INTEGER ::  nzb_road  !< bottom of the road model
+
+    real(field_r), allocatable :: fraction_slurb(:,:) !< (.)
+
+
+    real(field_r) :: output_fill_value = -99999.0_field_r
+    logical :: data_output_raw = .false.
+    logical :: spinup = .false.
+    logical :: calc_t_2m = .true.
+    logical :: calc_t_c = .true.
+    logical :: calc_t_h = .true.
+
+    logical :: enable_slurb = .false. !< switch to enable slurb model. Is set to true if any slurb tile found.
 
 contains
 !--------------------------------------------------------------------------------------------------!

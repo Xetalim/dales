@@ -45,7 +45,7 @@ subroutine lsm
        lambda, lambdah, tsoil, lambdas, gammas, lambdash, gammash, &
        wl, wlm, phiwm
 
-  use modslurb, only : slurb_radiation_model, slurb_canyon_model, slurb_energy_balance_model, slurb_swap_timelevel, calc_canyon_resistances, calc_urban_resistances, slurb_urban_aggregation_model, slurb_update_external_vars
+  use modslurb, only : slurb_radiation_model, slurb_canyon_model, slurb_energy_balance_model, slurb_set_previous_timestep, calc_canyon_resistances, calc_urban_resistances, slurb_urban_aggregation_model, slurb_update_external_vars, enable_slurb
   implicit none
 
     if (.not. llsm) return
@@ -92,22 +92,24 @@ subroutine lsm
     call timer_tic('lsm_calc_stability', 0)
     call calc_stability
     call timer_toc('lsm_calc_stability')
+    if ( enable_slurb) then
+        call slurb_set_previous_timestep
 
-    call slurb_swap_timelevel()
+        call slurb_update_external_vars
 
-    call slurb_update_external_vars
+        call slurb_radiation_model
 
-    call slurb_radiation_model
+        call calc_urban_resistances
 
-    call calc_urban_resistances
+        call calc_canyon_resistances
 
-    call calc_canyon_resistances
+        call slurb_energy_balance_model
 
-    call slurb_energy_balance_model
+        call slurb_canyon_model
 
-    CALL slurb_canyon_model
+        call slurb_urban_aggregation_model
+    end if
 
-    CALL slurb_urban_aggregation_model
 
 
     ! Set grid point averaged boundary conditions (thls, qts, gradients, ..)
@@ -141,8 +143,6 @@ subroutine lsm
     ! Solve diffusion equation:
     call timer_tic('lsm_integrate_theta_soil', 0)
     call integrate_theta_soil
-
-    call slurb_swap_timelevel
 
     call timer_toc('lsm_integrate_theta_soil')
 
@@ -967,6 +967,7 @@ subroutine calc_tile_bcs(tile)
                 tile%H (i,j) = fH  * (tile%tskin(i,j) - Ta)
                 tile%LE(i,j) = fLE * (qsat_new - qt0(i,j,1))
                 tile%G (i,j) = fG  * (tsoil(i,j,kmax_soil) - tile%tskin(i,j))
+                tile%Qnet(i,j) = Qnet
 
                 ! Calculate kinematic surface fluxes
                 tile%wthl(i,j) = tile%H (i,j) * rhocp_i(1)
@@ -1044,9 +1045,8 @@ subroutine calc_bulk_bcs
     use modopenboundary, only : openboundary_excjs
     use modsurfdata, only : &
         H, LE, G0, tskin, qskin, thlflux, qtflux, dthldz, dqtdz, &
-        dudz, dvdz, ustar, obl, cliq, ra, rsveg, rssoil
-    use modslurb, only : fraction_slurb
-    use modslurbdata, only : slurb_tile
+        dudz, dvdz, ustar, obl, cliq, ra, rsveg, rssoil, Qnet
+    use modslurb, only : fraction_slurb, slurb_tile
     implicit none
 
     integer :: i, j
@@ -1083,6 +1083,7 @@ subroutine calc_bulk_bcs
             qskin(i,j) = 0
             rsveg(i,j) = 0
             rssoil(i,j) = 0
+            Qnet(i,j) = 0
         enddo
     enddo
 
@@ -1104,6 +1105,7 @@ subroutine calc_bulk_bcs
                     ustar(i,j)  = ustar(i,j) + tile(ilu)%frac(i,j) * tile(ilu)%ustar(i,j)
                     tskin(i,j)  = tskin(i,j) + tile(ilu)%frac(i,j) * tile(ilu)%thlskin(i,j)
                     qskin(i,j)  = qskin(i,j) + tile(ilu)%frac(i,j) * tile(ilu)%qtskin(i,j)
+                    Qnet(i,j)   = Qnet(i,j)  + tile(ilu)%frac(i,j) * tile(ilu)%Qnet(i,j)
                 endif
            enddo
         enddo
@@ -2052,6 +2054,7 @@ subroutine allocate_tile(tile)
     allocate(tile % G(i2, j2))
     allocate(tile % wthl(i2, j2))
     allocate(tile % wqt(i2, j2))
+    allocate(tile % Qnet(i2, j2))
 
     ! Surface temperature and humidity:
     allocate(tile % tskin(i2, j2))
@@ -2117,7 +2120,7 @@ subroutine deallocate_tile(tile)
     deallocate( tile%z0m, tile%z0h, tile%base_frac, tile%frac )
     deallocate( tile%obuk, tile%ustar, tile%ra )
     deallocate( tile%lambda_stable, tile%lambda_unstable )
-    deallocate( tile%H, tile%LE, tile%G, tile%wthl, tile%wqt)
+    deallocate( tile%H, tile%LE, tile%G, tile%wthl, tile%wqt, tile%Qnet)
     deallocate( tile%tskin, tile%thlskin, tile%qtskin)
     deallocate( tile%db, tile%lai, tile%rs_min, tile%rs )
     deallocate( tile%a_r, tile%b_r, tile%root_frac, tile%phiw_mean )
