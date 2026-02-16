@@ -14,8 +14,13 @@
 ! You should have received a copy of the GNU General Public License
 ! along with this program.  If not, see <http://www.gnu.org/licenses/>.
 !
-! Copyright 2025 Delft University of Technology
+! Copyright 2025-2026 Delft University of Technology
+! Copyright 2022-2024 University of Helsinki
 !
+! This file was modified from the original version of the PALM SLUrb model by Sasu Karttunen, which is available at: https://gitlab.palm-model.org/releases/palm_model_system
+! authors:
+!   Sasu Karttunen <sasu.karttunen@helsinki.fi>
+!   André van Ginkel <a.vanginkel@tudelft.nl>
 module modslurb
     use netcdf
     use modprecision, only : field_r
@@ -199,8 +204,8 @@ subroutine initslurb
         return
     end if
 
-    call check_grid_variable("deep_soil_temperature", deep_soil_temperature, 100.0, 400.0)
-    call check_grid_variable("building_indoor_temperature", building_indoor_temperature, 100.0, 400.0)
+    call check_grid_variable("deep_soil_temperature", deep_soil_temperature, 100.0_field_r, 400.0_field_r)
+    call check_grid_variable("building_indoor_temperature", building_indoor_temperature, 100.0_field_r, 400.0_field_r)
 
     call slurb_bulk_allocations
     do j=2,j1
@@ -347,7 +352,7 @@ end subroutine slurb_update_external_vars
     !-- more common to report the building plan area fraction as a fraction of the total surface, e.g.
     !-- in the case of LCZs. We want the user input correspond to the latter, thus the scaling.
     slurb_tile%f_bld(:,:) = -9999.0_field_r
-    call read_nc_field(ncid, 'f_bld', slurb_tile%f_bld(2:i1,2:j1), fillvalue=0.5, requirefill=.true., &
+    call read_nc_field(ncid, 'f_bld', slurb_tile%f_bld(2:i1,2:j1), fillvalue=0.5_field_r, requirefill=.true., &
                                 start = (/1 + myidx * imax, 1 + myidy * jmax/), &
                                 count = (/imax, jmax/) )
     call check_grid_variable("f_bld", slurb_tile%f_bld(2:i1,2:j1), TINY( 1.0_field_r ), 1.0_field_r )
@@ -362,7 +367,7 @@ end subroutine slurb_update_external_vars
 
     slurb_tile%f_bld_frn(:,:) = -9999.0_field_r
 
-    call read_nc_field(ncid, 'f_bld_frn', slurb_tile%f_bld_frn(2:i1,2:j1), fillvalue=0.2, requirefill=.true.,&
+    call read_nc_field(ncid, 'f_bld_frn', slurb_tile%f_bld_frn(2:i1,2:j1), fillvalue=0.2_field_r, requirefill=.true.,&
                                 start = (/1 + myidx * imax, 1 + myidy * jmax/), &
                                 count = (/imax, jmax/) )
 
@@ -1124,7 +1129,7 @@ END SUBROUTINE init_slurb_variables
     REAL(field_r) ::  wake               !< wake parameter for U_can parametrization in SURFEX
     REAL(field_r) ::  win_nonrefl_1side  !< 1-side nonreflected radiation (for windows)
     REAL(field_r) ::  win_absorp         !< window absorption coefficient
-    real :: dt_slurb_individual
+    real(field_r) :: dt_slurb_individual
 
     integer i,j,k
     !

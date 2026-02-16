@@ -14,8 +14,13 @@
 ! You should have received a copy of the GNU General Public License
 ! along with this program.  If not, see <http://www.gnu.org/licenses/>.
 !
-! Copyright 2025 Delft University of Technology
+! Copyright 2025-2026 Delft University of Technology
+! Copyright 2022-2024 University of Helsinki
 !
+! This file was modified from the original version of the PALM SLUrb model by Sasu Karttunen, which is available at: https://gitlab.palm-model.org/releases/palm_model_system
+! authors:
+!   Sasu Karttunen <sasu.karttunen@helsinki.fi>
+!   André van Ginkel <a.vanginkel@tudelft.nl>
 module modslurbhelpers
     use modslurbdata
 
