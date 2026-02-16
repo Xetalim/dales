@@ -340,24 +340,24 @@ module modslurb_resistance_stability
 
     IMPLICIT NONE
 
-    real, intent(in)    ::  ln_z_z0   !< logarithm (z/z0)
-    real, intent(in)    ::  ln_z_z0h  !< logarithm (z/z0h)
-    real, intent(inout) ::  ol        !< Obukhov length
-    real, intent(in)    ::  rib       !< Richardson flux number
-    real, intent(in)    ::  z0        !< rougness length for momentum
-    real, intent(in)    ::  z0h       !< rougness length for scalar quantities
-    real, intent(in)    ::  z_mo      !< constant flux layer height
+    real(field_r), intent(in)    ::  ln_z_z0   !< logarithm (z/z0)
+    real(field_r), intent(in)    ::  ln_z_z0h  !< logarithm (z/z0h)
+    real(field_r), intent(inout) ::  ol        !< Obukhov length
+    real(field_r), intent(in)    ::  rib       !< Richardson flux number
+    real(field_r), intent(in)    ::  z0        !< rougness length for momentum
+    real(field_r), intent(in)    ::  z0h       !< rougness length for scalar quantities
+    real(field_r), intent(in)    ::  z_mo      !< constant flux layer height
 
     integer ::  iter  !< Newton iteration step
 
     ! LOGICAL ::  convergence_reached  !< convergence switch for vectorization
 
-    real ::  f        !< function for Newton iteration: f = Ri - [...]/[...]^2 = 0
-    real ::  f_d_ol   !< derivative of f
-    real ::  ol_l     !< lower bound of L for Newton iteration
-    real ::  ol_m     !< previous value of L for Newton iteration
-    real ::  ol_prev  !< previous time step value of L
-    real ::  ol_u     !< upper bound of L for Newton iteration
+    real(field_r) ::  f        !< function for Newton iteration: f = Ri - [...]/[...]^2 = 0
+    real(field_r) ::  f_d_ol   !< derivative of f
+    real(field_r) ::  ol_l     !< lower bound of L for Newton iteration
+    real(field_r) ::  ol_m     !< previous value of L for Newton iteration
+    real(field_r) ::  ol_prev  !< previous time step value of L
+    real(field_r) ::  ol_u     !< upper bound of L for Newton iteration
 
     ! real ::  ol_prev_vec  !< temporary array required for vectorization
 
@@ -464,11 +464,11 @@ module modslurb_resistance_stability
  SUBROUTINE calc_rib( pt1, pt_surface, rib, uvw_abs, z_mo )
     implicit none
 
-    real, intent(in)  ::  pt1          !< potential temperature at first grid level
-    real, intent(in)  ::  pt_surface   !< skin-surface potential temperature
-    real, intent(out) ::  rib          !< Richardson flux number
-    real, intent(in)  ::  uvw_abs      !< absolute surface-parallel velocity on grid center
-    real, intent(in)  ::  z_mo         !< constant flux layer height
+    real(field_r), intent(in)  ::  pt1          !< potential temperature at first grid level
+    real(field_r), intent(in)  ::  pt_surface   !< skin-surface potential temperature
+    real(field_r), intent(out) ::  rib          !< Richardson flux number
+    real(field_r), intent(in)  ::  uvw_abs      !< absolute surface-parallel velocity on grid center
+    real(field_r), intent(in)  ::  z_mo         !< constant flux layer height
 
     !-- Evaluate bulk Richardson number.
     rib = g * z_mo * ( pt1 - pt_surface ) / ( uvw_abs**2 * pt1 + 1.0E-20_field_r )
