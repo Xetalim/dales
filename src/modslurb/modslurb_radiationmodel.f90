@@ -2,8 +2,8 @@ module modslurb_radiationmodel
     use modprecision, only: field_r
     use modglobal, only: pi
     use modslurbdata
-    real ::  azimuth        !< solar azimuth angle
-    real ::  tan_zenith     !< tangent of the solar zenith angle
+    real(field_r) ::  azimuth        !< solar azimuth angle
+    real(field_r) ::  tan_zenith     !< tangent of the solar zenith angle
     real ::  zenith         !< solar zenith angle
     real :: sun_dir_lon, sun_dir_lat, cos_zenith
     contains
@@ -217,7 +217,7 @@ module modslurb_radiationmodel
        IF ( 0.5_field_r * pi - zenith >  0.0_field_r )  tan_zenith = TAN( 0.5_field_r * pi - 1.0E-6_field_r )
        IF ( 0.5_field_r * pi - zenith <= 0.0_field_r )  tan_zenith = TAN( 0.5_field_r * pi + 1.0E-6_field_r )
     ELSEIF ( ABS( zenith ) < 1.0E-6_field_r )  THEN
-       tan_zenith = SIGN(1.0_field_r, zenith) * TAN( 1.0E-6_field_r )
+       tan_zenith = SIGN(1.0, zenith) * TAN( 1.0E-6_field_r )
     ELSE
        tan_zenith = TAN( zenith )
     ENDIF
