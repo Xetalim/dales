@@ -4,8 +4,8 @@ module modslurb_radiationmodel
     use modslurbdata
     real(field_r) ::  azimuth        !< solar azimuth angle
     real(field_r) ::  tan_zenith     !< tangent of the solar zenith angle
-    real(field_r) ::  zenith         !< solar zenith angle
-    real :: sun_dir_lon, sun_dir_lat, cos_zenith
+    real ::  zenith         !< solar zenith angle
+    real(field_r) :: sun_dir_lon, sun_dir_lat, cos_zenith
     contains
 
  !--------------------------------------------------------------------------------------------------!
@@ -38,7 +38,7 @@ module modslurb_radiationmodel
     !    CALL calc_zenith( day_of_year, second_of_day )
     ! ENDIF
 
-    call zenith_lon_lat(xtime*3600 + rtimee, xday, xlat, xlon, zenith, sun_dir_lon, sun_dir_lat)
+    call zenith_lon_lat(xtime*3600_field_r + rtimee, xday, xlat, xlon, zenith, sun_dir_lon, sun_dir_lat)
     azimuth = ATAN2( sun_dir_lon, sun_dir_lat )
     cos_zenith = COS(zenith)
 
