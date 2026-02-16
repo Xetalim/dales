@@ -82,10 +82,10 @@ SUBROUTINE check_grid_variable_0d_real( varname, var, valid_min, valid_max )
     character(len=*), parameter :: routine = modname//'/check_grid_variable_0d_real'
     CHARACTER(LEN=*), INTENT(IN) ::  varname  !< variable name in file
 
-    REAL, INTENT(IN) ::  valid_max  !< upper bound of valid range for var
-    REAL, INTENT(IN) ::  valid_min  !< lower bound of valid range for var
+    REAL(field_r), INTENT(IN) ::  valid_max  !< upper bound of valid range for var
+    REAL(field_r), INTENT(IN) ::  valid_min  !< lower bound of valid range for var
 
-    REAL, INTENT(IN) ::  var  !< target variable
+    REAL(field_r), INTENT(IN) ::  var  !< target variable
 
 
     !
