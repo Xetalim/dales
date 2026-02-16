@@ -2,10 +2,10 @@ module modslurb_radiationmodel
     use modprecision, only: field_r
     use modglobal, only: pi
     use modslurbdata
-    real(field_r) ::  azimuth        !< solar azimuth angle
-    real(field_r) ::  tan_zenith     !< tangent of the solar zenith angle
+    real ::  azimuth        !< solar azimuth angle
+    real ::  tan_zenith     !< tangent of the solar zenith angle
     real ::  zenith         !< solar zenith angle
-    real(field_r) :: sun_dir_lon, sun_dir_lat, cos_zenith
+    real :: sun_dir_lon, sun_dir_lat, cos_zenith
     contains
 
  !--------------------------------------------------------------------------------------------------!
