@@ -30,6 +30,7 @@
 module modstat_nc
     use netcdf
     use modprecision, only: field_r
+    use, intrinsic :: iso_fortran_env, only: real64, real32
     use modmpi,       only: myid
     use modlogging, only: finish
     implicit none
@@ -54,11 +55,14 @@ module modstat_nc
 
     !> Read a field from a netCDF file by its name
     interface read_nc_field
-        module procedure read_nc_field_1D_real
+        module procedure read_nc_field_1D_real4
+        module procedure read_nc_field_1D_real8
         module procedure read_nc_field_1D_int
-        module procedure read_nc_field_2D_real
+        module procedure read_nc_field_2D_real4
+        module procedure read_nc_field_2D_real8
         module procedure read_nc_field_2D_int
-        module procedure read_nc_field_3D_real
+        module procedure read_nc_field_3D_real4
+        module procedure read_nc_field_3D_real8
         module procedure read_nc_field_3D_int
     end interface read_nc_field
 
@@ -69,11 +73,14 @@ module modstat_nc
       module procedure read_nc_attribute_logical
     end interface read_nc_attribute
 
-    private :: read_nc_field_1D_real
+    private :: read_nc_field_1D_real4
+    private :: read_nc_field_1D_real8
     private :: read_nc_field_1D_int
-    private :: read_nc_field_2D_real
+    private :: read_nc_field_2D_real4
+    private :: read_nc_field_2D_real8
     private :: read_nc_field_2D_int
-    private :: read_nc_field_3D_real
+    private :: read_nc_field_3D_real4
+    private :: read_nc_field_3D_real8
     private :: read_nc_field_3D_int
 
     private :: read_nc_attribute_char
@@ -381,22 +388,29 @@ contains
    call nchandle_error(status)
  end subroutine exitstat_nc
 
- subroutine writestat_dims_nc(ncid, ncoarse, klow, proc)
+ subroutine writestat_dims_nc(ncid, ncoarse, klow, proc, write_slice_coordinate, slice_index, slice_coordinate)
     ! optional arguments ncoarse (coarsegraining in the horizontal directions)
     !                    klow    (lower bound for z. Upper bound is taken from the size of the dimension)
     !                    proc    (if present and length on horizontal cooridinates is 1 include processor starting edges and center)
-    use modglobal, only : dx,dy,zf,zh,jmax,imax
+    use modglobal, only : dx,dy,zf,zh,jmax,imax,x0,y0
     use modsurfdata, only : zsoilc,isurf
     use modlsmdata, only : z_soil
     use modmpi, only : myidx,myidy
     implicit none
     integer, intent(in) :: ncid
     integer, optional, intent(in) :: ncoarse, klow
-    logical, optional, intent(in) :: proc
+    logical, optional, intent(in) :: proc, write_slice_coordinate
+    integer, optional, intent(in) :: slice_index
+    character(len=1), optional, intent(in) :: slice_coordinate
     integer             :: i=0,iret,length,varid, nc
     integer             :: kl
     logical             :: lproc
+    logical             :: write_slice_coordinate_
+    character(len=1)   :: slice_coordinate_
+
+    character(len=*), parameter :: routine = modname//'/writestat_dims_nc'
     lproc = .false.
+    write_slice_coordinate_ = .false.
     if (present(ncoarse)) then
       nc = ncoarse
     else
@@ -410,31 +424,61 @@ contains
     if (present(proc)) then
       lproc = .true.
     end if
-
-    if (.not. lproc) then
-      iret = nf90_inq_varid(ncid, 'xt', VarID)
-      if (iret==0) iret=nf90_inquire_dimension(ncid, xtID, len=length)
-      if (iret==0) iret = nf90_put_var(ncid, varID, (/(dx*(0.5+nc*i)+myidx*imax*dx,i=0,length-1)/),(/1/))
-      iret = nf90_inq_varid(ncid, 'xm', VarID)
-      if (iret==0) iret=nf90_inquire_dimension(ncid, xmID, len=length)
-      if (iret==0) iret = nf90_put_var(ncid, varID, (/(dx*nc*i+myidx*imax*dx,i=0,length-1)/),(/1/))
-
-      iret = nf90_inq_varid(ncid, 'yt', VarID)
-      if (iret==0) iret=nf90_inquire_dimension(ncid, ytID, len=length)
-      if (iret==0) iret = nf90_put_var(ncid, varID, (/(dy*(0.5+nc*i)+myidy*jmax*dy,i=0,length-1)/),(/1/))
-      iret = nf90_inq_varid(ncid, 'ym', VarID)
-      if (iret==0) iret=nf90_inquire_dimension(ncid, ymID, len=length)
-      if (iret==0) iret = nf90_put_var(ncid, varID, (/(dy*nc*i+myidy*jmax*dy,i=0,length-1)/),(/1/))
+    if (present(write_slice_coordinate)) then
+      write_slice_coordinate_ = write_slice_coordinate
+    end if
+    if (present(slice_coordinate)) then
+      slice_coordinate_ = slice_coordinate
     else
+      slice_coordinate_ = ' '
+    end if
+
+    ! not lproc and not write_slice_coordinate: write full coordinates, including processor edges and centers (default)
+    ! lproc and not write_slice_coordinate: write full coordinates, but only for the slice of the current processor
+    ! write_slice_coordinate: write coordinates for the slice defined by slice_index and slice_coordinate. lproc is ignored.
+    if ((.not. lproc).and.(.not. write_slice_coordinate_)) then
+      call write_x_coordinates
+      call write_y_coordinates
+    else if ((lproc).and.(.not. write_slice_coordinate_)) then
       iret = nf90_inq_varid(ncid, 'xt', VarID)
-      if (iret==0) iret = nf90_put_var(ncid, varID, (/(0.5*dx*imax+myidx*imax*dx)/),(/1/))
+      if (iret==0) iret = nf90_put_var(ncid, varID, (/(x0+0.5*dx*imax+myidx*imax*dx)/),(/1/))
       iret = nf90_inq_varid(ncid, 'xm', VarID)
-      if (iret==0) iret = nf90_put_var(ncid, varID, (/(myidx*imax*dx)/),(/1/))
+      if (iret==0) iret = nf90_put_var(ncid, varID, (/(x0+myidx*imax*dx)/),(/1/))
 
       iret = nf90_inq_varid(ncid, 'yt', VarID)
-      if (iret==0) iret = nf90_put_var(ncid, varID, (/(0.5*dy*jmax+myidy*jmax*dy)/),(/1/))
+      if (iret==0) iret = nf90_put_var(ncid, varID, (/(y0+0.5*dy*jmax+myidy*jmax*dy)/),(/1/))
       iret = nf90_inq_varid(ncid, 'ym', VarID)
-      if (iret==0) iret = nf90_put_var(ncid, varID, (/(myidy*jmax*dy)/),(/1/))
+      if (iret==0) iret = nf90_put_var(ncid, varID, (/(y0+myidy*jmax*dy)/),(/1/))
+    else
+      ! write only the slice coordinates for the slice defined by slice_index and slice_coordinate. lproc is ignored.
+      select case (slice_coordinate_)
+        case ('x')
+          iret = nf90_inq_varid(ncid, 'xt', VarID)
+          if (iret==0) iret = nf90_inquire_dimension(ncid, xtID, len=length)
+          if ((iret==0).and.(length == 1)) iret = nf90_put_var(ncid, varID, (/(x0+dx*(0.5+slice_index)+myidx*imax*dx)/),(/1/))
+          iret = nf90_inq_varid(ncid, 'xm', VarID)
+          if (iret==0) iret = nf90_inquire_dimension(ncid, xmID, len=length)
+          if ((iret==0).and.(length == 1)) iret = nf90_put_var(ncid, varID, (/(x0+dx*slice_index+myidx*imax*dx)/),(/1/))
+
+          ! write the full coordinates for yt/ym
+          call write_y_coordinates
+        case ('y')
+
+          iret = nf90_inq_varid(ncid, 'yt', VarID)
+          if (iret==0) iret = nf90_inquire_dimension(ncid, ytID, len=length)
+          if ((iret==0).and.(length == 1)) iret = nf90_put_var(ncid, varID, (/(y0+dy*(0.5+slice_index)+myidy*jmax*dy)/),(/1/))
+          iret = nf90_inq_varid(ncid, 'ym', VarID)
+          if (iret==0) iret = nf90_inquire_dimension(ncid, ymID, len=length)
+          if ((iret==0).and.(length == 1)) iret = nf90_put_var(ncid, varID, (/(y0+dy*slice_index+myidy*jmax*dy)/),(/1/))
+
+          ! write the full coordinates for xt/xm
+          call write_x_coordinates
+        case default
+          call finish(routine, 'Bad slice_coordinate argument: '//slice_coordinate_)
+      end select
+
+
+
     end if
 
     iret = nf90_inq_varid(ncid, 'zt', VarID)
@@ -443,6 +487,7 @@ contains
     iret = nf90_inq_varid(ncid, 'zm', VarID)
     if (iret==0) iret=nf90_inquire_dimension(ncid, zmID, len=length)
     if (iret==0) iret = nf90_put_var(ncid, varID, zh(kl:kl+length-1),(/1/))
+
     if (isurf==1) then
       iret = nf90_inq_varid(ncid, 'zts', VarID)
       if (iret==0) iret = nf90_inquire_dimension(ncid, ztsID, len=length)
@@ -453,10 +498,31 @@ contains
       if (iret==0) iret = nf90_put_var(ncid, varID, z_soil(1:length),(/1/))
     end if
 
+    contains
+    subroutine write_x_coordinates
+      implicit none
+      iret = nf90_inq_varid(ncid, 'xt', VarID)
+      if (iret==0) iret=nf90_inquire_dimension(ncid, xtID, len=length)
+      if (iret==0) iret = nf90_put_var(ncid, varID, (/(x0+dx*(0.5+nc*i)+myidx*imax*dx,i=0,length-1)/),(/1/))
+      iret = nf90_inq_varid(ncid, 'xm', VarID)
+      if (iret==0) iret=nf90_inquire_dimension(ncid, xmID, len=length)
+      if (iret==0) iret = nf90_put_var(ncid, varID, (/(x0+dx*nc*i+myidx*imax*dx,i=0,length-1)/),(/1/))
+    end subroutine write_x_coordinates
+
+    subroutine write_y_coordinates
+      implicit none
+      iret = nf90_inq_varid(ncid, 'yt', VarID)
+      if (iret==0) iret=nf90_inquire_dimension(ncid, ytID, len=length)
+      if (iret==0) iret = nf90_put_var(ncid, varID, (/(y0+dy*(0.5+nc*i)+myidy*jmax*dy,i=0,length-1)/),(/1/))
+      iret = nf90_inq_varid(ncid, 'ym', VarID)
+      if (iret==0) iret=nf90_inquire_dimension(ncid, ymID, len=length)
+      if (iret==0) iret = nf90_put_var(ncid, varID, (/(y0+dy*nc*i+myidy*jmax*dy,i=0,length-1)/),(/1/))
+    end subroutine write_y_coordinates
+
   end subroutine writestat_dims_nc
 
   subroutine writestat_dims_q_nc(ncid,k1,k2)
-    use modglobal, only : dx,dy,zf,zh,jmax,imax
+    use modglobal, only : dx,dy,zf,zh,jmax,imax,x0,y0
     use modsurfdata, only : zsoilc,isurf
     use modlsmdata, only : z_soil
     use modmpi, only : myidx,myidy
@@ -468,17 +534,17 @@ contains
     integer             :: i=0,iret,length,varid
     iret = nf90_inq_varid(ncid, 'xt', VarID)
     if (iret==0) iret=nf90_inquire_dimension(ncid, xtID, len=length)
-    if (iret==0) iret = nf90_put_var(ncid, varID, (/(dx*(0.5+i)+myidx*imax*dx,i=0,length-1)/),(/1/))
+    if (iret==0) iret = nf90_put_var(ncid, varID, (/(x0+dx*(0.5+i)+myidx*imax*dx,i=0,length-1)/),(/1/))
     iret = nf90_inq_varid(ncid, 'xm', VarID)
     if (iret==0) iret=nf90_inquire_dimension(ncid, xmID, len=length)
-    if (iret==0) iret = nf90_put_var(ncid, varID, (/(dx*i+myidx*imax*dx,i=0,length-1)/),(/1/))
+    if (iret==0) iret = nf90_put_var(ncid, varID, (/(x0+dx*i+myidx*imax*dx,i=0,length-1)/),(/1/))
 
     iret = nf90_inq_varid(ncid, 'yt', VarID)
     if (iret==0) iret=nf90_inquire_dimension(ncid, ytID, len=length)
-    if (iret==0) iret = nf90_put_var(ncid, varID, (/(dy*(0.5+i)+myidy*jmax*dy,i=0,length-1)/),(/1/))
+    if (iret==0) iret = nf90_put_var(ncid, varID, (/(y0+dy*(0.5+i)+myidy*jmax*dy,i=0,length-1)/),(/1/))
     iret = nf90_inq_varid(ncid, 'ym', VarID)
     if (iret==0) iret=nf90_inquire_dimension(ncid, ymID, len=length)
-    if (iret==0) iret = nf90_put_var(ncid, varID, (/(dy*i+myidy*jmax*dy,i=0,length-1)/),(/1/))
+    if (iret==0) iret = nf90_put_var(ncid, varID, (/(y0+dy*i+myidy*jmax*dy,i=0,length-1)/),(/1/))
 
     iret = nf90_inq_varid(ncid, 'zt', VarID)
     if (iret==0) iret=nf90_inquire_dimension(ncid,ztID, len=length)
@@ -651,13 +717,13 @@ contains
   !! is not found.
   !! @param requirefill Set to false to allow the array to left unfilled if the variable is missing.
   !! Use for arrays that are pre-initialized, which you want to replace with some user input.
-  subroutine read_nc_field_1D_real(ncid, varname, array, start, count, fillvalue, requirefill)
+  subroutine read_nc_field_1D_real4(ncid, varname, array, start, count, fillvalue, requirefill)
     integer,       intent(in)           :: ncid
     character(*),  intent(in)           :: varname
-    real(field_r), intent(inout)        :: array(:)
+    real(real32), intent(inout)        :: array(:)
     integer,       intent(in), optional :: start
     integer,       intent(in), optional :: count
-    real(field_r), intent(in), optional :: fillvalue
+    real(real32), intent(in), optional :: fillvalue
     logical,       intent(in), optional :: requirefill
 
     integer :: varid
@@ -698,8 +764,66 @@ contains
         call nchandle_error(ierr)
     end select
 
-  end subroutine read_nc_field_1D_real
+  end subroutine read_nc_field_1D_real4
+  !> Read a 1D real field from a netCDF by its name.
+  !!
+  !! Optionally, a fill value can be provided, which the is used in case the
+  !! requested variable is not found in the netCDF file.
+  !! @param ncid ID of the opened netCDF file.
+  !! @param varname Name of the variable to read.
+  !! @param array Array to fill.
+  !! @param fillvalue Default value to fill array with in case the variable
+  !! is not found.
+  !! @param requirefill Set to false to allow the array to left unfilled if the variable is missing.
+  !! Use for arrays that are pre-initialized, which you want to replace with some user input.
+  subroutine read_nc_field_1D_real8(ncid, varname, array, start, count, fillvalue, requirefill)
+    integer,       intent(in)           :: ncid
+    character(*),  intent(in)           :: varname
+    real(real64), intent(inout)        :: array(:)
+    integer,       intent(in), optional :: start
+    integer,       intent(in), optional :: count
+    real(real64), intent(in), optional :: fillvalue
+    logical,       intent(in), optional :: requirefill
 
+    integer :: varid
+    integer :: ierr
+    integer :: start_(1), count_(1)
+    logical :: requirefill_ = .true. !< default value which is actually used in the code, if requirefill is present, override this value.
+
+    if (present(requirefill)) requirefill_ = requirefill
+
+    ierr = nf90_inq_varid(ncid, varname, varid)
+
+    if (present(start)) then 
+      start_(1) = start
+    else
+      start_(1) = 1
+    end if
+
+    if (present(count)) then
+      count_(1) = count
+    else
+      count_(1) = size(array)
+    end if
+
+    select case (ierr)
+      case (NF90_ENOTVAR)
+        if (requirefill_) then
+          if (present(fillvalue)) then
+            array(:) = fillvalue
+          else
+            call nchandle_error(ierr)
+          end if
+        else
+          return
+        endif
+      case (NF90_NOERR)
+        call nchandle_error(nf90_get_var(ncid, varid, array, start=start_, count=count_))
+      case default
+        call nchandle_error(ierr)
+    end select
+
+  end subroutine read_nc_field_1D_real8
   !> Read a 2D real field from a netCDF by its name.
   !!
   !! Optionally, a fill value can be provided, which the is used in case the
@@ -711,13 +835,13 @@ contains
   !! is not found.
   !! @param requirefill Set to false to allow the array to left unfilled if the variable is missing.
   !! Use for arrays that are pre-initialized, which you want to replace with some user input.
-  subroutine read_nc_field_2D_real(ncid, varname, array, start, count, fillvalue, requirefill)
+  subroutine read_nc_field_2D_real4(ncid, varname, array, start, count, fillvalue, requirefill)
     integer,       intent(in)           :: ncid
     character(*),  intent(in)           :: varname
-    real(field_r), intent(inout)        :: array(:,:)
+    real(real32), intent(inout)        :: array(:,:)
     integer,       intent(in), optional :: start(2)
     integer,       intent(in), optional :: count(2)
-    real(field_r), intent(in), optional :: fillvalue
+    real(real32), intent(in), optional :: fillvalue
     logical,       intent(in), optional :: requirefill
 
     integer :: varid
@@ -758,8 +882,66 @@ contains
         call nchandle_error(ierr)
     end select
 
-  end subroutine read_nc_field_2D_real
+  end subroutine read_nc_field_2D_real4
+  !> Read a 2D real field from a netCDF by its name.
+  !!
+  !! Optionally, a fill value can be provided, which the is used in case the
+  !! requested variable is not found in the netCDF file.
+  !! @param ncid ID of the opened netCDF file.
+  !! @param varname Name of the variable to read.
+  !! @param array Array to fill.
+  !! @param fillvalue Default value to fill array with in case the variable
+  !! is not found.
+  !! @param requirefill Set to false to allow the array to left unfilled if the variable is missing.
+  !! Use for arrays that are pre-initialized, which you want to replace with some user input.
+  subroutine read_nc_field_2D_real8(ncid, varname, array, start, count, fillvalue, requirefill)
+    integer,       intent(in)           :: ncid
+    character(*),  intent(in)           :: varname
+    real(real64), intent(inout)        :: array(:,:)
+    integer,       intent(in), optional :: start(2)
+    integer,       intent(in), optional :: count(2)
+    real(real64), intent(in), optional :: fillvalue
+    logical,       intent(in), optional :: requirefill
 
+    integer :: varid
+    integer :: ierr
+    integer :: start_(2), count_(2)
+    logical :: requirefill_ = .true. !< default value which is actually used in the code, if requirefill is present, override this value.
+
+    if (present(requirefill)) requirefill_ = requirefill
+
+    ierr = nf90_inq_varid(ncid, varname, varid)
+
+    if (present(start)) then 
+      start_(:) = start(:)
+    else
+      start_(:) = 1
+    end if
+
+    if (present(count)) then
+      count_(:) = count(:)
+    else
+      count_(:) = shape(array)
+    end if
+
+    select case (ierr)
+      case (NF90_ENOTVAR)
+        if (requirefill_) then
+          if (present(fillvalue)) then
+            array(:,:) = fillvalue
+          else
+            call nchandle_error(ierr)
+          end if
+        else
+          return
+        endif
+      case (NF90_NOERR)
+        call nchandle_error(nf90_get_var(ncid, varid, array, start=start_, count=count_))
+      case default
+        call nchandle_error(ierr)
+    end select
+
+  end subroutine read_nc_field_2D_real8
 
   !> Read a 2D integer field from a netCDF by its name.
   !!
@@ -832,13 +1014,13 @@ contains
   !! is not found.
   !! @param requirefill Set to false to allow the array to left unfilled if the variable is missing.
   !! Use for arrays that are pre-initialized, which you want to replace with some user input.
-  subroutine read_nc_field_3D_real(ncid, varname, array, start, count, fillvalue, requirefill)
+  subroutine read_nc_field_3D_real4(ncid, varname, array, start, count, fillvalue, requirefill)
     integer,       intent(in)           :: ncid
     character(*),  intent(in)           :: varname
-    real(field_r), intent(inout)        :: array(:,:,:)
+    real(real32), intent(inout)        :: array(:,:,:)
     integer,       intent(in), optional :: start(3)
     integer,       intent(in), optional :: count(3)
-    real(field_r), intent(in), optional :: fillvalue
+    real(real32), intent(in), optional :: fillvalue
     logical,       intent(in), optional :: requirefill
 
     integer :: varid
@@ -879,8 +1061,67 @@ contains
         call nchandle_error(ierr)
     end select
 
-  end subroutine read_nc_field_3D_real
+  end subroutine read_nc_field_3D_real4
 
+  !> Read a 3D real field from a netCDF by its name.
+  !!
+  !! Optionally, a fill value can be provided, which the is used in case the
+  !! requested variable is not found in the netCDF file.
+  !! @param ncid ID of the opened netCDF file.
+  !! @param varname Name of the variable to read.
+  !! @param array Array to fill.
+  !! @param fillvalue Default value to fill array with in case the variable
+  !! is not found.
+  !! @param requirefill Set to false to allow the array to left unfilled if the variable is missing.
+  !! Use for arrays that are pre-initialized, which you want to replace with some user input.
+  subroutine read_nc_field_3D_real8(ncid, varname, array, start, count, fillvalue, requirefill)
+    integer,       intent(in)           :: ncid
+    character(*),  intent(in)           :: varname
+    real(real64), intent(inout)        :: array(:,:,:)
+    integer,       intent(in), optional :: start(3)
+    integer,       intent(in), optional :: count(3)
+    real(real64), intent(in), optional :: fillvalue
+    logical,       intent(in), optional :: requirefill
+
+    integer :: varid
+    integer :: ierr
+    integer :: start_(3), count_(3)
+    logical :: requirefill_ = .true. !< default value which is actually used in the code, if requirefill is present, override this value.
+
+    if (present(requirefill)) requirefill_ = requirefill
+
+    ierr = nf90_inq_varid(ncid, varname, varid)
+
+    if (present(start)) then 
+      start_(:) = start(:)
+    else
+      start_(:) = 1
+    end if
+
+    if (present(count)) then
+      count_(:) = count(:)
+    else
+      count_(:) = shape(array)
+    end if
+
+    select case (ierr)
+      case (NF90_ENOTVAR)
+        if (requirefill_) then
+          if (present(fillvalue)) then
+            array(:,:,:) = fillvalue
+          else
+            call nchandle_error(ierr)
+          end if
+        else
+          return
+        endif
+      case (NF90_NOERR)
+        call nchandle_error(nf90_get_var(ncid, varid, array, start=start_, count=count_))
+      case default
+        call nchandle_error(ierr)
+    end select
+
+  end subroutine read_nc_field_3D_real8
 
   !> Read a 3D integer field from a netCDF by its name.
   !!
@@ -1066,6 +1307,250 @@ contains
     iret = nf90_sync(ncid)
     call nchandle_error(iret)
   end subroutine sync_nc
+
+  !> Print a human-readable summary of the contents of an open NetCDF file.
+  !!
+  !! Given an ncid, this routine prints:
+  !!  - basic file status (number of dimensions, variables, global attributes,
+  !!    and the unlimited dimension, if any)
+  !!  - all dimensions with their IDs and lengths
+  !!  - all variables with their IDs and dimensions
+  !!  - all global attributes and variable-specific attributes (names and
+  !!    simple values where possible)
+  subroutine print_netcdf_info(ncid)
+    implicit none
+
+    integer, intent(in) :: ncid
+
+    integer :: ierr
+    integer :: ndims, nvars, ngatts, unlimdimid
+    integer :: dimid, varid, attid
+    integer :: vndims, vnatts
+    integer :: dimlen
+    integer :: xtype, attlen
+    integer :: i
+    integer :: nhead, ntail, idx
+    integer :: startv(1), countv(1)
+    integer :: dimids(NF90_MAX_VAR_DIMS)
+    character(len=NF90_MAX_NAME) :: dimname, varname, attname
+    character(len=256)           :: att_char
+    real(8)                      :: dimvals(6)
+    integer                      :: ival
+    real(4)                      :: rval4
+    real(8)                      :: rval8
+
+    ! Inquire basic file information
+    ierr = nf90_inquire(ncid, ndims, nvars, ngatts, unlimdimid)
+    call nchandle_error(ierr)
+
+    write(*,*) '------------------------------------------------------------'
+    write(*,'(a,i0,a)') ' NetCDF file info (ncid=', ncid, '):'
+    write(*,'(2x,a,i0)') 'Number of dimensions : ', ndims
+    write(*,'(2x,a,i0)') 'Number of variables  : ', nvars
+    write(*,'(2x,a,i0)') 'Number of glob. atts : ', ngatts
+
+    if (unlimdimid >= 0) then
+      ierr = nf90_inquire_dimension(ncid, unlimdimid, dimname)
+      call nchandle_error(ierr)
+      write(*,'(2x,a,i0,a,a)') 'Unlimited dimension  : ID=', unlimdimid, ', name="', trim(dimname)//'"'
+    else
+      write(*,'(2x,a)') 'Unlimited dimension  : (none)'
+    end if
+
+    ! List all dimensions
+    write(*,*)
+    write(*,'(a)') ' Dimensions:'
+    do dimid = 1, ndims
+      ierr = nf90_inquire_dimension(ncid, dimid, dimname, dimlen)
+      call nchandle_error(ierr)
+
+      if (dimid == unlimdimid) then
+        write(*,'(2x,i3,2x,a,2x,a,i0,a)') dimid, trim(dimname), 'len=', dimlen, ' (UNLIMITED)'
+      else
+        write(*,'(2x,i3,2x,a,2x,a,i0)')   dimid, trim(dimname), 'len=', dimlen
+      end if
+
+      ! Try to print a small summary of dimension coordinate values
+      ierr = nf90_inq_varid(ncid, trim(dimname), varid)
+      if (ierr == NF90_NOERR .and. dimlen > 0) then
+        ierr = nf90_inquire_variable(ncid, varid, xtype=xtype)
+        call nchandle_error(ierr)
+
+        select case (xtype)
+        case (NF90_FLOAT, NF90_DOUBLE, NF90_INT, NF90_SHORT, NF90_BYTE)
+          nhead = min(3, dimlen)
+          ntail = 0
+          if (dimlen > nhead) ntail = min(3, dimlen - nhead)
+
+          ! Read first nhead values
+          startv(1) = 1
+          countv(1) = nhead
+          ierr = nf90_get_var(ncid, varid, dimvals(1:nhead), start=startv, count=countv)
+          call nchandle_error(ierr)
+
+          ! Read last ntail values, if any
+          if (ntail > 0) then
+            startv(1) = dimlen - ntail + 1
+            countv(1) = ntail
+            ierr = nf90_get_var(ncid, varid, dimvals(nhead+1:nhead+ntail), start=startv, count=countv)
+            call nchandle_error(ierr)
+          end if
+
+          write(*,'(8x,a)', advance='no') 'values: '
+          do idx = 1, nhead
+            write(*,'(f12.4)', advance='no') dimvals(idx)
+            if (idx < nhead .or. ntail > 0) write(*,'(a)', advance='no') ', '
+          end do
+          if (ntail > 0) then
+            write(*,'(a)', advance='no') '... '
+            do idx = 1, ntail
+              write(*,'(f12.4)', advance='no') dimvals(nhead+idx)
+              if (idx < ntail) write(*,'(a)', advance='no') ', '
+            end do
+          end if
+          write(*,*)
+        case default
+          write(*,'(8x,a)') 'values: (non-numeric type, omitted)'
+        end select
+
+      else if (ierr /= NF90_ENOTVAR) then
+        ! Only treat real errors; missing coordinate variable is fine
+        call nchandle_error(ierr)
+      end if
+    end do
+
+    ! List all global attributes
+    write(*,*)
+    write(*,'(a)') ' Global attributes:'
+    if (ngatts == 0) then
+      write(*,'(2x,a)') '(none)'
+    else
+      do attid = 1, ngatts
+        ierr = nf90_inq_attname(ncid, NF90_GLOBAL, attid, attname)
+        call nchandle_error(ierr)
+        ierr = nf90_inquire_attribute(ncid, NF90_GLOBAL, attname, xtype, attlen)
+        call nchandle_error(ierr)
+
+        select case (xtype)
+        case (NF90_CHAR)
+          if (attlen <= len(att_char)) then
+            ierr = nf90_get_att(ncid, NF90_GLOBAL, attname, att_char)
+            call nchandle_error(ierr)
+            write(*,'(2x,i3,2x,a,2x,a,1x,a)') attid, trim(attname), '(char) =', trim(att_char(1:attlen))
+          else
+            write(*,'(2x,i3,2x,a,2x,a,i0,a)') attid, trim(attname), '(char, len=', attlen, ', value omitted)'
+          end if
+        case (NF90_INT)
+          if (attlen == 1) then
+            ierr = nf90_get_att(ncid, NF90_GLOBAL, attname, ival)
+            call nchandle_error(ierr)
+            write(*,'(2x,i3,2x,a,2x,a,i0)') attid, trim(attname), '(int) =', ival
+          else
+            write(*,'(2x,i3,2x,a,2x,a,i0,a)') attid, trim(attname), '(int, len=', attlen, ', values omitted)'
+          end if
+        case (NF90_FLOAT)
+          if (attlen == 1) then
+            ierr = nf90_get_att(ncid, NF90_GLOBAL, attname, rval4)
+            call nchandle_error(ierr)
+            write(*,'(2x,i3,2x,a,2x,a,f12.4)') attid, trim(attname), '(float) =', rval4
+          else
+            write(*,'(2x,i3,2x,a,2x,a,i0,a)') attid, trim(attname), '(float, len=', attlen, ', values omitted)'
+          end if
+        case (NF90_DOUBLE)
+          if (attlen == 1) then
+            ierr = nf90_get_att(ncid, NF90_GLOBAL, attname, rval8)
+            call nchandle_error(ierr)
+            write(*,'(2x,i3,2x,a,2x,a,f12.4)') attid, trim(attname), '(double) =', rval8
+          else
+            write(*,'(2x,i3,2x,a,2x,a,i0,a)') attid, trim(attname), '(double, len=', attlen, ', values omitted)'
+          end if
+        case default
+          write(*,'(2x,i3,2x,a,2x,a,i0,a,i0,a)') attid, trim(attname), '(type=', xtype, ', len=', attlen, ')'
+        end select
+      end do
+    end if
+
+    ! List variables with their dimensions and attributes
+    write(*,*)
+    write(*,'(a)') ' Variables:'
+    do varid = 1, nvars
+      ierr = nf90_inquire_variable(ncid, varid, varname, ndims=vndims, dimids=dimids, natts=vnatts)
+      call nchandle_error(ierr)
+
+      write(*,'(2x,a,i3,a,a,a,a,i0,a,i0)') 'Variable ID ', varid, ' ("', trim(varname), '"):', &
+                                         ' ndims=', vndims, ', natts=', vnatts
+
+      ! Variable dimensions
+      if (vndims > 0) then
+        write(*,'(4x,a)') 'Dimensions:'
+        do i = 1, vndims
+          dimid = dimids(i)
+          ierr = nf90_inquire_dimension(ncid, dimid, dimname, dimlen)
+          call nchandle_error(ierr)
+          if (dimid == unlimdimid) then
+            write(*,'(6x,i3,2x,a,2x,a,i0,a)') dimid, trim(dimname), 'len=', dimlen, ' (UNLIMITED)'
+          else
+            write(*,'(6x,i3,2x,a,2x,a,i0)')   dimid, trim(dimname), 'len=', dimlen
+          end if
+        end do
+      else
+        write(*,'(4x,a)') 'Dimensions: (none)'
+      end if
+
+      ! Variable attributes
+      if (vnatts > 0) then
+        write(*,'(4x,a)') 'Attributes:'
+        do attid = 1, vnatts
+          ierr = nf90_inq_attname(ncid, varid, attid, attname)
+          call nchandle_error(ierr)
+          ierr = nf90_inquire_attribute(ncid, varid, attname, xtype, attlen)
+          call nchandle_error(ierr)
+
+          select case (xtype)
+          case (NF90_CHAR)
+            if (attlen <= len(att_char)) then
+              ierr = nf90_get_att(ncid, varid, attname, att_char)
+              call nchandle_error(ierr)
+              write(*,'(6x,i3,2x,a,2x,a,1x,a)') attid, trim(attname), '(char) =', trim(att_char(1:attlen))
+            else
+              write(*,'(6x,i3,2x,a,2x,a,i0,a)') attid, trim(attname), '(char, len=', attlen, ', value omitted)'
+            end if
+          case (NF90_INT)
+            if (attlen == 1) then
+              ierr = nf90_get_att(ncid, varid, attname, ival)
+              call nchandle_error(ierr)
+              write(*,'(6x,i3,2x,a,2x,a,i0)') attid, trim(attname), '(int) =', ival
+            else
+              write(*,'(6x,i3,2x,a,2x,a,i0,a)') attid, trim(attname), '(int, len=', attlen, ', values omitted)'
+            end if
+          case (NF90_FLOAT)
+            if (attlen == 1) then
+              ierr = nf90_get_att(ncid, varid, attname, rval4)
+              call nchandle_error(ierr)
+              write(*,'(6x,i3,2x,a,2x,a,f12.4)') attid, trim(attname), '(float) =', rval4
+            else
+              write(*,'(6x,i3,2x,a,2x,a,i0,a)') attid, trim(attname), '(float, len=', attlen, ', values omitted)'
+            end if
+          case (NF90_DOUBLE)
+            if (attlen == 1) then
+              ierr = nf90_get_att(ncid, varid, attname, rval8)
+              call nchandle_error(ierr)
+              write(*,'(6x,i3,2x,a,2x,a,f12.4)') attid, trim(attname), '(double) =', rval8
+            else
+              write(*,'(6x,i3,2x,a,2x,a,i0,a)') attid, trim(attname), '(double, len=', attlen, ', values omitted)'
+            end if
+          case default
+            write(*,'(6x,i3,2x,a,2x,a,i0,a,i0,a)') attid, trim(attname), '(type=', xtype, ', len=', attlen, ')'
+          end select
+        end do
+      else
+        write(*,'(4x,a)') 'Attributes: (none)'
+      end if
+    end do
+
+    write(*,*) '------------------------------------------------------------'
+
+  end subroutine print_netcdf_info
 
   subroutine nctiminfo(info)
     use modglobal, only: xyear, xday, xtime

@@ -73,11 +73,13 @@ save
 
 contains
 !> Initializing Crosssection. Read out the namelist, initializing the variables
-  subroutine initcrosssection
-    use modmpi,   only :myid,mpierr,comm3d,cmyid,cmyidx,cmyidy,myidx,myidy,D_MPI_BCAST
-    use modglobal,only :imax,jmax,itot,jtot,ifnamopt,fname_options,dtmax,dtav_glob,ladaptive,j1,kmax,i1,dt_lim,cexpnr,&
-                        tres,btime,checknamelisterror,output_prefix
-    use modstat_nc,only : lnetcdf,open_nc, define_nc,ncinfo,nctiminfo,writestat_dims_nc
+   subroutine initcrosssection
+    use, intrinsic :: iso_fortran_env, only: real64, real32
+      use netcdf
+      use modmpi,   only :myid,mpierr,comm3d,cmyid,cmyidx,cmyidy,myidx,myidy,D_MPI_BCAST
+      use modglobal,only :imax,jmax,itot,jtot,ifnamopt,fname_options,dtmax,dtav_glob,ladaptive,j1,kmax,i1,dt_lim,cexpnr,&
+                                    tres,btime,checknamelisterror,output_prefix,x0,y0,dx,dy,zf,zh,itot,jtot
+      use modstat_nc,only : lnetcdf,open_nc, define_nc,redefine_nc,ncinfo,nctiminfo,writestat_dims_nc
     use fortran_support, only: nnml_output
 
    implicit none
@@ -178,11 +180,11 @@ contains
                 do n = 1,nsv
                   call ncinfo(ncname1(9+n,:), trim(tracer_prop(n)%tracname), trim(tracer_prop(n)%traclong), trim(tracer_prop(n)%unit), 't0tt')
                 enddo
-                call open_nc(trim(output_prefix)//fname1,ncid1(cross),nrec1(cross),n1=imax,n3=kmax)
-
+                call open_nc(trim(output_prefix)//fname1,ncid1(cross),nrec1(cross),n1=imax,n2=1,n3=kmax)
                 if (nrec1(cross) == 0) then
                    call define_nc(ncid1(cross), 1, tncname1)
-                   call writestat_dims_nc(ncid1(cross))
+                   call writestat_dims_nc(ncid1(cross), write_slice_coordinate=.true., slice_index=crossplane(cross)+myidy*jmax, slice_coordinate="y")
+                   call redefine_nc(ncid1(cross))
                 end if
                 call define_nc(ncid1(cross), nvar, ncname1)
              end if
@@ -208,10 +210,11 @@ contains
               do n = 1,nsv
                 call ncinfo(ncname2(9+n,:), trim(tracer_prop(n)%tracname), trim(tracer_prop(n)%traclong), trim(tracer_prop(n)%unit), 'tt0t')
               enddo
-              call open_nc(trim(output_prefix)//fname2,ncid2(cross),nrec2(cross),n1=imax,n2=jmax)
+            call open_nc(trim(output_prefix)//fname2,ncid2(cross),nrec2(cross),n1=imax,n2=jmax,n3=1)
               if (nrec2(cross)==0) then
                  call define_nc(ncid2(cross), 1, tncname2)
-                 call writestat_dims_nc(ncid2(cross))
+                 call writestat_dims_nc(ncid2(cross), klow=crossheight(cross))
+                 call redefine_nc(ncid2(cross))
               end if
               call define_nc(ncid2(cross), nvar, ncname2)
            end do
@@ -238,10 +241,11 @@ contains
                  do n = 1,nsv
                     call ncinfo(ncname3(9+n,:), trim(tracer_prop(n)%tracname), trim(tracer_prop(n)%traclong), trim(tracer_prop(n)%unit), '0ttt')
                  enddo
-                 call open_nc(trim(output_prefix)//fname3,  ncid3(cross),nrec3(cross),n2=jmax,n3=kmax)
+                 call open_nc(trim(output_prefix)//fname3,  ncid3(cross),nrec3(cross),n1=1,n2=jmax,n3=kmax)
                  if (nrec3(cross)==0) then
                     call define_nc(ncid3(cross), 1, tncname3)
-                    call writestat_dims_nc(ncid3(cross))
+                    call writestat_dims_nc(ncid3(cross), write_slice_coordinate=.true., slice_index=crossortho(cross)+myidx*imax, slice_coordinate="x")
+                    call redefine_nc(ncid3(cross))
                  end if
                  call define_nc(ncid3(cross), nvar, ncname3)
               end if
