@@ -1,0 +1,27 @@
+{
+  "name": "Fortran Dev",
+  "image": "fortran-dev",
+  // "remoteUser": "dev",
+  "mounts": [
+    "source=/Users/andrevanginkel/Documents/40_Input_and_Runs/42_Dales_Cases,target=/runs,type=bind",
+    "source=/Users/andrevanginkel/Documents/40_Input_and_Runs/43_Dales_Docker_Build,target=/builds,type=bind",
+  ],
+  "runArgs": [
+    "--cap-add=SYS_PTRACE",
+    "--security-opt",
+    "seccomp=unconfined"
+  ],
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "fortran-lang.linter-gfortran",
+        "ms-vscode.cpptools",
+        "vadimcn.vscode-lldb",
+        "ms-vscode.cmake-tools",
+        "twxs.cmake",
+        "rioj7.command-variable"
+      ]
+    }
+  }
+  //   "remoteUser": "youruser"
+}
