@@ -125,7 +125,7 @@ contains
     integer :: ierr
 
     namelist/NAMSUBGRID/ &
-        ldelta,lmason,cf,cn,Rigc,Prandtl,lsmagorinsky,cs,nmason,sgs_surface_fix,ch1,lanisotrop,lD80R
+        ldelta,lmason,cf,cn,Rigc,Prandtl,lsmagorinsky,cs,nmason,sgs_surface_fix,ch1,lanisotrop,lD80R,sgs_surface_shear_ustar,sgs_surface_shear_virt_velocity,sgs_surface_buoyancy
 
     if(myid==0)then
       open(ifnamopt,file=fname_options,status='old',iostat=ierr)
@@ -155,6 +155,9 @@ contains
     call D_MPI_BCAST(Rigc            ,1, 0,comm3d,mpierr)
     call D_MPI_BCAST(Prandtl         ,1, 0,comm3d,mpierr)
     call D_MPI_BCAST(sgs_surface_fix ,1, 0,comm3d,mpierr)
+    call D_MPI_BCAST(sgs_surface_shear_virt_velocity ,1, 0,comm3d,mpierr)
+    call D_MPI_BCAST(sgs_surface_shear_ustar ,1, 0,comm3d,mpierr)
+    call D_MPI_BCAST(sgs_surface_buoyancy ,1, 0,comm3d,mpierr)
     call D_MPI_BCAST(ch1             ,1, 0,comm3d,mpierr)
   end subroutine subgridnamelist
 
@@ -500,14 +503,34 @@ contains
   !     *sources* is called from *program*.                         |
   !                                                                 |
   ! -----------------------------------------------------------------|
+  pure function phim_sgs(zeta) result(phi_m)
+    implicit none
+    !$acc routine seq
+    real(field_r), intent(in) :: zeta
+    real(field_r) :: phi_m
+
+    if (zeta < 0._field_r) then
+      phi_m = (1._field_r - 16._field_r*zeta)**(-0.25_field_r)
+    elseif (zeta < 1._field_r) then
+      phi_m = 1._field_r + 5._field_r*zeta
+    else
+      phi_m = 6._field_r
+    end if
+  end function phim_sgs
+
   subroutine sources
-    use modglobal,      only : i1,j1,kmax,dxi,dyi,dzfi,dzhi,grav,cu,cv,deltai
+    use modglobal,      only : i1,j1,kmax,dxi,dyi,dzfi,dzhi,grav,cu,cv,deltai,zf,fkar
     use modfields,      only : u0,v0,w0,e120,e12p,dthvdz,thvf
-    use modsurfdata,    only : dudz,dvdz,ustar,thlflux
+    use modsurfdata,    only : dudz,dvdz,ustar,thlflux,obl
     use modsubgriddata, only : sgs_surface_fix
     implicit none
 
-    real(field_r):: tdef2, uwflux, vwflux, local_dudz, local_dvdz, local_dthvdz, horv
+    real(field_r):: tdef2, uwflux, vwflux, local_dudz, local_dvdz, local_dthvdz, uhorv, u_surf_virt, v_surf_virt
+
+    real(field_r), parameter :: min_horv = 1.e-2_field_r
+    real(field_r), parameter :: min_km_sfc = 1.e-10_field_r
+    real(field_r), parameter :: min_phim = 1.e-6_field_r
+    real(field_r) :: horv, tau_u, tau_v, phi_m, km_sfc
     integer i, j, k
 
     !$acc parallel loop collapse(3) default(present) private(tdef2) async(1)
@@ -611,6 +634,7 @@ contains
           ! equivalent
           local_dthvdz = -thlflux(i,j)/ekh(i,j,1)
           sbbuo(i,j,1)  = -ekh(i,j,1)*grav/thvf(1)*local_dthvdz/ ( 2*e120(i,j,1))
+          sbbuo(i,j,1)  = -ekh(i,j,1)*grav/thvf(1)*dthvdz(i,j,1)/ ( 2*e120(i,j,1))
           sbdiss(i,j,1) = - (ce1 + ce2*zlt(i,j,1)*deltai(1)) * e120(i,j,1)**2 /(2.*zlt(i,j,1))
           e12p(i,j,1) = e12p(i,j,1) + sbshr(i,j,1) + sbbuo(i,j,1) + sbdiss(i,j,1)
         end do
@@ -619,13 +643,52 @@ contains
       !$acc parallel loop collapse(2) default(present) private(tdef2) async(2)
       do j = 2, j1
         do i = 2, i1
+          if (sgs_surface_shear_ustar) then
+            ! Use known surface flux and exchange coefficient to derive
+            ! consistent gradient (such that correct flux will occur in
+            ! shear production term)
+            ! Make sure that no division by zero occurs in determination of the
+            ! directional component; ekm should already be >= ekmin
+            ! Replace the dudz by surface flux -uw / ekm
+            horv = max(sqrt((u0(i,j,1)+cu)**2 + (v0(i,j,1)+cv)**2), 0.01_field_r)
+            uwflux = -ustar(i,j)*ustar(i,j) * ((u0(i,j,1)+cu)/horv)
+            local_dudz = -uwflux / ekm(i,j,1)
+
+            ! Use known surface flux and exchange coefficient to derive
+            ! consistent gradient (such that correct flux will occur in
+            ! shear production term)
+            ! Make sure that no division by zero occurs in determination of the
+            ! directional component; ekm should already be >= ekmin
+            ! Replace the dvdz by surface flux -vw / ekm
+            vwflux = -ustar(i,j)*ustar(i,j)* ((v0(i,j,1)+cv)/horv)
+            local_dvdz = -vwflux / ekm(i,j,1)
+          else if (sgs_surface_shear_virt_velocity) then
+            horv = max(sqrt((u0(i,j,1)+cu)**2 + (v0(i,j,1)+cv)**2), min_horv)
+
+            phi_m = max(phim_sgs(zf(1) / obl(i,j)), min_phim)
+            km_sfc = max(fkar * ustar(i,j) * zf(1) / phi_m, min_km_sfc)
+
+            tau_u = -ustar(i,j)*ustar(i,j) * ((u0(i,j,1)+cu)/horv)
+            tau_v = -ustar(i,j)*ustar(i,j) * ((v0(i,j,1)+cv)/horv)
+
+            ! Virtual wall velocity used to reconstruct a MOST-consistent near-surface shear.
+            u_surf_virt = (u0(i,j,1)+cu) - tau_u * zf(1) / km_sfc
+            v_surf_virt = (v0(i,j,1)+cv) - tau_v * zf(1) / km_sfc
+            ! Use virtual velocity to derive consistent gradient (such that correct flux will occur in shear production term)
+            local_dudz = (u0(i,j,1)+cu - u_surf_virt) / zf(1)
+            local_dvdz = (v0(i,j,1)+cv - v_surf_virt) / zf(1)
+          else
+            ! default: use MOST derived gradients from modsurface
+            local_dudz = dudz(i,j)
+            local_dvdz = dvdz(i,j)
+          end if
           tdef2 = 2. * ( &
                   ((u0(i+1,j  ,1)-u0(i,j,1))*dxi     )**2 &
                 + ((v0(i  ,j+1,1)-v0(i,j,1))*dyi     )**2 &
                 + ((w0(i  ,j  ,2)-w0(i,j,1))*dzfi(1) )**2 )
 
           tdef2 = tdef2 + ( 0.25_field_r*(w0(i+1,j,2)-w0(i-1,j,2))*dxi + &
-                            dudz(i,j) )**2
+                            local_dudz )**2
 
           tdef2 = tdef2 + 0.25_field_r*( &
                 ((u0(i  ,j+1,1)-u0(i  ,j  ,1))*dyi + &
@@ -638,10 +701,15 @@ contains
                   (v0(i+1,j+1,1)-v0(i  ,j+1,1))*dxi)**2 )
 
           tdef2 = tdef2 + ( 0.25_field_r*(w0(i,j+1,2)-w0(i,j-1,2))*dyi + &
-                            dvdz(i,j) )**2
-
+                            local_dvdz )**2
+          
+          if (sgs_surface_buoyancy) then
+            local_dthvdz = -thlflux(i,j)/ekh(i,j,1)
+          else
+            local_dthvdz = dthvdz(i,j,1)
+          end if
+          sbbuo(i,j,1)  = -ekh(i,j,1)*grav/thvf(1)*local_dthvdz/ ( 2*e120(i,j,1))
           sbshr(i,j,1)  = ekm(i,j,1)*tdef2/ ( 2*e120(i,j,1))
-          sbbuo(i,j,1)  = -ekh(i,j,1)*grav/thvf(1)*dthvdz(i,j,1)/ ( 2*e120(i,j,1))
           sbdiss(i,j,1) = - (ce1 + ce2*zlt(i,j,1)*deltai(1)) * e120(i,j,1)**2 /(2.*zlt(i,j,1))
           e12p(i,j,1) = e12p(i,j,1) + sbshr(i,j,1) + sbbuo(i,j,1) + sbdiss(i,j,1)
         end do
