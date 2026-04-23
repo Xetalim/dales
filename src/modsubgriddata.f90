@@ -38,7 +38,10 @@ save
   logical :: lsmagorinsky = .false. !<  switch for smagorinsky subgrid scheme
   logical :: lanisotrop   = .false. !<  switch for anisotropic diffusion
   logical :: lD80R        = .false. !<  switch for D80R subgrid scheme
-
+  logical :: sgs_surface_shear_ustar = .false. !< switch for using local du/dz and dv/dz from ustar in shear production in SGS TKE equation
+  logical :: sgs_surface_buoyancy = .false. !< switch for using surface thlflux in buoyancy production in SGS TKE equation
+  logical :: sgs_surface_shear_virt_velocity = .false. !< switch for using virtual surface velocity in shear production in SGS TKE equation
+  
   real(field_r) :: cf      = 2.5  !< filter constant
   real(field_r) :: Rigc    = 0.25 !< critical Richardson number
   real(field_r) :: Prandtl = (1.0/3.0)
