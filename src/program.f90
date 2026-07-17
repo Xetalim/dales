@@ -102,7 +102,7 @@ program DALES
 !!----------------------------------------------------------------
   use modglobal,         only : rk3step,timeleft,lopenbc
   use modmpi,            only : initmpicomm
-  use modstartup,        only : startup, writerestartfiles,testwctime,exitmodules
+  use modstartup,        only : startup, writerestartfiles,testwctime,teststopfile,exitmodules
   use modtimedep,        only : timedep
   use modboundary,       only : boundary, grwdamp! JvdD ,tqaver
   use modthermodynamics, only : thermodynamics
@@ -415,6 +415,7 @@ program DALES
           !call stressbudgetstat
           call heterostats
     
+          call teststopfile
           call testwctime
           call writerestartfiles
 

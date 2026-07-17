@@ -29,7 +29,7 @@
 module modstartup
 use iso_c_binding
 use fortran_support, only: int2string, split_string
-use modprecision,      only : field_r
+use modprecision,      only : field_r, longint
 use modtimer
 use modstat_nc
 use modchecksim, only: check_array
@@ -46,6 +46,7 @@ save
   real :: randthl= 0.1,randqt=1e-5                 !    * thl and qt amplitude of randomnization
   real :: randu = 0.5
   real :: wctime=8640000.   !<     * The maximum wall clock time of a simulation (set to 100 days by default)
+  integer(kind=longint), save :: tnextstopcheck = 0_longint
 
 interface ! interface to use UNIX C mkdir function. Otherwise different compilers have different incompatible variants
    function mkdir(path,mode) bind(c,name="mkdir")
@@ -1361,6 +1362,41 @@ contains
       call do_writerestartfiles
     end if
   end subroutine writerestartfiles
+
+  subroutine teststopfile
+    use modglobal, only : timee, timeleft, rk3step, tres
+    use modprecision, only : longint
+    use modmpi,    only : myid, commwrld, mpierr, D_MPI_BCAST
+    implicit none
+
+    logical :: lstopfile
+    integer :: istopunit, iostat_stop
+    integer(kind=longint) :: stopcheckinterval
+
+    if (timee == 0) return
+    if (rk3step /= 3) return
+    ! if (timee < tnextstopcheck) return
+
+    stopcheckinterval = max(1_longint, floor(60.0 / tres, longint))
+    tnextstopcheck = timee + stopcheckinterval
+
+    lstopfile = .false.
+    if (myid == 0) then
+      inquire(file='STOPSIM', exist=lstopfile)
+      if (lstopfile) then
+        write(*,*) 'STOPSIM found, finishing run after this RK3 step.'
+        open(newunit=istopunit, file='STOPSIM', status='old', action='read', iostat=iostat_stop)
+        if (iostat_stop == 0) close(istopunit, status='delete')
+      end if
+    end if
+
+    call D_MPI_BCAST(lstopfile, 1, 0, commwrld, mpierr)
+
+    if (lstopfile) then
+      timeleft = 0
+    end if
+
+  end subroutine teststopfile
 
   ! this function writes a restart file
   ! separated from writerestartfiles to be callable from the library interface
