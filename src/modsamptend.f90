@@ -25,6 +25,7 @@ module modsamptend
   use modglobal, only : longint
   use modsampdata
   use modlogging, only: finish
+  use modrestart_registry, only: register_restart_handlers
   implicit none
   private
   character(len=*), parameter :: modname = 'modsamptend'
@@ -57,6 +58,7 @@ module modsamptend
   character(80) :: fname = 'samptend.xxx.nc'
   character(80) :: fname_block = 'samptend.xxxxyxxx.xxx.nc'
   integer :: ncid,nrec = 0
+  logical :: initialized = .false.
 
 contains
 !> Initialization routine, reads namelists and inits variables
@@ -69,6 +71,8 @@ subroutine initsamptend
     implicit none
 
     character(len=*), parameter :: routine = modname//'/initsamptend'
+
+    call register_restart_function
 
     if (.not. lsamptend) return
 
@@ -1743,5 +1747,89 @@ subroutine initsamptend
     deallocate (nrsamptot,nrsamp,nrsamplast,nrsampnew)
 
   end subroutine exitsamptend
+
+  subroutine register_restart_function
+    if (initialized) return
+    call register_restart_handlers(modname, read_restart_state, write_restart_state)
+    initialized = .true.
+  end subroutine register_restart_function
+
+  subroutine write_restart_state(iunit)
+    integer, intent(in) :: iunit
+
+    write(iunit) tnext, tnextwrite
+    write(iunit) isamptot, ntsamp, ldosamptendwrite, ldosamptendleib, lastrk3coef
+    if (.not. lsamptend) return
+    if (isamptot == 0) return
+
+    write(iunit) tendmask, nrsamptot, nrsamp, nrsamplast, nrsampnew
+    if (lsamptendu) write(iunit) uptm, upav, upmn, ust
+    if (lsamptendv) write(iunit) vptm, vpav, vpmn, vst
+    if (lsamptendw) write(iunit) wptm, wpav, wpmn, wst
+    if (lsamptendthl) write(iunit) thlptm, thlpav, thlpmn, thlst
+    if (lsamptendqt) write(iunit) qtptm, qtpav, qtpmn, qtst
+    if (lsamptendqr) write(iunit) qrptm, qrpav, qrpmn, qrst
+    if (lsamptendnr) write(iunit) nrptm, nrpav, nrpmn, nrst
+    if (ltenddec) write(iunit) wav, uwav, vsav
+    if (ltenddec .and. lsamptendthl) write(iunit) thlav, thlwav, thlsav, uthlwav, vthlsav, wthlav
+    if (ltenddec .and. lsamptendqt) write(iunit) qtav, qtwav, qtsav, uqtwav, vqtsav, wqtav
+    if (ltenddec .and. lsamptendqr) write(iunit) qrav, qrwav, qrsav, uqrwav, vqrsav, wqrav
+    if (ltenddec .and. lsamptendnr) write(iunit) nrav, nrwav, nrsav, unrwav, vnrsav, wnrav
+    if (ltenddec .and. lqlflux) write(iunit) qlav, qlwav, qlsav, uqlwav, vqlsav, wqlav
+  end subroutine write_restart_state
+
+  subroutine read_restart_state(iunit)
+    integer, intent(in) :: iunit
+    read(iunit) tnext, tnextwrite
+    read(iunit) isamptot, ntsamp, ldosamptendwrite, ldosamptendleib, lastrk3coef
+    if (.not. lsamptend) then
+      return
+    end if
+    if (isamptot == 0) then
+      return
+    end if
+    if (.not. allocated(tendmask)) return
+
+    read(iunit) tendmask, nrsamptot, nrsamp, nrsamplast, nrsampnew
+    if (lsamptendu) then
+      read(iunit) uptm, upav, upmn, ust
+    end if
+    if (lsamptendv) then
+      read(iunit) vptm, vpav, vpmn, vst
+    end if
+    if (lsamptendw) then
+      read(iunit) wptm, wpav, wpmn, wst
+    end if
+    if (lsamptendthl) then
+      read(iunit) thlptm, thlpav, thlpmn, thlst
+    end if
+    if (lsamptendqt) then
+      read(iunit) qtptm, qtpav, qtpmn, qtst
+    end if
+    if (lsamptendqr) then
+      read(iunit) qrptm, qrpav, qrpmn, qrst
+    end if
+    if (lsamptendnr) then
+      read(iunit) nrptm, nrpav, nrpmn, nrst
+    end if
+    if (ltenddec) then
+      read(iunit) wav, uwav, vsav
+    end if
+    if (ltenddec .and. lsamptendthl) then
+      read(iunit) thlav, thlwav, thlsav, uthlwav, vthlsav, wthlav
+    end if
+    if (ltenddec .and. lsamptendqt) then
+      read(iunit) qtav, qtwav, qtsav, uqtwav, vqtsav, wqtav
+    end if
+    if (ltenddec .and. lsamptendqr) then
+      read(iunit) qrav, qrwav, qrsav, uqrwav, vqrsav, wqrav
+    end if
+    if (ltenddec .and. lsamptendnr) then
+      read(iunit) nrav, nrwav, nrsav, unrwav, vnrsav, wnrav
+    end if
+    if (ltenddec .and. lqlflux) then
+      read(iunit) qlav, qlwav, qlsav, uqlwav, vqlsav, wqlav
+    end if
+  end subroutine read_restart_state
 
 end module

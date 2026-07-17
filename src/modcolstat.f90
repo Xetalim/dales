@@ -22,6 +22,7 @@ module modcolstat
   use modlogging,        only: finish
   use modnetcdf_file_t,  only: multi_profile_file_t
   use modprecision,      only: field_r
+  use modrestart_registry, only: register_restart_handlers
   use modstat_nc_files,  only: add_output_file, is_sampling_timestep, is_writing_timestep
 
   implicit none
@@ -47,6 +48,7 @@ module modcolstat
   integer :: ofile_id
   integer, allocatable :: i_local(:), j_local(:), global_index(:)
   real(field_r), allocatable :: locx(:), locy(:)
+  logical :: initialized = .false.
 
 contains
 
@@ -61,6 +63,8 @@ contains
     character(len=*), parameter :: routine = modname//'/initcolstat'
 
     namelist /NAMCOLSTAT/ lcolstat, npoints, x_idx, y_idx
+
+    call register_restart_function
 
     x_idx = 0
     y_idx = 0
@@ -738,8 +742,6 @@ contains
 
     subroutine get_pointers(col_idx)
       integer, intent(in) :: col_idx
-      integer :: n
-      character(len=64) :: vname
 
       call ofile%get_pointer('rhof', global_index(col_idx), rhof_col)
       call ofile%get_pointer('rhobf', global_index(col_idx), rhobf_col)
@@ -848,5 +850,242 @@ contains
     if (allocated(sbtke_last_col)) deallocate(sbtke_last_col)
 
   end subroutine exitcolstat
+
+  subroutine register_restart_function
+    if (initialized) return
+    call register_restart_handlers(modname, read_restart_state, write_restart_state)
+    initialized = .true.
+  end subroutine register_restart_function
+
+  subroutine write_restart_state(iunit)
+    integer, intent(in) :: iunit
+    logical :: has_local_profiles
+
+    write(iunit) lcolstat, nsamples, l_sbtke_beg_set, npoints, x_idx, y_idx
+    if (.not. lcolstat) return
+    if (allocated(sbtke_beg_col)) then
+      write(iunit) sbtke_beg_col, sbtke_last_col
+    end if
+    has_local_profiles = allocated(i_local) .and. (size(i_local) > 0)
+    write(iunit) has_local_profiles
+    if (has_local_profiles) call write_profile_buffers(iunit)
+  end subroutine write_restart_state
+
+  subroutine read_restart_state(iunit)
+    integer, intent(in) :: iunit
+    logical :: has_local_profiles
+
+    read(iunit) lcolstat, nsamples, l_sbtke_beg_set, npoints, x_idx, y_idx
+    if (.not. lcolstat) then
+      return
+    end if
+    if (allocated(sbtke_beg_col)) then
+      read(iunit) sbtke_beg_col, sbtke_last_col
+    end if
+    read(iunit) has_local_profiles
+    if (has_local_profiles) call read_profile_buffers(iunit)
+  end subroutine read_restart_state
+
+  subroutine write_profile_buffers(iunit)
+    integer, intent(in) :: iunit
+    integer :: col_idx, n
+
+    do col_idx = 1, size(i_local)
+      call write_profile_var(iunit, col_idx, 'rhof')
+      call write_profile_var(iunit, col_idx, 'rhobf')
+      call write_profile_var(iunit, col_idx, 'rhobh')
+      call write_profile_var(iunit, col_idx, 'presh')
+      call write_profile_var(iunit, col_idx, 'u')
+      call write_profile_var(iunit, col_idx, 'v')
+      call write_profile_var(iunit, col_idx, 'w')
+      call write_profile_var(iunit, col_idx, 'thl')
+      call write_profile_var(iunit, col_idx, 'thv')
+      call write_profile_var(iunit, col_idx, 'qt')
+      call write_profile_var(iunit, col_idx, 'ql')
+      call write_profile_var(iunit, col_idx, 'wthls')
+      call write_profile_var(iunit, col_idx, 'wthlr')
+      call write_profile_var(iunit, col_idx, 'wthlt')
+      call write_profile_var(iunit, col_idx, 'wthvs')
+      call write_profile_var(iunit, col_idx, 'wthvr')
+      call write_profile_var(iunit, col_idx, 'wthvt')
+      call write_profile_var(iunit, col_idx, 'wqts')
+      call write_profile_var(iunit, col_idx, 'wqtr')
+      call write_profile_var(iunit, col_idx, 'wqtt')
+      call write_profile_var(iunit, col_idx, 'wqls')
+      call write_profile_var(iunit, col_idx, 'wqlr')
+      call write_profile_var(iunit, col_idx, 'wqlt')
+      call write_profile_var(iunit, col_idx, 'uws')
+      call write_profile_var(iunit, col_idx, 'uwr')
+      call write_profile_var(iunit, col_idx, 'uwt')
+      call write_profile_var(iunit, col_idx, 'vws')
+      call write_profile_var(iunit, col_idx, 'vwr')
+      call write_profile_var(iunit, col_idx, 'vwt')
+      call write_profile_var(iunit, col_idx, 'w2s')
+      call write_profile_var(iunit, col_idx, 'w2r')
+      call write_profile_var(iunit, col_idx, 'skew')
+      call write_profile_var(iunit, col_idx, 'u2r')
+      call write_profile_var(iunit, col_idx, 'v2r')
+      call write_profile_var(iunit, col_idx, 'thl2r')
+      call write_profile_var(iunit, col_idx, 'thv2r')
+      call write_profile_var(iunit, col_idx, 'th2r')
+      call write_profile_var(iunit, col_idx, 'qt2r')
+      call write_profile_var(iunit, col_idx, 'ql2r')
+      call write_profile_var(iunit, col_idx, 'cs')
+      call write_profile_var(iunit, col_idx, 'cfrac')
+      call write_profile_var(iunit, col_idx, 'hur')
+      call write_profile_var(iunit, col_idx, 'hus')
+      call write_profile_var(iunit, col_idx, 'ta')
+      call write_profile_var(iunit, col_idx, 'clw')
+      call write_profile_var(iunit, col_idx, 'cli')
+      call write_profile_var(iunit, col_idx, 'plw')
+      call write_profile_var(iunit, col_idx, 'pli')
+      do n = 1, nsv
+        call write_profile_var(iunit, col_idx, trim(tracer_prop(n)%tracname))
+        call write_profile_var(iunit, col_idx, trim(tracer_prop(n)%tracname)//'p')
+        call write_profile_var(iunit, col_idx, trim(tracer_prop(n)%tracname)//'2r')
+        call write_profile_var(iunit, col_idx, 'w'//trim(tracer_prop(n)%tracname)//'s')
+        call write_profile_var(iunit, col_idx, 'w'//trim(tracer_prop(n)%tracname)//'r')
+        call write_profile_var(iunit, col_idx, 'w'//trim(tracer_prop(n)%tracname)//'t')
+      end do
+      call write_profile_var(iunit, col_idx, 'tker')
+      call write_profile_var(iunit, col_idx, 'shr')
+      call write_profile_var(iunit, col_idx, 'buo')
+      call write_profile_var(iunit, col_idx, 'trsp')
+      call write_profile_var(iunit, col_idx, 'ptrsp')
+      call write_profile_var(iunit, col_idx, 'sbtke')
+      call write_profile_var(iunit, col_idx, 'sbshr')
+      call write_profile_var(iunit, col_idx, 'sbbuo')
+      call write_profile_var(iunit, col_idx, 'sbdiss')
+      call write_profile_var(iunit, col_idx, 'sbstor')
+      call write_profile_var(iunit, col_idx, 'sbbudg')
+      call write_profile_var(iunit, col_idx, 'sbresid')
+      call write_profile_var(iunit, col_idx, 'ekm')
+      call write_profile_var(iunit, col_idx, 'khkm')
+      call write_profile_var(iunit, col_idx, 'thltend')
+      call write_profile_var(iunit, col_idx, 'thllwtend')
+      call write_profile_var(iunit, col_idx, 'thlswtend')
+      call write_profile_var(iunit, col_idx, 'thlradls')
+      call write_profile_var(iunit, col_idx, 'lwu')
+      call write_profile_var(iunit, col_idx, 'lwd')
+      call write_profile_var(iunit, col_idx, 'swu')
+      call write_profile_var(iunit, col_idx, 'swd')
+      call write_profile_var(iunit, col_idx, 'lwuca')
+      call write_profile_var(iunit, col_idx, 'lwdca')
+      call write_profile_var(iunit, col_idx, 'swuca')
+      call write_profile_var(iunit, col_idx, 'swdca')
+      call write_profile_var(iunit, col_idx, 'thllwtendca')
+      call write_profile_var(iunit, col_idx, 'thlswtendca')
+    end do
+  end subroutine write_profile_buffers
+
+  subroutine read_profile_buffers(iunit)
+    integer, intent(in) :: iunit
+    integer :: col_idx, n
+
+    do col_idx = 1, size(i_local)
+      call read_profile_var(iunit, col_idx, 'rhof')
+      call read_profile_var(iunit, col_idx, 'rhobf')
+      call read_profile_var(iunit, col_idx, 'rhobh')
+      call read_profile_var(iunit, col_idx, 'presh')
+      call read_profile_var(iunit, col_idx, 'u')
+      call read_profile_var(iunit, col_idx, 'v')
+      call read_profile_var(iunit, col_idx, 'w')
+      call read_profile_var(iunit, col_idx, 'thl')
+      call read_profile_var(iunit, col_idx, 'thv')
+      call read_profile_var(iunit, col_idx, 'qt')
+      call read_profile_var(iunit, col_idx, 'ql')
+      call read_profile_var(iunit, col_idx, 'wthls')
+      call read_profile_var(iunit, col_idx, 'wthlr')
+      call read_profile_var(iunit, col_idx, 'wthlt')
+      call read_profile_var(iunit, col_idx, 'wthvs')
+      call read_profile_var(iunit, col_idx, 'wthvr')
+      call read_profile_var(iunit, col_idx, 'wthvt')
+      call read_profile_var(iunit, col_idx, 'wqts')
+      call read_profile_var(iunit, col_idx, 'wqtr')
+      call read_profile_var(iunit, col_idx, 'wqtt')
+      call read_profile_var(iunit, col_idx, 'wqls')
+      call read_profile_var(iunit, col_idx, 'wqlr')
+      call read_profile_var(iunit, col_idx, 'wqlt')
+      call read_profile_var(iunit, col_idx, 'uws')
+      call read_profile_var(iunit, col_idx, 'uwr')
+      call read_profile_var(iunit, col_idx, 'uwt')
+      call read_profile_var(iunit, col_idx, 'vws')
+      call read_profile_var(iunit, col_idx, 'vwr')
+      call read_profile_var(iunit, col_idx, 'vwt')
+      call read_profile_var(iunit, col_idx, 'w2s')
+      call read_profile_var(iunit, col_idx, 'w2r')
+      call read_profile_var(iunit, col_idx, 'skew')
+      call read_profile_var(iunit, col_idx, 'u2r')
+      call read_profile_var(iunit, col_idx, 'v2r')
+      call read_profile_var(iunit, col_idx, 'thl2r')
+      call read_profile_var(iunit, col_idx, 'thv2r')
+      call read_profile_var(iunit, col_idx, 'th2r')
+      call read_profile_var(iunit, col_idx, 'qt2r')
+      call read_profile_var(iunit, col_idx, 'ql2r')
+      call read_profile_var(iunit, col_idx, 'cs')
+      call read_profile_var(iunit, col_idx, 'cfrac')
+      call read_profile_var(iunit, col_idx, 'hur')
+      call read_profile_var(iunit, col_idx, 'hus')
+      call read_profile_var(iunit, col_idx, 'ta')
+      call read_profile_var(iunit, col_idx, 'clw')
+      call read_profile_var(iunit, col_idx, 'cli')
+      call read_profile_var(iunit, col_idx, 'plw')
+      call read_profile_var(iunit, col_idx, 'pli')
+      do n = 1, nsv
+        call read_profile_var(iunit, col_idx, trim(tracer_prop(n)%tracname))
+        call read_profile_var(iunit, col_idx, trim(tracer_prop(n)%tracname)//'p')
+        call read_profile_var(iunit, col_idx, trim(tracer_prop(n)%tracname)//'2r')
+        call read_profile_var(iunit, col_idx, 'w'//trim(tracer_prop(n)%tracname)//'s')
+        call read_profile_var(iunit, col_idx, 'w'//trim(tracer_prop(n)%tracname)//'r')
+        call read_profile_var(iunit, col_idx, 'w'//trim(tracer_prop(n)%tracname)//'t')
+      end do
+      call read_profile_var(iunit, col_idx, 'tker')
+      call read_profile_var(iunit, col_idx, 'shr')
+      call read_profile_var(iunit, col_idx, 'buo')
+      call read_profile_var(iunit, col_idx, 'trsp')
+      call read_profile_var(iunit, col_idx, 'ptrsp')
+      call read_profile_var(iunit, col_idx, 'sbtke')
+      call read_profile_var(iunit, col_idx, 'sbshr')
+      call read_profile_var(iunit, col_idx, 'sbbuo')
+      call read_profile_var(iunit, col_idx, 'sbdiss')
+      call read_profile_var(iunit, col_idx, 'sbstor')
+      call read_profile_var(iunit, col_idx, 'sbbudg')
+      call read_profile_var(iunit, col_idx, 'sbresid')
+      call read_profile_var(iunit, col_idx, 'ekm')
+      call read_profile_var(iunit, col_idx, 'khkm')
+      call read_profile_var(iunit, col_idx, 'thltend')
+      call read_profile_var(iunit, col_idx, 'thllwtend')
+      call read_profile_var(iunit, col_idx, 'thlswtend')
+      call read_profile_var(iunit, col_idx, 'thlradls')
+      call read_profile_var(iunit, col_idx, 'lwu')
+      call read_profile_var(iunit, col_idx, 'lwd')
+      call read_profile_var(iunit, col_idx, 'swu')
+      call read_profile_var(iunit, col_idx, 'swd')
+      call read_profile_var(iunit, col_idx, 'lwuca')
+      call read_profile_var(iunit, col_idx, 'lwdca')
+      call read_profile_var(iunit, col_idx, 'swuca')
+      call read_profile_var(iunit, col_idx, 'swdca')
+      call read_profile_var(iunit, col_idx, 'thllwtendca')
+      call read_profile_var(iunit, col_idx, 'thlswtendca')
+    end do
+  end subroutine read_profile_buffers
+
+  subroutine write_profile_var(iunit, col_idx, name)
+    integer, intent(in) :: iunit, col_idx
+    character(len=*), intent(in) :: name
+    real(field_r), pointer :: ptr(:)
+
+    call ofile%get_pointer(name, global_index(col_idx), ptr)
+    write(iunit) ptr
+  end subroutine write_profile_var
+
+  subroutine read_profile_var(iunit, col_idx, name)
+    integer, intent(in) :: iunit, col_idx
+    character(len=*), intent(in) :: name
+    real(field_r), pointer :: ptr(:)
+
+    call ofile%get_pointer(name, global_index(col_idx), ptr)
+    read(iunit) ptr
+  end subroutine read_profile_var
 
 end module modcolstat

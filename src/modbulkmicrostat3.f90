@@ -34,6 +34,7 @@
 module modbulkmicrostat3
   use modglobal, only : longint
   use modlogging, only: finish
+  use modrestart_registry, only: register_restart_handlers
 
 implicit none
 private
@@ -57,6 +58,7 @@ save
   integer(kind=longint)             :: idtav, itimeav, tnext, tnextwrite
   integer                           :: nsamples
   logical                           :: lmicrostat = .false.
+  logical                           :: initialized = .false.
 
 contains
 
@@ -77,6 +79,8 @@ subroutine initbulkmicrostat3
 
     namelist/NAMBULKMICROSTAT/ &
     lmicrostat, dtav, timeav
+
+    call register_restart_function
 
     dtav  = dtav_glob
     timeav  = timeav_glob
@@ -642,6 +646,54 @@ subroutine initbulkmicrostat3
        endif
     endif
   end subroutine exitbulkmicrostat3
+
+  subroutine register_restart_function
+    if (initialized) return
+    call register_restart_handlers(modname, read_restart_state, write_restart_state)
+    initialized = .true.
+  end subroutine register_restart_function
+
+  subroutine write_restart_state(iunit)
+    use modmicrodata3, only : l_statistics, l_tendencies, statistic_mphys, statistic_sv0_count, &
+                              statistic_sv0_fsum, statistic_sv0_csum, statistic_svp_fsum, &
+                              statistic_svp_csum, tend_fsum
+    integer, intent(in) :: iunit
+
+    write(iunit) lmicrostat, tnext, tnextwrite, nsamples
+    if (.not. lmicrostat) return
+    if (l_statistics) then
+      write(iunit) statistic_mphys
+      write(iunit) statistic_sv0_count
+      write(iunit) statistic_sv0_fsum
+      write(iunit) statistic_sv0_csum
+      write(iunit) statistic_svp_fsum
+      write(iunit) statistic_svp_csum
+    end if
+    if (l_tendencies) then
+      write(iunit) tend_fsum
+    end if
+  end subroutine write_restart_state
+
+  subroutine read_restart_state(iunit)
+    use modmicrodata3, only : l_statistics, l_tendencies, statistic_mphys, statistic_sv0_count, &
+                              statistic_sv0_fsum, statistic_sv0_csum, statistic_svp_fsum, &
+                              statistic_svp_csum, tend_fsum
+    integer, intent(in) :: iunit
+
+    read(iunit) lmicrostat, tnext, tnextwrite, nsamples
+    if (.not. lmicrostat) return
+    if (l_statistics) then
+      read(iunit) statistic_mphys
+      read(iunit) statistic_sv0_count
+      read(iunit) statistic_sv0_fsum
+      read(iunit) statistic_sv0_csum
+      read(iunit) statistic_svp_fsum
+      read(iunit) statistic_svp_csum
+    end if
+    if (l_tendencies) then
+      read(iunit) tend_fsum
+    end if
+  end subroutine read_restart_state
 
 !------------------------------------------------------------------------------!
 

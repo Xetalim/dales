@@ -32,7 +32,9 @@
 
 module modparticles
   use modglobal, only : longint
+  use modrestart_registry, only: register_restart_handlers
 implicit none
+character(len=*), parameter :: modname = 'modparticles'
 PRIVATE
 PUBLIC :: initparticles, particles, exitparticles
 SAVE
@@ -62,6 +64,7 @@ SAVE
   real :: fce
   real,allocatable :: fsm(:)
   integer :: np
+  logical :: initialized = .false.
 
   TYPE :: particle_record
     real :: unique, tstart
@@ -110,6 +113,7 @@ contains
 
     np = 0
     startfilepart = 'partstartpos.'//cexpnr
+    call register_restart_function
   !read namelist and broadcast it to all processors
 
       if(myid==0)then
@@ -1500,6 +1504,53 @@ contains
 
   end subroutine particle_list
   !*****************************************************************************
+
+  subroutine register_restart_function
+    if (initialized) return
+    call register_restart_handlers(modname, read_restart_state, write_restart_state)
+    initialized = .true.
+  end subroutine register_restart_function
+
+  subroutine write_restart_state(iunit)
+    integer, intent(in) :: iunit
+    type (particle_record), pointer :: particle
+    integer :: ip
+
+    write(iunit) lpartic, tnext, tnextwrite, tnextdump, nsamples
+    if (.not. lpartic) return
+
+    write(iunit) nplisted
+    particle => head
+    do ip = 1, nplisted
+      write(iunit) particle%unique, particle%tstart, particle%partstep
+      write(iunit) particle%x, particle%x_prev, particle%xstart, particle%ures, particle%usgs, particle%usgs_prev
+      write(iunit) particle%y, particle%y_prev, particle%ystart, particle%vres, particle%vsgs, particle%vsgs_prev
+      write(iunit) particle%z, particle%z_prev, particle%zstart, particle%wres, particle%wsgs, particle%wsgs_prev
+      write(iunit) particle%sigma2_sgs
+      particle => particle%next
+    end do
+  end subroutine write_restart_state
+
+  subroutine read_restart_state(iunit)
+    integer, intent(in) :: iunit
+    type (particle_record), pointer :: particle
+    integer :: ip, nrestart
+
+    read(iunit) lpartic, tnext, tnextwrite, tnextdump, nsamples
+    if (.not. lpartic) return
+
+    read(iunit) nrestart
+    call particle_quitlist()
+    do ip = 1, nrestart
+      call particle_add(particle)
+      read(iunit) particle%unique, particle%tstart, particle%partstep
+      read(iunit) particle%x, particle%x_prev, particle%xstart, particle%ures, particle%usgs, particle%usgs_prev
+      read(iunit) particle%y, particle%y_prev, particle%ystart, particle%vres, particle%vsgs, particle%vsgs_prev
+      read(iunit) particle%z, particle%z_prev, particle%zstart, particle%wres, particle%wsgs, particle%wsgs_prev
+      read(iunit) particle%sigma2_sgs
+    end do
+    np = nplisted
+  end subroutine read_restart_state
 
 end module modparticles
 

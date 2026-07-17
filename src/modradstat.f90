@@ -32,6 +32,7 @@ module modradstat
   use modglobal, only : longint
   use modprecision, only: field_r
   use modlogging, only: finish
+  use modrestart_registry, only: register_restart_handlers
 
 implicit none
 character(len=*), parameter :: modname = 'modradstat'
@@ -84,6 +85,7 @@ save
   real, allocatable :: swdcamn(:)
   real, allocatable :: swucamn(:)
   real, allocatable :: thlradlsmn(:)
+  logical :: initialized = .false.
 
 contains
 !> Initialization routine, reads namelists and inits variables
@@ -102,6 +104,8 @@ contains
     integer ierr
     namelist/NAMRADSTAT/ &
     dtav,timeav,lstat,lradclearair
+
+    call register_restart_function
 
     dtav=dtav_glob;timeav=timeav_glob
 
@@ -554,6 +558,35 @@ contains
     deallocate(thllwtendcamn,thlswtendcamn)
 
   end subroutine exitradstat
+
+  subroutine register_restart_function
+    if (initialized) return
+    call register_restart_handlers(modname, read_restart_state, write_restart_state)
+    initialized = .true.
+  end subroutine register_restart_function
+
+  subroutine write_restart_state(iunit)
+    integer, intent(in) :: iunit
+
+    write(iunit) lstat, lradclearair, tnext, tnextwrite, nsamples
+    if (.not. lstat) return
+    write(iunit) thltendmn, thllwtendmn, thlswtendmn, thllwtendcamn, thlswtendcamn
+    write(iunit) lwumn, lwdmn, swdmn, swdirmn, swdifmn, swumn
+    write(iunit) lwucamn, lwdcamn, swdcamn, swucamn, thlradlsmn
+  end subroutine write_restart_state
+
+  subroutine read_restart_state(iunit)
+    integer, intent(in) :: iunit
+    read(iunit) lstat, lradclearair, tnext, tnextwrite, nsamples
+    if (.not. lstat) then
+      return
+    end if
+    if (.not. allocated(thltendmn)) return
+
+    read(iunit) thltendmn, thllwtendmn, thlswtendmn, thllwtendcamn, thlswtendcamn
+    read(iunit) lwumn, lwdmn, swdmn, swdirmn, swdifmn, swumn
+    read(iunit) lwucamn, lwdcamn, swdcamn, swucamn, thlradlsmn
+  end subroutine read_restart_state
 
 
 end module modradstat

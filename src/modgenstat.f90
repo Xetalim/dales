@@ -69,6 +69,7 @@ module modgenstat
   use modprecision
   use modtimer
   use modlogging, only: finish
+  use modrestart_registry, only: register_restart_handlers
 
   implicit none
   character(len=*), parameter :: modname = 'modgenstat'
@@ -184,6 +185,7 @@ module modgenstat
   real(field_r),allocatable, dimension(:,:,:)::  thv0
   real(field_r),allocatable, dimension(:)::   thvmav
   real(field_r),allocatable, dimension(:,:,:):: sv0h
+  logical :: initialized = .false.
 
 contains
 
@@ -207,6 +209,8 @@ contains
 
     namelist/NAMGENSTAT/ &
     dtav,timeav,lstat
+
+    call register_restart_function
 
     call timer_tic('modgenstat/initgenstat', 0)
 
@@ -1728,5 +1732,47 @@ contains
     deallocate(sv0h)
 
   end subroutine exitgenstat
+
+  subroutine register_restart_function
+    if (initialized) return
+    call register_restart_handlers(modname, read_restart_state, write_restart_state)
+    initialized = .true.
+  end subroutine register_restart_function
+
+  subroutine write_restart_state(iunit)
+    integer, intent(in) :: iunit
+
+    write(iunit) lstat, tnext, tnextwrite, nsamples
+    if (.not. lstat) return
+
+    write(iunit) umn, vmn, wmn, thlmn, thvmn, qtmn, qlmn, qlhmn, cfracmn, hurmn, tamn
+    write(iunit) clwmn, climn, plwmn, plimn
+    write(iunit) wthlsmn, wthlrmn, wthltmn, wthvsmn, wthvrmn, wthvtmn
+    write(iunit) wqlsmn, wqlrmn, wqltmn, wqtsmn, wqtrmn, wqttmn
+    write(iunit) wsvsmn, wsvrmn, wsvtmn
+    write(iunit) uwtmn, vwtmn, uwrmn, vwrmn, uwsmn, vwsmn
+    write(iunit) w2mn, skewmn, w2submn, u2mn, v2mn, qt2mn, thl2mn, thv2mn, th2mn, ql2mn
+    write(iunit) svmmn, svptmn, svplsmn, svpmn, sv2mn
+    write(iunit) cszmn, qlmnlast, wthvtmnlast
+  end subroutine write_restart_state
+
+  subroutine read_restart_state(iunit)
+    integer, intent(in) :: iunit
+    read(iunit) lstat, tnext, tnextwrite, nsamples
+    if (.not. lstat) then
+      return
+    end if
+    if (.not. allocated(umn)) return
+
+    read(iunit) umn, vmn, wmn, thlmn, thvmn, qtmn, qlmn, qlhmn, cfracmn, hurmn, tamn
+    read(iunit) clwmn, climn, plwmn, plimn
+    read(iunit) wthlsmn, wthlrmn, wthltmn, wthvsmn, wthvrmn, wthvtmn
+    read(iunit) wqlsmn, wqlrmn, wqltmn, wqtsmn, wqtrmn, wqttmn
+    read(iunit) wsvsmn, wsvrmn, wsvtmn
+    read(iunit) uwtmn, vwtmn, uwrmn, vwrmn, uwsmn, vwsmn
+    read(iunit) w2mn, skewmn, w2submn, u2mn, v2mn, qt2mn, thl2mn, thv2mn, th2mn, ql2mn
+    read(iunit) svmmn, svptmn, svplsmn, svpmn, sv2mn
+    read(iunit) cszmn, qlmnlast, wthvtmnlast
+  end subroutine read_restart_state
 
 end module modgenstat

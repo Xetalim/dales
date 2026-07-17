@@ -29,6 +29,7 @@ module modbudget
   use modprecision, only: field_r
   use modglobal, only : longint
   use modlogging, only: finish
+  use modrestart_registry, only: register_restart_handlers
 
   implicit none
   PRIVATE
@@ -74,6 +75,7 @@ module modbudget
 
   logical :: ltkeb     !Switch to tell if the tke   at beg of av periode has been stored
   logical :: lsbtkeb   !Switch to tell if the sbtke at beg of av periode has been stored
+  logical :: initialized = .false.
 
 contains
 !> Initialization routine, reads namelists and inits variables
@@ -92,6 +94,8 @@ contains
     integer ierr
     namelist/NAMBUDGET/ &
          dtav,timeav,lbudget
+
+    call register_restart_function
 
     dtav=dtav_glob;timeav=timeav_glob
 
@@ -897,5 +901,40 @@ end subroutine do_genbudget
     deallocate(sbtkemn,sbshrmn,sbbuomn,sbstormn,sbbudgmn,sbresidmn,sbdissmn,sbtkeb,sbtkeav)
     deallocate(ekmmn,khkmmn)
   end subroutine exitbudget
+
+  subroutine register_restart_function
+    if (initialized) return
+    call register_restart_handlers(modname, read_restart_state, write_restart_state)
+    initialized = .true.
+  end subroutine register_restart_function
+
+  subroutine write_restart_state(iunit)
+    integer, intent(in) :: iunit
+
+    write(iunit) lbudget, tnext, tnextwrite, nsamples
+    if (.not. lbudget) return
+
+    write(iunit) ltkeb, lsbtkeb
+    write(iunit) tkemn, shrmn, buomn, trspmn, ptrspmn, dissmn, stormn, budgmn, residmn
+    write(iunit) tkeb, tkeav
+    write(iunit) sbtkemn, sbshrmn, sbbuomn, sbdissmn, sbstormn, sbbudgmn, sbresidmn
+    write(iunit) sbtkeb, sbtkeav, ekmmn, khkmmn
+  end subroutine write_restart_state
+
+  subroutine read_restart_state(iunit)
+    integer, intent(in) :: iunit
+    read(iunit) lbudget, tnext, tnextwrite, nsamples
+    if (.not. lbudget) then
+      return
+    end if
+
+    if (.not. allocated(tkemn)) return
+
+    read(iunit) ltkeb, lsbtkeb
+    read(iunit) tkemn, shrmn, buomn, trspmn, ptrspmn, dissmn, stormn, budgmn, residmn
+    read(iunit) tkeb, tkeav
+    read(iunit) sbtkemn, sbshrmn, sbbuomn, sbdissmn, sbstormn, sbbudgmn, sbresidmn
+    read(iunit) sbtkeb, sbtkeav, ekmmn, khkmmn
+  end subroutine read_restart_state
 
 end module modbudget

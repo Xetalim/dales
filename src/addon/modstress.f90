@@ -28,8 +28,10 @@
 
 module modstress
   use modglobal, only : longint
+   use modrestart_registry, only: register_restart_handlers
 
   implicit none
+   character(len=*), parameter :: modname = 'modstress'
   PRIVATE
   PUBLIC :: initstressbudget,stressbudgetstat,exitstressbudget
   save
@@ -43,6 +45,7 @@ module modstress
   integer :: nsamples
   logical :: lstress= .false. ! switch for turbulent stress budget
   logical :: lstressb !Switch tot tell  if the stress  at beg of av periode has been stored
+   logical :: initialized = .false.
  
   !time averaged fields
 
@@ -76,6 +79,8 @@ contains
     integer ierr
     namelist/NAMSTRESS/ &
          dtav,timeav,lstress
+
+   call register_restart_function
 
     dtav=dtav_glob;timeav=timeav_glob
 
@@ -163,6 +168,8 @@ contains
 
     use modglobal, only : rk3step,timee, dt_lim
     implicit none
+
+
 
     if (.not. lstress) return
     if (rk3step/=3) return
@@ -1208,6 +1215,8 @@ contains
   
   implicit none
 
+
+
     if(.not.(lstress)) return
 
     deallocate(str_res,str_stor,str_budg)
@@ -1215,6 +1224,35 @@ contains
     deallocate(rstre,rstrb)
 
   end subroutine exitstressbudget
+
+   subroutine register_restart_function
+      if (initialized) return
+      call register_restart_handlers(modname, read_restart_state, write_restart_state)
+      initialized = .true.
+   end subroutine register_restart_function
+
+   subroutine write_restart_state(iunit)
+      integer, intent(in) :: iunit
+
+      write(iunit) lstress, tnext, tnextwrite, nsamples, lstressb
+      if (.not. lstress) return
+      write(iunit) str_res, str_stor, str_budg
+      write(iunit) tstr, tshr, tttr, tbuo, tcor, tptr, tdis, tadv
+      write(iunit) rstrb, rstre
+   end subroutine write_restart_state
+
+   subroutine read_restart_state(iunit)
+      integer, intent(in) :: iunit
+      read(iunit) lstress, tnext, tnextwrite, nsamples, lstressb
+      if (.not. lstress) then
+         return
+      end if
+      if (.not. allocated(str_res)) return
+
+      read(iunit) str_res, str_stor, str_budg
+      read(iunit) tstr, tshr, tttr, tbuo, tcor, tptr, tdis, tadv
+      read(iunit) rstrb, rstre
+   end subroutine read_restart_state
 
 
   subroutine cyclicx(field)
