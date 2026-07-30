@@ -821,12 +821,13 @@ end subroutine calc_canopy_resistance_ags
 subroutine calc_stability
   use modglobal, only : i1, j1, cu, cv, rv, rd
   use modfields, only : u0, v0, thl0, qt0
+  use modtimer, only:   timer_tic, timer_toc
   implicit none
 
 !  real, parameter :: du_min = 0.1
   real :: du, dv
   integer :: i, j
-
+  call timer_tic('lsm_calc_stability_du_thv')
   ! Calculate properties shared by all tiles:
   ! Absolute wind speed difference, and virtual potential temperature atmosphere
   !$acc parallel loop collapse(2) default(present) async(1)
@@ -839,11 +840,13 @@ subroutine calc_stability
           thv_1(i,j) = thl0(i,j,1)  * (1.+(rv/rd-1.)*qt0(i,j,1))
       end do
   end do
-
+  call timer_toc('lsm_calc_stability_du_thv')
+  call timer_tic('lsm_calc_stability_obuk_ustar_ra')
   do ilu=1, nlu
     if (tile(ilu)%lushort == "slb") then; cycle; endif
     call calc_obuk_ustar_ra(tile(ilu))
   end do
+  call timer_toc('lsm_calc_stability_obuk_ustar_ra')
 
 end subroutine calc_stability
 
@@ -3016,17 +3019,123 @@ subroutine calc_root_fractions
     end do
 
 end subroutine calc_root_fractions
+pure function calc_obuk_dirichlet(L_in, du, db_in, zsl, z0m, z0h) result(res)
+    use modsurface, only : psih,psim
+    implicit none
+    real, intent(in) :: L_in, du, db_in, zsl, z0m, z0h
 
+    integer :: m, n, nlim
+    real :: res, L, db, Lmax, L0, Lstart, Lend
+    real :: fx0, fxdif
+
+    ! Local inlined variables
+    real :: fkar
+    real :: logm, logh
+    real :: psim_L0, psim_Ls, psim_Le
+    real :: psih_L0, psih_Ls, psih_Le
+    real :: fm0, fm_s, fm_e
+    real :: fh0, fh_s, fh_e
+
+    !$acc routine seq
+
+    m = 0
+    nlim = 10
+    Lmax = 1e10
+    L = L_in
+    db = db_in
+    fkar = 0.4
+
+    ! Precompute invariant logs
+    logm = log(zsl / z0m)
+    logh = log(zsl / z0h)
+
+    ! Avoid buoyancy difference of zero:
+    if (db >= 0) then
+        db = max(db, 1e-9)
+    else
+        db = min(db, -1e-9)
+    end if
+
+    do while (m <= 1)
+
+        if (L * db <= 0) then
+            nlim = 200
+            if (db >= 0) then
+                L = 1e-9
+            else
+                L = -1e-9
+            end if
+        end if
+
+        n = 0
+        L0 = merge(1e30, -1e30, db >= 0)
+
+        do while (abs((L - L0) / L0) > 0.001 .and. n < nlim .and. abs(L) < Lmax)
+
+            L0 = L
+            Lstart = 0.999 * L
+            Lend   = 1.001 * L
+
+            ! ---- psim / psih at L0, Lstart, Lend ----
+            psim_L0 = psim(zsl / L0)
+            psim_Ls = psim(zsl / Lstart)
+            psim_Le = psim(zsl / Lend)
+
+            psih_L0 = psih(zsl / L0)
+            psih_Ls = psih(zsl / Lstart)
+            psih_Le = psih(zsl / Lend)
+
+            ! ---- inlined fm ----
+            fm0 = fkar / (logm - psim_L0 + psim(z0m / L0))
+            fm_s = fkar / (logm - psim_Ls + psim(z0m / Lstart))
+            fm_e = fkar / (logm - psim_Le + psim(z0m / Lend))
+
+            ! ---- inlined fh ----
+            fh0 = fkar / (logh - psih_L0 + psih(z0h / L0))
+            fh_s = fkar / (logh - psih_Ls + psih(z0h / Lstart))
+            fh_e = fkar / (logh - psih_Le + psih(z0h / Lend))
+
+            ! ---- inlined fx(L0) ----
+            fx0 = zsl / L0 - fkar * zsl * db * fh0 / (du * fm0)**2
+
+            ! ---- derivative (central diff approximation already implicit) ----
+            fxdif = ( &
+             (zsl / Lend - fkar * zsl * db * fh_e / (du * fm_e)**2) - & 
+             (zsl / Lstart - fkar * zsl * db * fh_s / (du * fm_s)**2)& 
+           ) / (Lend - Lstart)
+
+            L = L - fx0 / fxdif
+            n = n + 1
+
+        end do
+
+        if (n < nlim .and. abs(L) < Lmax) then
+            res = L
+            return
+        else
+            L = 1e-9
+            m = m + 1
+            nlim = 200
+        end if
+
+    end do
+
+    res = 1e-9
+
+end function calc_obuk_dirichlet
 !
 ! Iterative Rib -> Obukhov length solver
 !
-function calc_obuk_dirichlet(L_in, du, db_in, zsl, z0m, z0h) result(res)
+pure function calc_obuk_dirichlet_1(L_in, du, db_in, zsl, z0m, z0h) result(res)
+    ! use modtimer, only : timer_tic, timer_toc
     implicit none
     real(field_r), intent(in) :: L_in, du, db_in, zsl, z0m, z0h
 
     integer :: m, n, nlim
     real(field_r) :: res, L, db, Lmax, L0, Lstart, Lend, fx0, fxdif
     !$acc routine seq
+
+    ! call timer_tic('calc_obuk_dirichlet')
 
     m = 0
     nlim = 10
@@ -3089,6 +3198,7 @@ function calc_obuk_dirichlet(L_in, du, db_in, zsl, z0m, z0h) result(res)
         if (n < nlim .and. abs(L) < Lmax) then
             ! Convergence has been reached
             res = L
+            ! call timer_toc('calc_obuk_dirichlet')
             return
         else
             ! Convergence has not been reached, procedure restarted once
@@ -3100,17 +3210,20 @@ function calc_obuk_dirichlet(L_in, du, db_in, zsl, z0m, z0h) result(res)
 
     if (m > 1) then
 #ifndef _OPENACC
-        print*,'WARNING: convergence has not been reached in Obukhov length iteration'
-        print*,'Input: ', L_in, du, db_in, zsl, z0m, z0h
+        ! print*,'WARNING: convergence has not been reached in Obukhov length iteration'
+        ! print*,'Input: ', L_in, du, db_in, zsl, z0m, z0h
 #endif
         !stop
-        res = 1e-9_field_r
+        res = 1e-9
+        ! call timer_toc('calc_obuk_dirichlet')
         return
     end if
 
-end function calc_obuk_dirichlet
+    ! call timer_toc('calc_obuk_dirichlet')
 
-pure function fx(zsl, L, du, db, z0h, z0m) result(res)
+end function calc_obuk_dirichlet_1
+
+pure elemental function fx(zsl, L, du, db, z0h, z0m) result(res)
     implicit none
     real(field_r), intent(in) :: zsl, L, du, db, z0h, z0m
     real(field_r) :: res, fkar
@@ -3119,7 +3232,7 @@ pure function fx(zsl, L, du, db, z0h, z0m) result(res)
     res = zsl/L - fkar * zsl * db * fh(zsl, z0h, L) / (du * fm(zsl, z0m, L))**2
 end function fx
 
-pure function fm(zsl, z0m, L) result(res)
+pure elemental function fm(zsl, z0m, L) result(res)
     use modglobal, only : fkar
     use modsurface, only : psim
     implicit none
@@ -3129,7 +3242,7 @@ pure function fm(zsl, z0m, L) result(res)
     res = fkar / (log(zsl/z0m) - psim(zsl/L) + psim(z0m/L))
 end function fm
 
-pure function fh(zsl, z0h, L) result(res)
+pure elemental function fh(zsl, z0h, L) result(res)
     use modglobal, only : fkar
     use modsurface, only : psih
     implicit none
