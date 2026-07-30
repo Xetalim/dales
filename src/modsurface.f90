@@ -1739,7 +1739,7 @@ contains
     return
   end subroutine getobl
 
-  pure function psim(zeta)
+  pure elemental function psim(zeta)
     implicit none
     !$acc routine seq
 
@@ -1760,7 +1760,7 @@ contains
     return
   end function psim
 
-  pure function psih(zeta)
+  pure elemental function psih(zeta)
 
     implicit none
     !$acc routine seq
