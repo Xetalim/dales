@@ -103,6 +103,7 @@ program DALES
   use modglobal,         only : rk3step,timeleft,lopenbc,rtimee
   use modmpi,            only : initmpicomm
   use modstartup,        only : startup, writerestartfiles,testwctime,teststopfile,exitmodules
+  use modrestart_registry, only : run_restart_readers
   use modtimedep,        only : timedep
   use modboundary,       only : boundary, grwdamp! JvdD ,tqaver
   use modthermodynamics, only : thermodynamics, thermo_crash_pending, thermo_crash_reason, thermo_crash_rtime
@@ -243,6 +244,8 @@ program DALES
   call init_cloudstat
   call initcolstat
   call initvirtualmeasurement
+
+  call run_restart_readers
 
   call init_profiles
   call init_precursor

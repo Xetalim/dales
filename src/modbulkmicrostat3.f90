@@ -654,43 +654,61 @@ subroutine initbulkmicrostat3
   end subroutine register_restart_function
 
   subroutine write_restart_state(iunit)
+    use modrestart_registry, only : write_restart_tag
     use modmicrodata3, only : l_statistics, l_tendencies, statistic_mphys, statistic_sv0_count, &
                               statistic_sv0_fsum, statistic_sv0_csum, statistic_svp_fsum, &
                               statistic_svp_csum, tend_fsum
     integer, intent(in) :: iunit
 
+    call write_restart_tag(iunit, 'header')
     write(iunit) lmicrostat, tnext, tnextwrite, nsamples
     if (.not. lmicrostat) return
     if (l_statistics) then
+      call write_restart_tag(iunit, 'mphys')
       write(iunit) statistic_mphys
+      call write_restart_tag(iunit, 'sv0_count')
       write(iunit) statistic_sv0_count
+      call write_restart_tag(iunit, 'sv0_fsum')
       write(iunit) statistic_sv0_fsum
+      call write_restart_tag(iunit, 'sv0_csum')
       write(iunit) statistic_sv0_csum
+      call write_restart_tag(iunit, 'svp_fsum')
       write(iunit) statistic_svp_fsum
+      call write_restart_tag(iunit, 'svp_csum')
       write(iunit) statistic_svp_csum
     end if
     if (l_tendencies) then
+      call write_restart_tag(iunit, 'tend_fsum')
       write(iunit) tend_fsum
     end if
   end subroutine write_restart_state
 
   subroutine read_restart_state(iunit)
+    use modrestart_registry, only : read_restart_tag
     use modmicrodata3, only : l_statistics, l_tendencies, statistic_mphys, statistic_sv0_count, &
                               statistic_sv0_fsum, statistic_sv0_csum, statistic_svp_fsum, &
                               statistic_svp_csum, tend_fsum
     integer, intent(in) :: iunit
 
+    call read_restart_tag(iunit, 'header', modname)
     read(iunit) lmicrostat, tnext, tnextwrite, nsamples
     if (.not. lmicrostat) return
     if (l_statistics) then
+      call read_restart_tag(iunit, 'mphys', modname)
       read(iunit) statistic_mphys
+      call read_restart_tag(iunit, 'sv0_count', modname)
       read(iunit) statistic_sv0_count
+      call read_restart_tag(iunit, 'sv0_fsum', modname)
       read(iunit) statistic_sv0_fsum
+      call read_restart_tag(iunit, 'sv0_csum', modname)
       read(iunit) statistic_sv0_csum
+      call read_restart_tag(iunit, 'svp_fsum', modname)
       read(iunit) statistic_svp_fsum
+      call read_restart_tag(iunit, 'svp_csum', modname)
       read(iunit) statistic_svp_csum
     end if
     if (l_tendencies) then
+      call read_restart_tag(iunit, 'tend_fsum', modname)
       read(iunit) tend_fsum
     end if
   end subroutine read_restart_state

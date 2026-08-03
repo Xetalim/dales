@@ -22,7 +22,7 @@ module modcolstat
   use modlogging,        only: finish
   use modnetcdf_file_t,  only: multi_profile_file_t
   use modprecision,      only: field_r
-  use modrestart_registry, only: register_restart_handlers
+  use modrestart_registry, only: register_restart_handlers, write_restart_tag, read_restart_tag
   use modstat_nc_files,  only: add_output_file, is_sampling_timestep, is_writing_timestep
 
   implicit none
@@ -861,12 +861,15 @@ contains
     integer, intent(in) :: iunit
     logical :: has_local_profiles
 
+    call write_restart_tag(iunit, 'header')
     write(iunit) lcolstat, nsamples, l_sbtke_beg_set, npoints, x_idx, y_idx
     if (.not. lcolstat) return
     if (allocated(sbtke_beg_col)) then
+      call write_restart_tag(iunit, 'sbtke_buffers')
       write(iunit) sbtke_beg_col, sbtke_last_col
     end if
     has_local_profiles = allocated(i_local) .and. (size(i_local) > 0)
+    call write_restart_tag(iunit, 'has_local_profiles')
     write(iunit) has_local_profiles
     if (has_local_profiles) call write_profile_buffers(iunit)
   end subroutine write_restart_state
@@ -875,13 +878,16 @@ contains
     integer, intent(in) :: iunit
     logical :: has_local_profiles
 
+    call read_restart_tag(iunit, 'header', modname)
     read(iunit) lcolstat, nsamples, l_sbtke_beg_set, npoints, x_idx, y_idx
     if (.not. lcolstat) then
       return
     end if
     if (allocated(sbtke_beg_col)) then
+      call read_restart_tag(iunit, 'sbtke_buffers', modname)
       read(iunit) sbtke_beg_col, sbtke_last_col
     end if
+    call read_restart_tag(iunit, 'has_local_profiles', modname)
     read(iunit) has_local_profiles
     if (has_local_profiles) call read_profile_buffers(iunit)
   end subroutine read_restart_state
@@ -1076,6 +1082,7 @@ contains
     real(field_r), pointer :: ptr(:)
 
     call ofile%get_pointer(name, global_index(col_idx), ptr)
+    call write_restart_tag(iunit, 'profile:'//trim(name))
     write(iunit) ptr
   end subroutine write_profile_var
 
@@ -1085,6 +1092,7 @@ contains
     real(field_r), pointer :: ptr(:)
 
     call ofile%get_pointer(name, global_index(col_idx), ptr)
+    call read_restart_tag(iunit, 'profile:'//trim(name), modname)
     read(iunit) ptr
   end subroutine read_profile_var
 

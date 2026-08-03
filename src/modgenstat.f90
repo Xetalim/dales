@@ -1740,38 +1740,97 @@ contains
   end subroutine register_restart_function
 
   subroutine write_restart_state(iunit)
+    use modrestart_registry, only : write_restart_tag
     integer, intent(in) :: iunit
+    integer :: nsv_restart
 
+    call write_restart_tag(iunit, 'header')
     write(iunit) lstat, tnext, tnextwrite, nsamples
     if (.not. lstat) return
 
+    nsv_restart = 0
+    if (allocated(wsvsmn)) nsv_restart = size(wsvsmn, 2)
+    call write_restart_tag(iunit, 'nsv_count')
+    write(iunit) nsv_restart
+
+    call write_restart_tag(iunit, 'means')
     write(iunit) umn, vmn, wmn, thlmn, thvmn, qtmn, qlmn, qlhmn, cfracmn, hurmn, tamn
+    call write_restart_tag(iunit, 'cloud_hydrometeors')
     write(iunit) clwmn, climn, plwmn, plimn
+    call write_restart_tag(iunit, 'heat_fluxes')
     write(iunit) wthlsmn, wthlrmn, wthltmn, wthvsmn, wthvrmn, wthvtmn
+    call write_restart_tag(iunit, 'moisture_fluxes')
     write(iunit) wqlsmn, wqlrmn, wqltmn, wqtsmn, wqtrmn, wqttmn
-    write(iunit) wsvsmn, wsvrmn, wsvtmn
+    if (nsv_restart > 0) then
+      call write_restart_tag(iunit, 'scalar_fluxes')
+      write(iunit) wsvsmn, wsvrmn, wsvtmn
+    end if
+    call write_restart_tag(iunit, 'momentum_fluxes')
     write(iunit) uwtmn, vwtmn, uwrmn, vwrmn, uwsmn, vwsmn
+    call write_restart_tag(iunit, 'variances')
     write(iunit) w2mn, skewmn, w2submn, u2mn, v2mn, qt2mn, thl2mn, thv2mn, th2mn, ql2mn
-    write(iunit) svmmn, svptmn, svplsmn, svpmn, sv2mn
+    if (nsv_restart > 0) then
+      call write_restart_tag(iunit, 'scalar_moments')
+      write(iunit) svmmn, svptmn, svplsmn, svpmn, sv2mn
+    end if
+    call write_restart_tag(iunit, 'closure_terms')
     write(iunit) cszmn, qlmnlast, wthvtmnlast
   end subroutine write_restart_state
 
   subroutine read_restart_state(iunit)
+    use modmpi, only : myid
+    use modrestart_registry, only : read_restart_tag
     integer, intent(in) :: iunit
+    integer :: nsv_restart, nsv_local
+
+    if (myid == 0) write(*,'(a)') 'modgenstat: reading restart header'
+    call read_restart_tag(iunit, 'header', modname)
     read(iunit) lstat, tnext, tnextwrite, nsamples
     if (.not. lstat) then
       return
     end if
-    if (.not. allocated(umn)) return
 
+    nsv_local = 0
+    if (allocated(wsvsmn)) nsv_local = size(wsvsmn, 2)
+    call read_restart_tag(iunit, 'nsv_count', modname)
+    read(iunit) nsv_restart
+    if (nsv_restart /= nsv_local) then
+      if (myid == 0) then
+        write(*,'(a,i0,a,i0)') 'modgenstat: nsv mismatch in restart. file=', nsv_restart, ' local=', nsv_local
+      end if
+      error stop 3
+    end if
+
+    if (myid == 0) write(*,'(a)') 'modgenstat: reading means block'
+    call read_restart_tag(iunit, 'means', modname)
     read(iunit) umn, vmn, wmn, thlmn, thvmn, qtmn, qlmn, qlhmn, cfracmn, hurmn, tamn
+    if (myid == 0) write(*,'(a)') 'modgenstat: reading cloud/hydrometeor block'
+    call read_restart_tag(iunit, 'cloud_hydrometeors', modname)
     read(iunit) clwmn, climn, plwmn, plimn
+    if (myid == 0) write(*,'(a)') 'modgenstat: reading heat flux block'
+    call read_restart_tag(iunit, 'heat_fluxes', modname)
     read(iunit) wthlsmn, wthlrmn, wthltmn, wthvsmn, wthvrmn, wthvtmn
+    if (myid == 0) write(*,'(a)') 'modgenstat: reading moisture flux block'
+    call read_restart_tag(iunit, 'moisture_fluxes', modname)
     read(iunit) wqlsmn, wqlrmn, wqltmn, wqtsmn, wqtrmn, wqttmn
-    read(iunit) wsvsmn, wsvrmn, wsvtmn
+    if (nsv_restart > 0) then
+      if (myid == 0) write(*,'(a)') 'modgenstat: reading scalar flux block'
+      call read_restart_tag(iunit, 'scalar_fluxes', modname)
+      read(iunit) wsvsmn, wsvrmn, wsvtmn
+    end if
+    if (myid == 0) write(*,'(a)') 'modgenstat: reading momentum flux block'
+    call read_restart_tag(iunit, 'momentum_fluxes', modname)
     read(iunit) uwtmn, vwtmn, uwrmn, vwrmn, uwsmn, vwsmn
+    if (myid == 0) write(*,'(a)') 'modgenstat: reading variances block'
+    call read_restart_tag(iunit, 'variances', modname)
     read(iunit) w2mn, skewmn, w2submn, u2mn, v2mn, qt2mn, thl2mn, thv2mn, th2mn, ql2mn
-    read(iunit) svmmn, svptmn, svplsmn, svpmn, sv2mn
+    if (nsv_restart > 0) then
+      if (myid == 0) write(*,'(a)') 'modgenstat: reading scalar moments block'
+      call read_restart_tag(iunit, 'scalar_moments', modname)
+      read(iunit) svmmn, svptmn, svplsmn, svpmn, sv2mn
+    end if
+    if (myid == 0) write(*,'(a)') 'modgenstat: reading closure block'
+    call read_restart_tag(iunit, 'closure_terms', modname)
     read(iunit) cszmn, qlmnlast, wthvtmnlast
   end subroutine read_restart_state
 

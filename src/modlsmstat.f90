@@ -29,7 +29,7 @@ module modlsmstat
 
   use modglobal, only : longint
   use modlogging, only: finish
-  use modrestart_registry, only: register_restart_handlers
+  use modrestart_registry, only: register_restart_handlers, write_restart_tag, read_restart_tag
 
 implicit none
 character(len=*), parameter :: modname = 'modlsmstat'
@@ -337,19 +337,22 @@ contains
   subroutine write_restart_state(iunit)
     integer, intent(in) :: iunit
 
+    call write_restart_tag(iunit, 'header')
     write(iunit) lstat, tnext, tnextwrite, nsamples
     if (.not. lstat) return
+    call write_restart_tag(iunit, 'lsm_profiles')
     write(iunit) gammasmn, phiwmn, tsoilmn, lambdamn, lambdasmn
   end subroutine write_restart_state
 
   subroutine read_restart_state(iunit)
     integer, intent(in) :: iunit
+    call read_restart_tag(iunit, 'header', modname)
     read(iunit) lstat, tnext, tnextwrite, nsamples
     if (.not. lstat) then
       return
     end if
-    if (.not. allocated(gammasmn)) return
 
+    call read_restart_tag(iunit, 'lsm_profiles', modname)
     read(iunit) gammasmn, phiwmn, tsoilmn, lambdamn, lambdasmn
   end subroutine read_restart_state
 

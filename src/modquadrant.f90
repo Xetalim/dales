@@ -29,7 +29,7 @@ module modquadrant
 
 use modglobal, only : longint
 use modlogging, only: finish
-use modrestart_registry, only: register_restart_handlers
+use modrestart_registry, only: register_restart_handlers, write_restart_tag, read_restart_tag
 
 implicit none
 character(len=*), parameter :: modname = 'modquadrant'
@@ -890,27 +890,38 @@ contains
   subroutine write_restart_state(iunit)
     integer, intent(in) :: iunit
 
+    call write_restart_tag(iunit, 'header')
     write(iunit) lquadrant, hole, iwind, klow, khigh, knr
+    call write_restart_tag(iunit, 'timing')
     write(iunit) tnext, tnextwrite
     if (.not. lquadrant) return
+    call write_restart_tag(iunit, 'means')
     write(iunit) nrsampl, uavl, vavl, wavl, utotavl, thlavl, qtavl
+    call write_restart_tag(iunit, 'variances')
     write(iunit) uvarl, vvarl, wvarl, utotvarl, thlvarl, qtvarl
+    call write_restart_tag(iunit, 'resolved_fluxes')
     write(iunit) svavl, svvarl, wuresl, wvresl, wthlresl, wqtresl
+    call write_restart_tag(iunit, 'subgrid_fluxes')
     write(iunit) wusubl, wvsubl, wthlsubl, wqtsubl, wsvresl, wsvsubl, thlqtcovl
   end subroutine write_restart_state
 
   subroutine read_restart_state(iunit)
     integer, intent(in) :: iunit
+    call read_restart_tag(iunit, 'header', modname)
     read(iunit) lquadrant, hole, iwind, klow, khigh, knr
+    call read_restart_tag(iunit, 'timing', modname)
     read(iunit) tnext, tnextwrite
     if (.not. lquadrant) then
       return
     end if
-    if (.not. allocated(nrsampl)) return
 
+    call read_restart_tag(iunit, 'means', modname)
     read(iunit) nrsampl, uavl, vavl, wavl, utotavl, thlavl, qtavl
+    call read_restart_tag(iunit, 'variances', modname)
     read(iunit) uvarl, vvarl, wvarl, utotvarl, thlvarl, qtvarl
+    call read_restart_tag(iunit, 'resolved_fluxes', modname)
     read(iunit) svavl, svvarl, wuresl, wvresl, wthlresl, wqtresl
+    call read_restart_tag(iunit, 'subgrid_fluxes', modname)
     read(iunit) wusubl, wvsubl, wthlsubl, wqtsubl, wsvresl, wsvsubl, thlqtcovl
   end subroutine read_restart_state
 

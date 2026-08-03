@@ -1760,32 +1760,78 @@ subroutine initsamptend
   end subroutine register_restart_function
 
   subroutine write_restart_state(iunit)
+    use modrestart_registry, only : write_restart_tag
     integer, intent(in) :: iunit
 
+    call write_restart_tag(iunit, 'timing')
     write(iunit) tnext, tnextwrite
+    call write_restart_tag(iunit, 'switches')
     write(iunit) isamptot, ntsamp, ldosamptendwrite, ldosamptendleib, lastrk3coef
     if (.not. lsamptend) return
     if (isamptot == 0) return
 
+    call write_restart_tag(iunit, 'sampling_masks')
     write(iunit) tendmask, nrsamptot, nrsamp, nrsamplast, nrsampnew
-    if (lsamptendu) write(iunit) uptm, upav, upmn, ust
-    if (lsamptendv) write(iunit) vptm, vpav, vpmn, vst
-    if (lsamptendw) write(iunit) wptm, wpav, wpmn, wst
-    if (lsamptendthl) write(iunit) thlptm, thlpav, thlpmn, thlst
-    if (lsamptendqt) write(iunit) qtptm, qtpav, qtpmn, qtst
-    if (lsamptendqr) write(iunit) qrptm, qrpav, qrpmn, qrst
-    if (lsamptendnr) write(iunit) nrptm, nrpav, nrpmn, nrst
-    if (ltenddec) write(iunit) wav, uwav, vsav
-    if (ltenddec .and. lsamptendthl) write(iunit) thlav, thlwav, thlsav, uthlwav, vthlsav, wthlav
-    if (ltenddec .and. lsamptendqt) write(iunit) qtav, qtwav, qtsav, uqtwav, vqtsav, wqtav
-    if (ltenddec .and. lsamptendqr) write(iunit) qrav, qrwav, qrsav, uqrwav, vqrsav, wqrav
-    if (ltenddec .and. lsamptendnr) write(iunit) nrav, nrwav, nrsav, unrwav, vnrsav, wnrav
-    if (ltenddec .and. lqlflux) write(iunit) qlav, qlwav, qlsav, uqlwav, vqlsav, wqlav
+    if (lsamptendu) then
+      call write_restart_tag(iunit, 'u_tendencies')
+      write(iunit) uptm, upav, upmn, ust
+    end if
+    if (lsamptendv) then
+      call write_restart_tag(iunit, 'v_tendencies')
+      write(iunit) vptm, vpav, vpmn, vst
+    end if
+    if (lsamptendw) then
+      call write_restart_tag(iunit, 'w_tendencies')
+      write(iunit) wptm, wpav, wpmn, wst
+    end if
+    if (lsamptendthl) then
+      call write_restart_tag(iunit, 'thl_tendencies')
+      write(iunit) thlptm, thlpav, thlpmn, thlst
+    end if
+    if (lsamptendqt) then
+      call write_restart_tag(iunit, 'qt_tendencies')
+      write(iunit) qtptm, qtpav, qtpmn, qtst
+    end if
+    if (lsamptendqr) then
+      call write_restart_tag(iunit, 'qr_tendencies')
+      write(iunit) qrptm, qrpav, qrpmn, qrst
+    end if
+    if (lsamptendnr) then
+      call write_restart_tag(iunit, 'nr_tendencies')
+      write(iunit) nrptm, nrpav, nrpmn, nrst
+    end if
+    if (ltenddec) then
+      call write_restart_tag(iunit, 'decomp_wind')
+      write(iunit) wav, uwav, vsav
+    end if
+    if (ltenddec .and. lsamptendthl) then
+      call write_restart_tag(iunit, 'decomp_thl')
+      write(iunit) thlav, thlwav, thlsav, uthlwav, vthlsav, wthlav
+    end if
+    if (ltenddec .and. lsamptendqt) then
+      call write_restart_tag(iunit, 'decomp_qt')
+      write(iunit) qtav, qtwav, qtsav, uqtwav, vqtsav, wqtav
+    end if
+    if (ltenddec .and. lsamptendqr) then
+      call write_restart_tag(iunit, 'decomp_qr')
+      write(iunit) qrav, qrwav, qrsav, uqrwav, vqrsav, wqrav
+    end if
+    if (ltenddec .and. lsamptendnr) then
+      call write_restart_tag(iunit, 'decomp_nr')
+      write(iunit) nrav, nrwav, nrsav, unrwav, vnrsav, wnrav
+    end if
+    if (ltenddec .and. lqlflux) then
+      call write_restart_tag(iunit, 'decomp_ql')
+      write(iunit) qlav, qlwav, qlsav, uqlwav, vqlsav, wqlav
+    end if
   end subroutine write_restart_state
 
   subroutine read_restart_state(iunit)
+    use modrestart_registry, only : read_restart_tag
     integer, intent(in) :: iunit
+    call read_restart_tag(iunit, 'timing', modname)
     read(iunit) tnext, tnextwrite
+    call read_restart_tag(iunit, 'switches', modname)
     read(iunit) isamptot, ntsamp, ldosamptendwrite, ldosamptendleib, lastrk3coef
     if (.not. lsamptend) then
       return
@@ -1793,46 +1839,59 @@ subroutine initsamptend
     if (isamptot == 0) then
       return
     end if
-    if (.not. allocated(tendmask)) return
 
+    call read_restart_tag(iunit, 'sampling_masks', modname)
     read(iunit) tendmask, nrsamptot, nrsamp, nrsamplast, nrsampnew
     if (lsamptendu) then
+      call read_restart_tag(iunit, 'u_tendencies', modname)
       read(iunit) uptm, upav, upmn, ust
     end if
     if (lsamptendv) then
+      call read_restart_tag(iunit, 'v_tendencies', modname)
       read(iunit) vptm, vpav, vpmn, vst
     end if
     if (lsamptendw) then
+      call read_restart_tag(iunit, 'w_tendencies', modname)
       read(iunit) wptm, wpav, wpmn, wst
     end if
     if (lsamptendthl) then
+      call read_restart_tag(iunit, 'thl_tendencies', modname)
       read(iunit) thlptm, thlpav, thlpmn, thlst
     end if
     if (lsamptendqt) then
+      call read_restart_tag(iunit, 'qt_tendencies', modname)
       read(iunit) qtptm, qtpav, qtpmn, qtst
     end if
     if (lsamptendqr) then
+      call read_restart_tag(iunit, 'qr_tendencies', modname)
       read(iunit) qrptm, qrpav, qrpmn, qrst
     end if
     if (lsamptendnr) then
+      call read_restart_tag(iunit, 'nr_tendencies', modname)
       read(iunit) nrptm, nrpav, nrpmn, nrst
     end if
     if (ltenddec) then
+      call read_restart_tag(iunit, 'decomp_wind', modname)
       read(iunit) wav, uwav, vsav
     end if
     if (ltenddec .and. lsamptendthl) then
+      call read_restart_tag(iunit, 'decomp_thl', modname)
       read(iunit) thlav, thlwav, thlsav, uthlwav, vthlsav, wthlav
     end if
     if (ltenddec .and. lsamptendqt) then
+      call read_restart_tag(iunit, 'decomp_qt', modname)
       read(iunit) qtav, qtwav, qtsav, uqtwav, vqtsav, wqtav
     end if
     if (ltenddec .and. lsamptendqr) then
+      call read_restart_tag(iunit, 'decomp_qr', modname)
       read(iunit) qrav, qrwav, qrsav, uqrwav, vqrsav, wqrav
     end if
     if (ltenddec .and. lsamptendnr) then
+      call read_restart_tag(iunit, 'decomp_nr', modname)
       read(iunit) nrav, nrwav, nrsav, unrwav, vnrsav, wnrav
     end if
     if (ltenddec .and. lqlflux) then
+      call read_restart_tag(iunit, 'decomp_ql', modname)
       read(iunit) qlav, qlwav, qlsav, uqlwav, vqlsav, wqlav
     end if
   end subroutine read_restart_state

@@ -28,7 +28,7 @@
 module modstattend
   use modprecision, only : longint, field_r
   use modlogging, only: finish
-  use modrestart_registry, only: register_restart_handlers
+  use modrestart_registry, only: register_restart_handlers, write_restart_tag, read_restart_tag
 
   implicit none
   character(len=*), parameter :: modname = 'modstattend'
@@ -519,21 +519,26 @@ subroutine initstattend
   subroutine write_restart_state(iunit)
     integer, intent(in) :: iunit
 
+    call write_restart_tag(iunit, 'header')
     write(iunit) ltend, tnext, tnextwrite, nsamples
     if (.not. ltend) return
+    call write_restart_tag(iunit, 'means')
     write(iunit) upmn, vpmn, wpmn, thlpmn, qtpmn
+    call write_restart_tag(iunit, 'running_averages')
     write(iunit) upav, vpav, wpav, thlpav, qtpav
   end subroutine write_restart_state
 
   subroutine read_restart_state(iunit)
     integer, intent(in) :: iunit
+    call read_restart_tag(iunit, 'header', modname)
     read(iunit) ltend, tnext, tnextwrite, nsamples
     if (.not. ltend) then
       return
     end if
-    if (.not. allocated(upmn)) return
 
+    call read_restart_tag(iunit, 'means', modname)
     read(iunit) upmn, vpmn, wpmn, thlpmn, qtpmn
+    call read_restart_tag(iunit, 'running_averages', modname)
     read(iunit) upav, vpav, wpav, thlpav, qtpav
   end subroutine read_restart_state
 end module

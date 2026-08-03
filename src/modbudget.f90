@@ -29,7 +29,7 @@ module modbudget
   use modprecision, only: field_r
   use modglobal, only : longint
   use modlogging, only: finish
-  use modrestart_registry, only: register_restart_handlers
+  use modrestart_registry, only: register_restart_handlers, write_restart_tag, read_restart_tag
 
   implicit none
   PRIVATE
@@ -911,29 +911,39 @@ end subroutine do_genbudget
   subroutine write_restart_state(iunit)
     integer, intent(in) :: iunit
 
+    call write_restart_tag(iunit, 'header')
     write(iunit) lbudget, tnext, tnextwrite, nsamples
     if (.not. lbudget) return
 
+    call write_restart_tag(iunit, 'flags')
     write(iunit) ltkeb, lsbtkeb
+    call write_restart_tag(iunit, 'resolved_budget')
     write(iunit) tkemn, shrmn, buomn, trspmn, ptrspmn, dissmn, stormn, budgmn, residmn
+    call write_restart_tag(iunit, 'tke_storage')
     write(iunit) tkeb, tkeav
+    call write_restart_tag(iunit, 'sfs_budget')
     write(iunit) sbtkemn, sbshrmn, sbbuomn, sbdissmn, sbstormn, sbbudgmn, sbresidmn
+    call write_restart_tag(iunit, 'sfs_storage')
     write(iunit) sbtkeb, sbtkeav, ekmmn, khkmmn
   end subroutine write_restart_state
 
   subroutine read_restart_state(iunit)
     integer, intent(in) :: iunit
+    call read_restart_tag(iunit, 'header', modname)
     read(iunit) lbudget, tnext, tnextwrite, nsamples
     if (.not. lbudget) then
       return
     end if
 
-    if (.not. allocated(tkemn)) return
-
+    call read_restart_tag(iunit, 'flags', modname)
     read(iunit) ltkeb, lsbtkeb
+    call read_restart_tag(iunit, 'resolved_budget', modname)
     read(iunit) tkemn, shrmn, buomn, trspmn, ptrspmn, dissmn, stormn, budgmn, residmn
+    call read_restart_tag(iunit, 'tke_storage', modname)
     read(iunit) tkeb, tkeav
+    call read_restart_tag(iunit, 'sfs_budget', modname)
     read(iunit) sbtkemn, sbshrmn, sbbuomn, sbdissmn, sbstormn, sbbudgmn, sbresidmn
+    call read_restart_tag(iunit, 'sfs_storage', modname)
     read(iunit) sbtkeb, sbtkeav, ekmmn, khkmmn
   end subroutine read_restart_state
 

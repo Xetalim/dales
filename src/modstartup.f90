@@ -1204,7 +1204,6 @@ contains
     use modmpi,     only : myid, cmyid
     use modsubgriddata, only : ekm,ekh
     use modlsm, only : kmax_soil, tile, nlu
-    use modrestart_registry, only : run_restart_readers
 
 
     character(50) :: name
@@ -1333,7 +1332,6 @@ contains
       close(ifinput)
     end if
 
-    call run_restart_readers
 
   end subroutine readrestartfiles
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!

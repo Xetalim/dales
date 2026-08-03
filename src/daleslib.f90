@@ -73,6 +73,7 @@ module daleslib
             !!----------------------------------------------------------------
             use modmpi,             only : initmpicomm,myid,MPI_COMM
             use modstartup,         only : startup
+            use modrestart_registry, only : run_restart_readers
 
             !----------------------------------------------------------------
             !     0.1     USE STATEMENTS FOR ADDONS STATISTICAL ROUTINES
@@ -184,6 +185,8 @@ module daleslib
             
             !call initspectra2
             call initcape
+
+            call run_restart_readers
             
             !Set additional library information
             my_task=myid

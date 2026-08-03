@@ -7,8 +7,11 @@ module modrestart_registry
   private
 
   integer, parameter :: max_entries = 128
-  integer, parameter :: fmt_version = 1
+  integer, parameter :: fmt_version = 2
+  integer, parameter :: restart_tag_len = 64
   character(len=*), parameter :: magic = 'DALES_STAT_RESTART'
+  character(len=*), parameter :: block_begin_magic = 'DALES_BLOCK_BEGIN'
+  character(len=*), parameter :: block_end_magic = 'DALES_BLOCK_END'
 
   abstract interface
     subroutine restart_writer(iunit)
@@ -33,6 +36,8 @@ module modrestart_registry
   public :: run_restart_writers
   public :: run_restart_readers
   public :: run_cleanups
+  public :: write_restart_tag
+  public :: read_restart_tag
 
 contains
 
@@ -76,8 +81,10 @@ contains
 
     do i = 1, nentries
       if (.not. associated(entries(i)%writer)) cycle
+      write(iunit) block_begin_magic, i
       write(iunit) entries(i)%name
       call entries(i)%writer(iunit)
+      write(iunit) block_end_magic, i
     end do
 
     close(iunit)
@@ -90,10 +97,12 @@ contains
   end subroutine run_restart_writers
 
   subroutine run_restart_readers
-    integer :: i, iunit, nstored, version
+    integer :: i, iunit, nstored, version, block_idx
     character(len=50) :: state_name
     character(len=64) :: name
     character(len=len(magic)) :: file_magic
+    character(len=len(block_begin_magic)) :: begin_magic
+    character(len=len(block_end_magic)) :: end_magic
 
     if (.not. lwarmstart) return
 
@@ -111,8 +120,30 @@ contains
     end if
 
     do i = 1, nstored
+      read(iunit) begin_magic, block_idx
+      if (begin_magic /= block_begin_magic .or. block_idx /= i) then
+        if (myid == 0) then
+          write(*,'(a,i0,a,a,a,i0)') 'Restart block boundary mismatch at block ', i, ': begin_magic=''', trim(begin_magic), ''', block_idx=', block_idx
+        end if
+        error stop 4
+      end if
+
       read(iunit) name
+      if (myid == 0) then
+        write(*,'(a,i0,a,i0,a,a)') 'Reading statistics restart block ', i, '/', nstored, ': ', trim(name)
+      end if
       call dispatch_reader(trim(name), iunit)
+      if (myid == 0) then
+        write(*,'(a,a)') 'Finished statistics restart block: ', trim(name)
+      end if
+
+      read(iunit) end_magic, block_idx
+      if (end_magic /= block_end_magic .or. block_idx /= i) then
+        if (myid == 0) then
+          write(*,'(a,i0,a,a,a,i0)') 'Restart block boundary mismatch at block ', i, ': end_magic=''', trim(end_magic), ''', block_idx=', block_idx
+        end if
+        error stop 5
+      end if
     end do
 
     close(iunit)
@@ -143,8 +174,10 @@ contains
 
     do i = nentries, 1, -1
       if (.not. associated(entries(i)%writer)) cycle
+      write(iunit) block_begin_magic, i
       write(iunit) entries(i)%name
       call entries(i)%writer(iunit)
+      write(iunit) block_end_magic, i
     end do
 
     close(iunit)
@@ -181,5 +214,43 @@ contains
 
     call entries(idx)%reader(iunit)
   end subroutine dispatch_reader
+
+  subroutine write_restart_tag(iunit, tag)
+    integer, intent(in) :: iunit
+    character(len=*), intent(in) :: tag
+    character(len=restart_tag_len) :: tag_fixed
+    integer :: ncopy
+
+    tag_fixed = ' '
+    ncopy = min(len_trim(tag), restart_tag_len)
+    if (ncopy > 0) tag_fixed(1:ncopy) = tag(1:ncopy)
+    write(iunit) tag_fixed
+  end subroutine write_restart_tag
+
+  subroutine read_restart_tag(iunit, expected, block_name)
+    integer, intent(in) :: iunit
+    character(len=*), intent(in) :: expected
+    character(len=*), intent(in), optional :: block_name
+    character(len=restart_tag_len) :: tag_fixed, expected_fixed
+    integer :: ncopy
+
+    read(iunit) tag_fixed
+    expected_fixed = ' '
+    ncopy = min(len_trim(expected), restart_tag_len)
+    if (ncopy > 0) expected_fixed(1:ncopy) = expected(1:ncopy)
+
+    if (tag_fixed /= expected_fixed) then
+      if (myid == 0) then
+        if (present(block_name)) then
+          write(*,'(a,a,a,a,a)') 'Restart tag mismatch in ', trim(block_name), ': expected ''', trim(expected), ''''
+          write(*,'(a,a,a,a,a)') 'Restart tag mismatch in ', trim(block_name), ': found ''', trim(tag_fixed), ''''
+        else
+          write(*,'(a,a,a)') 'Restart tag mismatch: expected ''', trim(expected), ''''
+          write(*,'(a,a,a)') 'Restart tag mismatch: found ''', trim(tag_fixed), ''''
+        end if
+      end if
+      error stop 2
+    end if
+  end subroutine read_restart_tag
 
 end module modrestart_registry

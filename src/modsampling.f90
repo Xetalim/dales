@@ -1159,29 +1159,42 @@ contains
   end subroutine register_restart_function
 
   subroutine write_restart_state(iunit)
+    use modrestart_registry, only : write_restart_tag
     integer, intent(in) :: iunit
 
+    call write_restart_tag(iunit, 'header')
     write(iunit) tnext, tnextwrite, nsamples, isamptot
     if (isamptot < 2) return
+    call write_restart_tag(iunit, 'flux_means')
     write(iunit) nrsampfl, wfavl, thlfavl, thvfavl, qtfavl, qlfavl, massflxhavl
+    call write_restart_tag(iunit, 'flux_covariances')
     write(iunit) wthlthavl, wthvthavl, wqtthavl, wqlthavl, uwthavl, vwthavl, qrfavl
+    call write_restart_tag(iunit, 'higher_order_1')
     write(iunit) nrsamphl, wwrhavl, wwsfavl, pfavl, dwdthavl, dwwdzhavl, dpdzhavl
+    call write_restart_tag(iunit, 'higher_order_2')
     write(iunit) duwdxhavl, dtaudxhavl, dtaudzhavl, thvhavl, fcorhavl, wh_el, sigh_el
+    call write_restart_tag(iunit, 'higher_order_3')
     write(iunit) wadvhavl, subphavl, nrtsamphav
   end subroutine write_restart_state
 
   subroutine read_restart_state(iunit)
+    use modrestart_registry, only : read_restart_tag
     integer, intent(in) :: iunit
+    call read_restart_tag(iunit, 'header', modname)
     read(iunit) tnext, tnextwrite, nsamples, isamptot
     if (isamptot < 2) then
       return
     end if
-    if (.not. allocated(nrsampfl)) return
 
+    call read_restart_tag(iunit, 'flux_means', modname)
     read(iunit) nrsampfl, wfavl, thlfavl, thvfavl, qtfavl, qlfavl, massflxhavl
+    call read_restart_tag(iunit, 'flux_covariances', modname)
     read(iunit) wthlthavl, wthvthavl, wqtthavl, wqlthavl, uwthavl, vwthavl, qrfavl
+    call read_restart_tag(iunit, 'higher_order_1', modname)
     read(iunit) nrsamphl, wwrhavl, wwsfavl, pfavl, dwdthavl, dwwdzhavl, dpdzhavl
+    call read_restart_tag(iunit, 'higher_order_2', modname)
     read(iunit) duwdxhavl, dtaudxhavl, dtaudzhavl, thvhavl, fcorhavl, wh_el, sigh_el
+    call read_restart_tag(iunit, 'higher_order_3', modname)
     read(iunit) wadvhavl, subphavl, nrtsamphav
   end subroutine read_restart_state
 

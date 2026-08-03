@@ -8,7 +8,7 @@ module modvarbudget
 
   use modprecision, only : longint, field_r
   use modlogging, only: finish
-  use modrestart_registry, only: register_restart_handlers
+  use modrestart_registry, only: register_restart_handlers, write_restart_tag, read_restart_tag
   implicit none
   character(len=*), parameter :: modname = 'modvarbudget'
   PRIVATE
@@ -758,21 +758,26 @@ contains
   subroutine write_restart_state(iunit)
     integer, intent(in) :: iunit
 
+    call write_restart_tag(iunit, 'header')
     write(iunit) lvarbudget, tnext, tnextwrite, nsamples
     if (.not. lvarbudget) return
+    call write_restart_tag(iunit, 'thl_variance_budget')
     write(iunit) thl2fav, thl2Prfmn, thl2Psfmn, thl2Trfmn, thl2Disfmn, thl2Sfmn, thl2bf
+    call write_restart_tag(iunit, 'qt_variance_budget')
     write(iunit) qt2fav, qt2Prfmn, qt2Psfmn, qt2Trfmn, qt2Disfmn, qt2Sfmn, qt2bf
   end subroutine write_restart_state
 
   subroutine read_restart_state(iunit)
     integer, intent(in) :: iunit
+    call read_restart_tag(iunit, 'header', modname)
     read(iunit) lvarbudget, tnext, tnextwrite, nsamples
     if (.not. lvarbudget) then
       return
     end if
-    if (.not. allocated(thl2fav)) return
 
+    call read_restart_tag(iunit, 'thl_variance_budget', modname)
     read(iunit) thl2fav, thl2Prfmn, thl2Psfmn, thl2Trfmn, thl2Disfmn, thl2Sfmn, thl2bf
+    call read_restart_tag(iunit, 'qt_variance_budget', modname)
     read(iunit) qt2fav, qt2Prfmn, qt2Psfmn, qt2Trfmn, qt2Disfmn, qt2Sfmn, qt2bf
   end subroutine read_restart_state
 

@@ -32,7 +32,7 @@ module modradstat
   use modglobal, only : longint
   use modprecision, only: field_r
   use modlogging, only: finish
-  use modrestart_registry, only: register_restart_handlers
+  use modrestart_registry, only: register_restart_handlers, write_restart_tag, read_restart_tag
 
 implicit none
 character(len=*), parameter :: modname = 'modradstat'
@@ -568,23 +568,30 @@ contains
   subroutine write_restart_state(iunit)
     integer, intent(in) :: iunit
 
+    call write_restart_tag(iunit, 'header')
     write(iunit) lstat, lradclearair, tnext, tnextwrite, nsamples
     if (.not. lstat) return
+    call write_restart_tag(iunit, 'tendencies')
     write(iunit) thltendmn, thllwtendmn, thlswtendmn, thllwtendcamn, thlswtendcamn
+    call write_restart_tag(iunit, 'radiation_fluxes')
     write(iunit) lwumn, lwdmn, swdmn, swdirmn, swdifmn, swumn
+    call write_restart_tag(iunit, 'clear_air_fluxes')
     write(iunit) lwucamn, lwdcamn, swdcamn, swucamn, thlradlsmn
   end subroutine write_restart_state
 
   subroutine read_restart_state(iunit)
     integer, intent(in) :: iunit
+    call read_restart_tag(iunit, 'header', modname)
     read(iunit) lstat, lradclearair, tnext, tnextwrite, nsamples
     if (.not. lstat) then
       return
     end if
-    if (.not. allocated(thltendmn)) return
 
+    call read_restart_tag(iunit, 'tendencies', modname)
     read(iunit) thltendmn, thllwtendmn, thlswtendmn, thllwtendcamn, thlswtendcamn
+    call read_restart_tag(iunit, 'radiation_fluxes', modname)
     read(iunit) lwumn, lwdmn, swdmn, swdirmn, swdifmn, swumn
+    call read_restart_tag(iunit, 'clear_air_fluxes', modname)
     read(iunit) lwucamn, lwdcamn, swdcamn, swucamn, thlradlsmn
   end subroutine read_restart_state
 
