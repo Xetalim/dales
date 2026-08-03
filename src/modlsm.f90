@@ -3031,19 +3031,19 @@ end subroutine calc_root_fractions
 pure function calc_obuk_dirichlet(L_in, du, db_in, zsl, z0m, z0h) result(res)
     use modsurface, only : psih,psim
     implicit none
-    real, intent(in) :: L_in, du, db_in, zsl, z0m, z0h
+    real(field_r), intent(in) :: L_in, du, db_in, zsl, z0m, z0h
 
     integer :: m, n, nlim
-    real :: res, L, db, Lmax, L0, Lstart, Lend
+    real(field_r) :: res, L, db, Lmax, L0, Lstart, Lend
     real :: fx0, fxdif
 
     ! Local inlined variables
-    real :: fkar
-    real :: logm, logh
-    real :: psim_L0, psim_Ls, psim_Le
-    real :: psih_L0, psih_Ls, psih_Le
-    real :: fm0, fm_s, fm_e
-    real :: fh0, fh_s, fh_e
+    real(field_r) :: fkar
+    real(field_r) :: logm, logh
+    real(field_r) :: psim_L0, psim_Ls, psim_Le
+    real(field_r) :: psih_L0, psih_Ls, psih_Le
+    real(field_r) :: fm0, fm_s, fm_e
+    real(field_r) :: fh0, fh_s, fh_e
 
     !$acc routine seq
 
