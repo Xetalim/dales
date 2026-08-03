@@ -226,20 +226,26 @@ contains
 
   end subroutine initlsmcrosssection
 !>Run lsmcrosssection. Mainly timekeeping
-  subroutine lsmcrosssection
+  subroutine lsmcrosssection(force)
     use modglobal, only : rk3step, timee, dt_lim
 
     implicit none
+    logical, intent(in), optional :: force
+    logical :: force_
 
+    force_ = .false.
+    if (present(force)) force_ = force
 
     if (.not. (lcross .or. lcrosssoil)) return
-    if (rk3step/=3) return
-    if(timee<tnext) then
-      dt_lim = min(dt_lim,tnext-timee)
-      return
+    if (.not. force_) then
+      if (rk3step/=3) return
+      if(timee<tnext) then
+        dt_lim = min(dt_lim,tnext-timee)
+        return
+      end if
+      tnext = tnext+idtav
+      dt_lim = minval((/dt_lim,tnext-timee/))
     end if
-    tnext = tnext+idtav
-    dt_lim = minval((/dt_lim,tnext-timee/))
 
     if (lcrosssoil) then
        call wrtvert
