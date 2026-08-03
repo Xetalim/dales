@@ -200,7 +200,10 @@ contains
   end subroutine initfielddump
 
   !> Do the fielddump.
-  subroutine fielddump()
+  subroutine fielddump(force)
+
+    logical, intent(in), optional :: force
+    logical :: force_
 
     integer :: i, j, k, n, ii, jj, kk
     integer :: iqr
@@ -227,8 +230,11 @@ contains
     real(field_r), pointer :: tntrl(:,:,:)
     real(field_r), pointer :: sv(:,:,:)
 
+    force_ = .false.
+    if (present(force)) force_ = force
+
     if (lfielddump) then
-      if (is_sampling_timestep(ofile_id)) then
+      if (force_ .or. is_sampling_timestep(ofile_id)) then
       
         if (lu) then
           call ofile%get_pointer('u', u) 
