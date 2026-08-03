@@ -27,11 +27,14 @@ module modlsm
 
     character(len=*), parameter :: modname = 'modlsm'
 
-    public :: initlsm, lsm, exitlsm, init_lsm_tiles
+    public :: initlsm, lsm, exitlsm, init_lsm_tiles, lsm_post_initslurb
 
 #ifdef _OPENACC
     real :: rhocp_i(1), rholv_i(1)
 #endif
+
+    logical, save :: obuk_nonconv_in_tstep = .false.
+    logical, allocatable, save :: obuk_nonconv_tile_in_tstep(:)
 
 contains
 
@@ -819,14 +822,31 @@ end subroutine calc_canopy_resistance_ags
 ! Calculate Obukhov length, ustar, and aerodynamic resistance, for all tiles
 !
 subroutine calc_stability
-  use modglobal, only : i1, j1, cu, cv, rv, rd
+    use modglobal, only : i1, j1, cu, cv, rv, rd, rk3step
   use modfields, only : u0, v0, thl0, qt0
+    use modmpi, only : myid
   use modtimer, only:   timer_tic, timer_toc
   implicit none
 
 !  real, parameter :: du_min = 0.1
   real :: du, dv
-  integer :: i, j
+    integer :: i, j, any_nonconv
+    logical :: had_nonconv_tile
+
+    if (.not. allocated(obuk_nonconv_tile_in_tstep)) then
+        allocate(obuk_nonconv_tile_in_tstep(nlu))
+        obuk_nonconv_tile_in_tstep(:) = .false.
+    else if (size(obuk_nonconv_tile_in_tstep) /= nlu) then
+        deallocate(obuk_nonconv_tile_in_tstep)
+        allocate(obuk_nonconv_tile_in_tstep(nlu))
+        obuk_nonconv_tile_in_tstep(:) = .false.
+    end if
+
+    if (rk3step == 1) then
+        obuk_nonconv_in_tstep = .false.
+        obuk_nonconv_tile_in_tstep(:) = .false.
+    end if
+
   call timer_tic('lsm_calc_stability_du_thv')
   ! Calculate properties shared by all tiles:
   ! Absolute wind speed difference, and virtual potential temperature atmosphere
@@ -841,25 +861,70 @@ subroutine calc_stability
       end do
   end do
   call timer_toc('lsm_calc_stability_du_thv')
+
+    !$acc kernels default(present) async(1)
+    obuk_solver(:,:) = 0
+    !$acc end kernels
+
   call timer_tic('lsm_calc_stability_obuk_ustar_ra')
   do ilu=1, nlu
     if (tile(ilu)%lushort == "slb") then; cycle; endif
-    call calc_obuk_ustar_ra(tile(ilu))
+        call calc_obuk_ustar_ra(tile(ilu), had_nonconv=had_nonconv_tile)
+        if (had_nonconv_tile) obuk_nonconv_tile_in_tstep(ilu) = .true.
+
+        !$acc parallel loop collapse(2) default(present) async(1)
+        do j=2,j1
+            do i=2,i1
+                obuk_solver(i,j) = max(obuk_solver(i,j), tile(ilu)%obuk_solver(i,j))
+            end do
+        end do
   end do
   call timer_toc('lsm_calc_stability_obuk_ustar_ra')
+
+    !$acc wait(1)
+    !$acc update host(obuk_solver(2:i1,2:j1))
+    any_nonconv = maxval(obuk_solver(2:i1,2:j1))
+    if (any_nonconv > 0) obuk_nonconv_in_tstep = .true.
+
+    if (rk3step == 3 .and. obuk_nonconv_in_tstep) then
+            if (myid == 0) then
+                    write(*,'(a)') 'WARNING: Obukhov solver did not converge for at least one non-slurb tile in this timestep.'
+                    write(*,'(a)', advance='no') 'WARNING: Unstable (non-converged) tile types:'
+                    do ilu=1,nlu
+                        if (tile(ilu)%lushort == "slb") then
+                            cycle
+                        end if
+                        if (obuk_nonconv_tile_in_tstep(ilu)) then
+                            write(*,'(1x,a)', advance='no') trim(tile(ilu)%lushort)
+                        end if
+                    end do
+                    write(*,*)
+            end if
+            obuk_nonconv_in_tstep = .false.
+            obuk_nonconv_tile_in_tstep(:) = .false.
+    end if
 
 end subroutine calc_stability
 
 !
 ! Calculate Obukhov length and ustar, for single tile
 !
-subroutine calc_obuk_ustar_ra(tile)
-    use modglobal, only : i1, j1, rd, rv, grav, zf
+subroutine calc_obuk_ustar_ra(tile, had_nonconv)
+    use modglobal, only : i1, j1, rd, rv, grav, zf, fkar
+    use modsurface, only : psim, psih
     implicit none
 
     type(T_lsm_tile), intent(inout) :: tile
+    logical, intent(out), optional :: had_nonconv
     integer :: i, j
-    real :: thvs
+    logical :: local_nonconv
+    real(field_r) :: thvs
+    real(field_r) :: l_new, zsl, log_zsl, z0m_i, z0h_i, fm_i, dm_i, dh_i, du_i
+
+    local_nonconv = .false.
+    tile%obuk_solver(:,:) = 0
+    zsl = zf(1)
+    log_zsl = log(zsl)
 
     !$acc parallel loop collapse(2) default(present) async(1)
     do j=2,j1
@@ -876,22 +941,36 @@ subroutine calc_obuk_ustar_ra(tile)
 #endif
 
                 ! Iteratively find Obukhov length
-                tile%obuk(i,j) = calc_obuk_dirichlet( &
-                    tile%obuk(i,j), du_tot(i,j), tile%db(i,j), zf(1), tile%z0m(i,j), tile%z0h(i,j))
+                l_new = calc_obuk_dirichlet( &
+                    tile%obuk(i,j), du_tot(i,j), tile%db(i,j), zsl, tile%z0m(i,j), tile%z0h(i,j))
+                if (abs(l_new) > 1e20_field_r) then
+                    tile%obuk(i,j) = l_new
+                    tile%obuk_solver(i,j) = 1
+                else
+                    tile%obuk(i,j) = l_new
+                    tile%obuk_solver(i,j) = 0
+                end if
+
+                z0m_i = tile%z0m(i,j)
+                z0h_i = tile%z0h(i,j)
+                du_i = du_tot(i,j)
+                dm_i = (log_zsl - log(z0m_i)) - psim(zsl / tile%obuk(i,j)) + psim(z0m_i / tile%obuk(i,j))
+                dh_i = (log_zsl - log(z0h_i)) - psih(zsl / tile%obuk(i,j)) + psih(z0h_i / tile%obuk(i,j))
+                fm_i = fkar / dm_i
+
+                ! Inlined MOST relations reduce function-call overhead in this hot loop.
+                tile%ustar(i,j) = du_i * fm_i
+                tile%ra(i,j) = dm_i * dh_i / (du_i * fkar * fkar)
             !end if
         end do
     end do
 
-    !$acc parallel loop collapse(2) default(present) async(1)
-    do j=2,j1
-        do i=2,i1
-            !if (tile%frac(i,j) > 0) then
-                ! Calculate friction velocity and aerodynamic resistance
-                tile%ustar(i,j) = du_tot(i,j) * fm(zf(1), tile%z0m(i,j), tile%obuk(i,j))
-                tile%ra(i,j)    = 1./(tile%ustar(i,j) * fh(zf(1), tile%z0h(i,j), tile%obuk(i,j)))
-            !end if
-        end do
-    end do
+    if (present(had_nonconv)) then
+        !$acc wait(1)
+        !$acc update host(tile%obuk_solver(2:i1,2:j1))
+        local_nonconv = (maxval(tile%obuk_solver(2:i1,2:j1)) > 0)
+        had_nonconv = local_nonconv
+    end if
 
 end subroutine calc_obuk_ustar_ra
 
@@ -1041,7 +1120,7 @@ end subroutine calc_water_bcs
 ! the diffusion scheme, thermodynamics, ...
 !
 subroutine calc_bulk_bcs
-    use modglobal,   only : i1, j1, i2, j2, cp, rlv, fkar, zf, cu, cv, grav, rv, rd, lopenbc,lboundary,lperiodic
+    use modglobal,   only : i1, j1, i2, j2, cp, rlv, fkar, zf, cu, cv, grav, rv, rd, lopenbc,lboundary,lperiodic,ntrun
     use modfields,   only : rhof, thl0, u0, v0, thvh
     use modsurface,  only : phim, phih, albedo
     use modmpi,      only : excjs
@@ -1074,7 +1153,9 @@ subroutine calc_bulk_bcs
       else
         call calc_tile_bcs(tile(ilu))
       endif
-    call check_array(tile(ilu)%tskin, "tskin", "calc_tile_bcs"//tile(ilu)%lushort, [real(180.0, kind=kind(tile(ilu)%tskin)), real(350.0, kind=kind(tile(ilu)%tskin))], stop_if_invalid=lstop)
+    if (ntrun > 3) then
+        call check_array(tile(ilu)%tskin(2:i1,2:j1), "tskin", "calc_tile_bcs"//tile(ilu)%lushort, [real(180.0, kind=kind(tile(ilu)%tskin)), real(350.0, kind=kind(tile(ilu)%tskin))], stop_if_invalid=lstop)
+    endif
     enddo
 
     !$acc parallel loop collapse(2) default(present) async(1)
@@ -1507,7 +1588,7 @@ subroutine integrate_t_soil
     ! Range check of tsoil
     !$acc update host(tsoil) wait(1)
     !$acc wait(1)
-    call check_array(tsoil, "tsoil", "integrate_t_soil", [real(180.0, kind=kind(tsoil)), real(350.0, kind=kind(tsoil))], stop_if_invalid=lstop, dump_if_invalid=.false.)
+    call check_array(tsoil(2:i1,2:j1,:), "tsoil", "integrate_t_soil", [real(180.0, kind=kind(tsoil)), real(350.0, kind=kind(tsoil))], stop_if_invalid=lstop, dump_if_invalid=.false.)
 
 end subroutine integrate_t_soil
 
@@ -1683,6 +1764,9 @@ subroutine initlsm
     call allocate_on_device()
 
 end subroutine initlsm
+subroutine lsm_post_initslurb
+    call post_init_heterogeneous_nc
+end subroutine lsm_post_initslurb
 
 subroutine allocate_on_device()
 
@@ -1717,6 +1801,7 @@ subroutine allocate_on_device()
   !$acc enter data copyin(lambdas)
   !$acc enter data copyin(lambdash)
   !$acc enter data copyin(land_frac)
+    !$acc enter data copyin(obuk_solver)
   !$acc enter data copyin(phiw)
   !$acc enter data copyin(phiw_source)
   !$acc enter data copyin(phiwm)
@@ -1758,6 +1843,7 @@ subroutine allocate_on_device()
      !$acc enter data copyin(tile(ilu)%laqu)
      !$acc enter data copyin(tile(ilu)%lveg)
      !$acc enter data copyin(tile(ilu)%obuk)
+    !$acc enter data copyin(tile(ilu)%obuk_solver)
      !$acc enter data copyin(tile(ilu)%phiw_mean)
      !$acc enter data copyin(tile(ilu)%qtskin)
      !$acc enter data copyin(tile(ilu)%ra)
@@ -1812,6 +1898,7 @@ subroutine deallocate_from_device()
   !$acc exit data delete(lambdas)
   !$acc exit data delete(lambdash)
   !$acc exit data delete(land_frac)
+    !$acc exit data delete(obuk_solver)
   !$acc exit data delete(phiw)
   !$acc exit data delete(phiw_source)
   !$acc exit data delete(phiwm)
@@ -1850,6 +1937,7 @@ subroutine deallocate_from_device()
      !$acc exit data delete(tile(ilu)%laqu)
      !$acc exit data delete(tile(ilu)%lveg)
      !$acc exit data delete(tile(ilu)%obuk)
+    !$acc exit data delete(tile(ilu)%obuk_solver)
      !$acc exit data delete(tile(ilu)%phiw_mean)
      !$acc exit data delete(tile(ilu)%qtskin)
      !$acc exit data delete(tile(ilu)%ra)
@@ -1895,7 +1983,7 @@ subroutine exitlsm
     deallocate( wl, wlm, wl_max )
     deallocate( throughfall, interception )
     deallocate( f1, f2b )
-    deallocate( du_tot, thv_1, land_frac, cveg )
+    deallocate( du_tot, thv_1, land_frac, cveg, obuk_solver )
     deallocate( lambda, lambdah, lambdas, lambdash, gammas, gammash )
     deallocate( Qnet, H, LE, G0 )
     deallocate( tendskin, cliq, rsveg, rssoil )
@@ -2019,6 +2107,7 @@ subroutine allocate_fields
     allocate(thv_1(i2, j2))
     allocate(land_frac(i2, j2))
     allocate(cveg(i2, j2))
+    allocate(obuk_solver(i2, j2))
 
     ! NOTE: names differ from what is described in modsurfdata!
     ! Diffusivity temperature:
@@ -2061,6 +2150,7 @@ subroutine allocate_fields
     ! initialize, especially the un-used halo
     phiw = 0
     phiwm = 0
+    obuk_solver = 0
 end subroutine allocate_fields
 
 !
@@ -2081,6 +2171,7 @@ subroutine allocate_tile(tile)
 
     ! Monin-obukhov / surface layer:
     allocate(tile % obuk(i2, j2))
+    allocate(tile % obuk_solver(i2, j2))
     allocate(tile % ustar(i2, j2))
     allocate(tile % ra(i2, j2))
 
@@ -2161,7 +2252,7 @@ subroutine deallocate_tile(tile)
     type(T_lsm_tile), intent(inout) :: tile
 
     deallocate( tile%z0m, tile%z0h, tile%base_frac, tile%frac )
-    deallocate( tile%obuk, tile%ustar, tile%ra )
+    deallocate( tile%obuk, tile%obuk_solver, tile%ustar, tile%ra )
     deallocate( tile%lambda_stable, tile%lambda_unstable )
     deallocate( tile%H, tile%LE, tile%G, tile%wthl, tile%wqt, tile%Qnet, tile%albedo)
     deallocate( tile%tskin, tile%thlskin, tile%qtskin)
@@ -2189,11 +2280,16 @@ subroutine init_lsm_tiles
       tile(ilu) % thlskin(:,:) = thlprof(1)
       tile(ilu) % qtskin (:,:) = qtprof(1)
       tile(ilu) % obuk   (:,:) = -0.1
+            tile(ilu) % obuk_solver(:,:) = 0
 
       !$acc update device(tile(ilu)%thlskin)
       !$acc update device(tile(ilu)%qtskin)
       !$acc update device(tile(ilu)%obuk)
+            !$acc update device(tile(ilu)%obuk_solver)
     end do
+
+        obuk_solver(:,:) = 0
+        !$acc update device(obuk_solver)
 
 end subroutine init_lsm_tiles
 
@@ -2764,8 +2860,9 @@ subroutine init_heterogeneous_nc
     tile(ilu_ws)%albedo = 0
 
     do ilu=1,nlu
-        if (tile(ilu)%lushort == "slb") then; cycle; endif
       if (tile(ilu)%laqu) then
+        cycle
+      else if (tile(ilu)%lushort == "slb") then
         cycle
       else
         tile(ilu_ws)%z0m(:,:) = tile(ilu_ws)%z0m(:,:) + tile(ilu)%base_frac(:,:)*tile(ilu)%z0m(:,:)
@@ -2860,6 +2957,16 @@ subroutine init_heterogeneous_nc
     ! !call flush()
 
 end subroutine init_heterogeneous_nc
+subroutine post_init_heterogeneous_nc
+    use modslurb, only : slurb_tile, fraction_slurb
+    integer :: ilu_ws
+    ilu_ws = nlu
+    tile(ilu_ws)%z0m(:,:) = tile(ilu_ws)%z0m(:,:) + fraction_slurb(:,:)*slurb_tile%z0_urb(:,:)
+    tile(ilu_ws)%z0h(:,:) = tile(ilu_ws)%z0h(:,:) + fraction_slurb(:,:)*slurb_tile%z0_urb(:,:)
+    tile(ilu_ws)%lambda_stable(:,:) = tile(ilu_ws)%lambda_stable(:,:) + fraction_slurb(:,:)*0
+    tile(ilu_ws)%lambda_unstable(:,:) = tile(ilu_ws)%lambda_unstable(:,:) + fraction_slurb(:,:)*0 ! assume 0 conductivity for urban surfaces
+    tile(ilu_ws)%albedo = tile(ilu_ws)%albedo + fraction_slurb(:,:)*slurb_tile%albedo_urb(:,:)
+    end subroutine post_init_heterogeneous_nc
 !
 ! Check if the rougness lengths are smaller than the first vertical grid level. If they are larger, MOST is not valid and the model will likely crash.
 !
@@ -3034,109 +3141,181 @@ subroutine calc_root_fractions
 
 end subroutine calc_root_fractions
 pure function calc_obuk_dirichlet(L_in, du, db_in, zsl, z0m, z0h) result(res)
-    use modsurface, only : psih,psim
     implicit none
-    real, intent(in) :: L_in, du, db_in, zsl, z0m, z0h
+    real(field_r), intent(in) :: L_in, du, db_in, zsl, z0m, z0h
 
     integer :: m, n, nlim
-    real :: res, L, db, Lmax, L0, Lstart, Lend
-    real :: fx0, fxdif
-
-    ! Local inlined variables
-    real :: fkar
-    real :: logm, logh
-    real :: psim_L0, psim_Ls, psim_Le
-    real :: psih_L0, psih_Ls, psih_Le
-    real :: fm0, fm_s, fm_e
-    real :: fh0, fh_s, fh_e
-
+    real(field_r), parameter :: fkar_local = 0.4_field_r
+    real(field_r), parameter :: l_floor = 1e-9_field_r
+    real(field_r), parameter :: dfx_floor = 1e-14_field_r
+    real(field_r) :: res, L, db, Lmax, L0, fx0, fxdif
+    real(field_r) :: invL, invL2, c1, log_zsl_over_z0m, log_zsl_over_z0h
+    real(field_r) :: zeta_sl_m, zeta_0m, zeta_sl_h, zeta_0h
+    real(field_r) :: dm, dh, fm_l, fh_l, dmdL, dhdL, q, dqdL
     !$acc routine seq
 
     m = 0
     nlim = 10
-    Lmax = 1e10
+    Lmax = 1e10_field_r
     L = L_in
     db = db_in
-    fkar = 0.4
-
-    ! Precompute invariant logs
-    logm = log(zsl / z0m)
-    logh = log(zsl / z0h)
+    log_zsl_over_z0m = log(zsl / z0m)
+    log_zsl_over_z0h = log(zsl / z0h)
 
     ! Avoid buoyancy difference of zero:
     if (db >= 0) then
-        db = max(db, 1e-9)
+        db = max(db, 1e-9_field_r)
     else
-        db = min(db, -1e-9)
+        db = min(db, -1e-9_field_r)
     end if
 
+    ! Allow for one restart of iterative procedure:
     do while (m <= 1)
-
-        if (L * db <= 0) then
+        ! if L and db are of different sign, or the last calculation did not converge,
+        ! the stability has changed and the procedure needs to be reset
+        if (L*db <= 0) then
             nlim = 200
             if (db >= 0) then
-                L = 1e-9
+                L = l_floor
             else
-                L = -1e-9
+                L = -l_floor
             end if
         end if
 
+        ! Make sure the iteration starts
+        if (db >= 0_field_r) then
+            L0 = 1e30_field_r
+        else
+            L0 = -1e30_field_r
+        end if
+
+        ! Exit on convergence or on iteration count
         n = 0
-        L0 = merge(1e30, -1e30, db >= 0)
+        fxdif = 1
+        do while (abs((L - L0) / L0) > 0.001_field_r .and. n < nlim .and. abs(L) < Lmax)
+            L0     = L
 
-        do while (abs((L - L0) / L0) > 0.001 .and. n < nlim .and. abs(L) < Lmax)
+            if (abs(L0) < l_floor) L0 = sign(l_floor, L0)
+            invL = 1._field_r / L0
+            invL2 = invL * invL
+            c1 = fkar_local * zsl * db / (du * du)
 
-            L0 = L
-            Lstart = 0.999 * L
-            Lend   = 1.001 * L
+            zeta_sl_m = zsl * invL
+            zeta_0m = z0m * invL
+            zeta_sl_h = zeta_sl_m
+            zeta_0h = z0h * invL
 
-            ! ---- psim / psih at L0, Lstart, Lend ----
-            psim_L0 = psim(zsl / L0)
-            psim_Ls = psim(zsl / Lstart)
-            psim_Le = psim(zsl / Lend)
+            dm = log_zsl_over_z0m - psim_local(zeta_sl_m) + psim_local(zeta_0m)
+            dh = log_zsl_over_z0h - psih_local(zeta_sl_h) + psih_local(zeta_0h)
+            fm_l = fkar_local / dm
+            fh_l = fkar_local / dh
 
-            psih_L0 = psih(zsl / L0)
-            psih_Ls = psih(zsl / Lstart)
-            psih_Le = psih(zsl / Lend)
+            q = fh_l / (fm_l * fm_l)
+            fx0 = zsl * invL - c1 * q
 
-            ! ---- inlined fm ----
-            fm0 = fkar / (logm - psim_L0 + psim(z0m / L0))
-            fm_s = fkar / (logm - psim_Ls + psim(z0m / Lstart))
-            fm_e = fkar / (logm - psim_Le + psim(z0m / Lend))
+            dmdL = (zsl * dpsim_dzeta(zeta_sl_m) - z0m * dpsim_dzeta(zeta_0m)) * invL2
+            dhdL = (zsl * dpsih_dzeta(zeta_sl_h) - z0h * dpsih_dzeta(zeta_0h)) * invL2
+            dqdL = (fh_l / (fkar_local * fm_l * fm_l)) * (2._field_r * fm_l * dmdL - fh_l * dhdL)
+            fxdif = -zsl * invL2 - c1 * dqdL
 
-            ! ---- inlined fh ----
-            fh0 = fkar / (logh - psih_L0 + psih(z0h / L0))
-            fh_s = fkar / (logh - psih_Ls + psih(z0h / Lstart))
-            fh_e = fkar / (logh - psih_Le + psih(z0h / Lend))
+            if (abs(fxdif) < dfx_floor) then
+                if (db >= 0._field_r) then
+                    fxdif = dfx_floor
+                else
+                    fxdif = -dfx_floor
+                end if
+            end if
 
-            ! ---- inlined fx(L0) ----
-            fx0 = zsl / L0 - fkar * zsl * db * fh0 / (du * fm0)**2
-
-            ! ---- derivative (central diff approximation already implicit) ----
-            fxdif = ( &
-             (zsl / Lend - fkar * zsl * db * fh_e / (du * fm_e)**2) - & 
-             (zsl / Lstart - fkar * zsl * db * fh_s / (du * fm_s)**2)& 
-           ) / (Lend - Lstart)
-
-            L = L - fx0 / fxdif
-            n = n + 1
-
+            L      = L - fx0/fxdif
+            n      = n+1
         end do
 
         if (n < nlim .and. abs(L) < Lmax) then
+            ! Convergence has been reached
             res = L
             return
         else
-            L = 1e-9
-            m = m + 1
+            ! Convergence has not been reached, procedure restarted once
+            L = l_floor
+            m = m+1
             nlim = 200
         end if
-
     end do
 
-    res = 1e-9
+    if (m > 1) then
+        res = huge(1.0_field_r)
+        ! print*,'WARNING: convergence has not been reached in Obukhov length iteration'
+        ! print*,'Input: ', L_in, du, db_in, zsl, z0m, z0h
+        return
+    end if
+
+    res = L
 
 end function calc_obuk_dirichlet
+
+pure elemental function dpsim_dzeta(zeta) result(res)
+    implicit none
+    !$acc routine seq
+
+    real(field_r), intent(in) :: zeta
+    real(field_r) :: res, x, emz, a
+
+    a = 0.35_field_r
+    if (zeta <= 0._field_r) then
+        emz = 1._field_r - 16._field_r * zeta
+        x = emz ** (0.25_field_r)
+        res = (-4._field_r / (x * x * x)) * (2._field_r / (1._field_r + x) + 2._field_r * (x - 1._field_r) / (1._field_r + x * x))
+    else
+        res = -(2._field_r/3._field_r) * exp(-a * zeta) * (6._field_r - a * zeta) - 1._field_r
+    end if
+end function dpsim_dzeta
+
+pure elemental function psim_local(zeta) result(res)
+    implicit none
+    !$acc routine seq
+
+    real(field_r), intent(in) :: zeta
+    real(field_r) :: res, x
+
+    if (zeta <= 0._field_r) then
+        x = (1._field_r - 16._field_r * zeta) ** (0.25_field_r)
+        res = 3.14159265_field_r / 2._field_r - 2._field_r * atan(x) + log(((1._field_r + x) ** 2 * (1._field_r + x ** 2)) / 8._field_r)
+    else
+        res = -(2._field_r/3._field_r) * (zeta - 5._field_r / 0.35_field_r) * exp(-0.35_field_r * zeta) - zeta - (10._field_r/3._field_r) / 0.35_field_r
+    end if
+end function psim_local
+
+pure elemental function dpsih_dzeta(zeta) result(res)
+    implicit none
+    !$acc routine seq
+
+    real(field_r), intent(in) :: zeta
+    real(field_r) :: res, x, emz, a
+
+    a = 0.35_field_r
+    if (zeta <= 0._field_r) then
+        emz = 1._field_r - 16._field_r * zeta
+        x = emz ** (0.25_field_r)
+        res = -16._field_r / (x * x * (1._field_r + x * x))
+    else
+        res = -(2._field_r/3._field_r) * exp(-a * zeta) * (6._field_r - a * zeta) - sqrt(1._field_r + (2._field_r/3._field_r) * zeta)
+    end if
+end function dpsih_dzeta
+
+pure elemental function psih_local(zeta) result(res)
+    implicit none
+    !$acc routine seq
+
+    real(field_r), intent(in) :: zeta
+    real(field_r) :: res, x
+
+    if (zeta <= 0._field_r) then
+        x = (1._field_r - 16._field_r * zeta) ** (0.25_field_r)
+        res = 2._field_r * log((1._field_r + x ** 2) / 2._field_r)
+    else
+        res = -(2._field_r/3._field_r) * (zeta - 5._field_r / 0.35_field_r) * exp(-0.35_field_r * zeta) - (1._field_r + (2._field_r/3._field_r) * zeta) ** (1.5_field_r) - (10._field_r/3._field_r) / 0.35_field_r + 1._field_r
+    end if
+end function psih_local
 !
 ! Iterative Rib -> Obukhov length solver
 !
@@ -3228,7 +3407,7 @@ pure function calc_obuk_dirichlet_1(L_in, du, db_in, zsl, z0m, z0h) result(res)
         ! print*,'Input: ', L_in, du, db_in, zsl, z0m, z0h
 #endif
         !stop
-        res = 1e-9
+        res = huge(1.0_field_r)
         ! call timer_toc('calc_obuk_dirichlet')
         return
     end if

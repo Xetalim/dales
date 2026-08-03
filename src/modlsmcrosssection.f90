@@ -202,6 +202,7 @@ contains
         call surf_file%add_var('f1', 'f1(SWD) function vegetation resistance', 's/m', 'tt0t')
         call surf_file%add_var('f2_b', 'f2(theta) function soil resistance', 's/m', 'tt0t')
         call surf_file%add_var('Qnet', 'Net radiation', 'W/m^2', 'tt0t')
+        call surf_file%add_var('obuk_solver', 'Obukhov solver non-convergence flag (any tile)', '-', 'tt0t')
         if (lags) then
           call surf_file%add_var('an_co2', 'Net CO2 assimilation', 'ppm m s-1', 'tt0t')
           call surf_file%add_var('resp_co2', 'CO2 respiration soil + plant', 'ppm m s-1', 'tt0t')
@@ -315,7 +316,7 @@ contains
     use modglobal,   only : i1, j1, cp, rlv
     use modfields,   only : rhof, thl0, qt0
     use modlsm,      only : f1, f2b, lags, an_co2, resp_co2
-    use modlsmdata,  only : tile, nlu
+    use modlsmdata,  only : tile, nlu, obuk_solver
     use modstat_nc,  only : lnetcdf
     use modsurfdata, only : Qnet, H, LE, G0, rs, ra, tskin, tendskin, &
                             cliq, rsveg, rssoil, Wl, isurf, obl, ustar, &
@@ -329,7 +330,7 @@ contains
                               hfss_ptr(:,:), hfls_ptr(:,:), obuk_ptr(:,:), ustar_ptr(:,:), cs_ptr(:,:), cm_ptr(:,:), &
                   z0h_ptr(:,:), z0m_ptr(:,:), f1_ptr(:,:), f2_b_ptr(:,:), an_co2_ptr(:,:), resp_co2_ptr(:,:), &
                   dudz_ptr(:,:), dvdz_ptr(:,:), dqtdz_ptr(:,:), dthldz_ptr(:,:), thlskin_ptr(:,:), qtskin_ptr(:,:), &
-                  db_ptr(:,:), thl0_1_ptr(:,:), qt0_1_ptr(:,:)
+                  db_ptr(:,:), thl0_1_ptr(:,:), qt0_1_ptr(:,:), obuk_solver_ptr(:,:)
 
     if (.not. (lnetcdf .and. surf_enabled)) return
 
@@ -393,6 +394,7 @@ contains
       call surf_file%get_pointer('f1', f1_ptr)
       call surf_file%get_pointer('f2_b', f2_b_ptr)
       call surf_file%get_pointer('Qnet', qnet_ptr)
+      call surf_file%get_pointer('obuk_solver', obuk_solver_ptr)
 
       h_ptr(:,:) = H(2:i1,2:j1)
       le_ptr(:,:) = LE(2:i1,2:j1)
@@ -408,6 +410,8 @@ contains
       f1_ptr(:,:) = f1(2:i1,2:j1)
       f2_b_ptr(:,:) = f2b(2:i1,2:j1)
       qnet_ptr(:,:) = Qnet(2:i1,2:j1)
+      !$acc update host(obuk_solver)
+      obuk_solver_ptr(:,:) = real(obuk_solver(2:i1,2:j1), field_r)
       if (lags) then
         call surf_file%get_pointer('an_co2', an_co2_ptr)
         call surf_file%get_pointer('resp_co2', resp_co2_ptr)

@@ -83,7 +83,7 @@ contains
     use modsurface,        only : initsurface
     use moddatetime,       only : initdatetime
     use modemission,       only : initemission
-    use modlsm,            only : initlsm, kmax_soil
+    use modlsm,            only : initlsm, kmax_soil, lsm_post_initslurb
     use modslurb,          only : initslurb
     use moddrydeposition,  only : initdrydep
     use modfields,         only : initfields,um,vm,wm,u0,v0,w0,up,vp,wp,rhobf
@@ -393,6 +393,7 @@ contains
 
     call inittstep
     call initslurb
+    call lsm_post_initslurb
 
     call checkinitvalues
 
