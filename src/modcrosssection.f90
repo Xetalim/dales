@@ -245,19 +245,28 @@ contains
   end subroutine initcrosssection
 
   !> Run crosssection.
-  subroutine crosssection
+  subroutine crosssection(force)
 
-    if (lcross .and. rk3step == 3) then
-      if (lxz) call wrtvert
-      if (lxy) call wrthorz
-      if (lyz) call wrtorth
+    logical, intent(in), optional :: force
+    logical :: force_
+
+    force_ = .false.
+    if (present(force)) force_ = force
+
+    if (lcross .and. (force_ .or. rk3step == 3)) then
+      if (lxz) call wrtvert(force_)
+      if (lxy) call wrthorz(force_)
+      if (lyz) call wrtorth(force_)
     end if
 
   end subroutine crosssection
 
 
   !> Do the xz crosssections and dump them to file.
-  subroutine wrtvert
+  subroutine wrtvert(force)
+
+    logical, intent(in), optional :: force
+    logical :: force_
 
     integer :: i, j, k, n, cross
 
@@ -271,8 +280,11 @@ contains
     real(field_r), pointer :: buoy(:,:)
     real(field_r), pointer :: e12(:,:)
 
+    force_ = .false.
+    if (present(force)) force_ = force
+
     if (nxz > 0) then
-      if (is_sampling_timestep(xz_file_ids(1))) then
+      if (force_ .or. is_sampling_timestep(xz_file_ids(1))) then
         ! Setup the pointers
         ! CJ: this could be done one time during initialization, have to make sure that
         ! the buffer is allocated though...
@@ -314,7 +326,10 @@ contains
   end subroutine wrtvert
 
   !> Do the xy crosssections and dump them to file.
-  subroutine wrthorz
+  subroutine wrthorz(force)
+
+    logical, intent(in), optional :: force
+    logical :: force_
 
     integer :: i, j, k, n, cross
 
@@ -328,7 +343,10 @@ contains
     real(field_r), pointer :: buoy(:,:)
     real(field_r), pointer :: e12(:,:)
 
-    if (is_sampling_timestep(xy_file_ids(1))) then
+    force_ = .false.
+    if (present(force)) force_ = force
+
+    if (force_ .or. is_sampling_timestep(xy_file_ids(1))) then
       do cross = 1, nxy
         call xy_files(cross)%get_pointer('u', u)
         call xy_files(cross)%get_pointer('v', v)
@@ -366,7 +384,10 @@ contains
   end subroutine wrthorz
 
   !> Do the yz crosssections and dump them to file.
-  subroutine wrtorth
+  subroutine wrtorth(force)
+
+    logical, intent(in), optional :: force
+    logical :: force_
 
     integer :: i, j, k, n, cross
 
@@ -380,8 +401,11 @@ contains
     real(field_r), pointer :: buoy(:,:)
     real(field_r), pointer :: e12(:,:)
 
+    force_ = .false.
+    if (present(force)) force_ = force
+
     if (nyz > 0) then
-      if (is_sampling_timestep(yz_file_ids(1))) then
+      if (force_ .or. is_sampling_timestep(yz_file_ids(1))) then
         do cross = 1, nyz
           call yz_files(cross)%get_pointer('u', u)
           call yz_files(cross)%get_pointer('v', v)
