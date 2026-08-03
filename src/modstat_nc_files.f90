@@ -125,11 +125,17 @@ contains
   end subroutine init_output_files
 
   !> Loop over the files and write those that are due.
-  subroutine write_output_files()
+  subroutine write_output_files(force)
     integer :: ifile
+    logical, intent(in), optional :: force
+    logical :: force_
+    force_ = .false.
+    if (present(force)) then
+      force_ = force
+    end if
     call timer_tic("write_output_files")
     do ifile = 1, nfiles
-      if (is_writing_timestep(ifile)) then
+      if (is_writing_timestep(ifile) .or. force_) then
         call file_list(ifile)%file%write
       end if
     end do
