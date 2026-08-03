@@ -100,7 +100,7 @@ program DALES
 !!----------------------------------------------------------------
 !!     0.0    USE STATEMENTS FOR CORE MODULES
 !!----------------------------------------------------------------
-  use modglobal,         only : rk3step,timeleft,lopenbc
+  use modglobal,         only : rk3step,timeleft,lopenbc,rtimee
   use modmpi,            only : initmpicomm
   use modstartup,        only : startup, writerestartfiles,testwctime,teststopfile,exitmodules
   use modtimedep,        only : timedep

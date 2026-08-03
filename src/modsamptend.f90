@@ -1228,15 +1228,20 @@ subroutine initsamptend
   end subroutine leibniztend
 
 !> Write the statistics to file
-  subroutine writesamptend
+  subroutine writesamptend(force)
     use modglobal, only : k1
     use modmpi,    only : myid,comm3d,mpierr,mpi_sum,D_MPI_ALLREDUCE
     use modstat_nc, only: lnetcdf
     implicit none
+    logical, intent(in), optional :: force
+    logical :: force_
     integer :: field,k
 
     if (.not. lsamptend) return
-    if (.not. ldosamptendwrite) return
+    force_ = .false.
+    if (present(force)) force_ = force
+    if (.not. force_ .and. .not. ldosamptendwrite) return
+    if (ntsamp <= 0) return
 
     ldosamptendwrite=.false.
 
