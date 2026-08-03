@@ -29,7 +29,7 @@ module modradfield
   use modraddata,        only: lwd, lwu, swd, swu, lwdca, lwuca, swdca, swuca, &
                                swdir, swdif, sw_up_toa, sw_dn_toa, lw_up_toa, &
                                sw_up_ca_toa, lw_up_ca_toa
-  use modstat_nc_files,  only: add_output_file, is_sampling_timestep
+  use modstat_nc_files,  only: add_output_file, is_sampling_timestep, is_writing_timestep
   use modsurfdata,       only: qtflux, thlflux
   use modthermodynamics, only: calc_qsat
   use modtimer,          only: timer_tic, timer_toc
@@ -135,7 +135,7 @@ contains
     character(len=*), parameter :: routine = modname//'/radfield'
 
     integer       :: i, j, k
-    real(field_r) :: ilratio
+    real(field_r) :: ilratio, scale_rn
 
     real(field_r), pointer :: hfls(:,:)
     real(field_r), pointer :: hfss(:,:)
@@ -248,6 +248,40 @@ contains
         rlut(:,:) = rlut(:,:) + abs(LW_up_TOA(2:i1,2:j1))
         rsutcs(:,:) = rsutcs(:,:) + abs(SW_up_ca_TOA(2:i1,2:j1))
         rlutcs(:,:) = rlutcs(:,:) + abs(LW_up_ca_TOA(2:i1,2:j1))
+
+        if (is_writing_timestep(ofile_id)) then
+          scale_rn = 1.0_field_r / nsamples
+          hfls(:,:) = hfls(:,:) * scale_rn
+          hfss(:,:) = hfss(:,:) * scale_rn
+          rlds(:,:) = rlds(:,:) * scale_rn
+          rlus(:,:) = rlus(:,:) * scale_rn
+          rsds(:,:) = rsds(:,:) * scale_rn
+          rsus(:,:) = rsus(:,:) * scale_rn
+          rsdtm(:,:) = rsdtm(:,:) * scale_rn
+          rldtm(:,:) = rldtm(:,:) * scale_rn
+          rsutm(:,:) = rsutm(:,:) * scale_rn
+          rlutm(:,:) = rlutm(:,:) * scale_rn
+          rsdscs(:,:) = rsdscs(:,:) * scale_rn
+          rsuscs(:,:) = rsuscs(:,:) * scale_rn
+          rldscs(:,:) = rldscs(:,:) * scale_rn
+          rluscs(:,:) = rluscs(:,:) * scale_rn
+          rsutmcs(:,:) = rsutmcs(:,:) * scale_rn
+          rlutmcs(:,:) = rlutmcs(:,:) * scale_rn
+          rsds_dir(:,:) = rsds_dir(:,:) * scale_rn
+          rsds_dif(:,:) = rsds_dif(:,:) * scale_rn
+          prw(:,:) = prw(:,:) * scale_rn
+          clwvi(:,:) = clwvi(:,:) * scale_rn
+          clivi(:,:) = clivi(:,:) * scale_rn
+          spwr(:,:) = spwr(:,:) * scale_rn
+          uabot(:,:) = uabot(:,:) * scale_rn
+          vabot(:,:) = vabot(:,:) * scale_rn
+          tabot(:,:) = tabot(:,:) * scale_rn
+          rsdt(:,:) = rsdt(:,:) * scale_rn
+          rsut(:,:) = rsut(:,:) * scale_rn
+          rlut(:,:) = rlut(:,:) * scale_rn
+          rsutcs(:,:) = rsutcs(:,:) * scale_rn
+          rlutcs(:,:) = rlutcs(:,:) * scale_rn
+        end if
 
         call timer_toc(routine)
       end if
