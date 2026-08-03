@@ -105,7 +105,7 @@ program DALES
   use modstartup,        only : startup, writerestartfiles,testwctime,teststopfile,exitmodules
   use modtimedep,        only : timedep
   use modboundary,       only : boundary, grwdamp! JvdD ,tqaver
-  use modthermodynamics, only : thermodynamics
+  use modthermodynamics, only : thermodynamics, thermo_crash_pending, thermo_crash_reason, thermo_crash_rtime
   use modmicrophysics,   only : microphysics
   use modsurface,        only : surface
   use modlsm,            only : lsm
@@ -115,7 +115,7 @@ program DALES
   use modradiation,      only : radiation
   use modpois,           only : poisson
   use tstep,             only : tstep_update,  tstep_integrate, reset_tendencies
-  use modlogging,        only : initlogging, exitlogging
+  use modlogging,        only : initlogging, exitlogging, finish
   !use modedgecold,       only : coldedge
 
 !----------------------------------------------------------------
@@ -254,6 +254,15 @@ program DALES
   ! Initialize IO
   call init_output_files
 
+  if (thermo_crash_pending) then
+    rtimee = thermo_crash_rtime
+    call fielddump(force=.true.)
+    call crosssection(force=.true.)
+    call lsmcrosssection(force=.true.)
+    call writesamptend(force=.true.)
+    call finish('program', trim(thermo_crash_reason))
+  end if
+
 !------------------------------------------------------
 !   3.0   MAIN TIME LOOP
 !------------------------------------------------------
@@ -374,6 +383,16 @@ program DALES
     !   3.8   LIQUID WATER CONTENT AND DIAGNOSTIC FIELDS
     !-----------------------------------------------------
         call thermodynamics
+        if (thermo_crash_pending) then
+          rtimee = thermo_crash_rtime
+          call fielddump(force=.true.)
+          call crosssection(force=.true.)
+          call lsmcrosssection(force=.true.)
+          call writesamptend(force=.true.)
+          call write_output_files(force=.true.)
+          call close_output_files()
+          call finish('program', trim(thermo_crash_reason))
+        end if
         call leibniztend
         call writesamptend
     !-----------------------------------------------------

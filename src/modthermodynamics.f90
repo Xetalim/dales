@@ -27,13 +27,13 @@ module modthermodynamics
   use modglobal,       only: checknamelisterror, ifnamopt, i1, j1, k1, ih, jh, &
                              rv, rlv, cp, rd, dzf, dzhi, iadv_kappa, iadv_qt, &
                              iadv_thl, tdn, tup, timee, ijtot, kmax, zf, dzh, &
-                             eps1, cu, cv, grav, pref0, nsv, zh
+                             eps1, cu, cv, grav, pref0, nsv, zh, rtimee
   use modfields,       only: qt0, thl0, qt0h, thl0h, ql0, presf, exnf, thvh, &
                              thv0h, qt0av, ql0av, thvf, rhof, ql0h, presh, exnh, &
                              u0, v0, sv0, u0av, v0av, thl0av, ql0av, sv0av, &
                              tmp0, dthvdz, thl0h, qt0h, esl, qvsl, qvsi
   use modsurfdata,     only: qts, thls, ps, dthldz, dqtdz
-  use modmpi,          only: myid, d_mpi_bcast, commwrld, slabsum
+  use modmpi,          only: myid, d_mpi_bcast, commwrld, slabsum, comm3d
   use modmicrodata,    only: imicro, imicro_bulk3, imicro_none
   use modibm,          only: fluid_mask
   use modibmdata,      only: lapply_ibm
@@ -42,6 +42,7 @@ module modthermodynamics
   use modprecision,    only: field_r
   use modtimer,        only: timer_tic, timer_toc
   use fortran_support, only: nnml_output, finish
+  use mpi
   implicit none
   character(len=*), parameter :: modname = 'modthermodynamics'
 !   private
@@ -53,6 +54,7 @@ module modthermodynamics
   public :: calc_qsat
   public :: thermodynamics_read_namelist
   public :: calc_halflev
+  public :: thermo_crash_pending, thermo_crash_i, thermo_crash_j, thermo_crash_k, thermo_crash_reason, thermo_crash_rtime
 
   logical :: lmoist = .true.       !< Switch to calculate moisture fields.
   logical :: lnoclouds = .false.   !< Switch to enable/disable thl calculations.
@@ -68,6 +70,11 @@ module modthermodynamics
   real(field_r), protected :: esatltab(1:2000)
   real(field_r), protected :: esatitab(1:2000)
   real(field_r), protected :: esatmtab(1:2000)
+
+  logical :: thermo_crash_pending = .false.
+  integer :: thermo_crash_i = 0, thermo_crash_j = 0, thermo_crash_k = 0
+  character(len=128) :: thermo_crash_reason = ''
+  real :: thermo_crash_rtime = 0.0
 
   !$acc declare create(ttab, esatltab, esatitab, esatmtab)
 
@@ -161,9 +168,21 @@ contains
     character(len=*), parameter :: routine = modname//'/thermodynamics'
 
     integer:: i, j, k
+    integer :: mpierr
+    integer :: bad_i, bad_j, bad_k
 
     real(field_r) :: T
     logical :: too_hot, too_cold
+
+    thermo_crash_pending = .false.
+    thermo_crash_reason = ''
+    thermo_crash_i = 0
+    thermo_crash_j = 0
+    thermo_crash_k = 0
+    thermo_crash_rtime = 0.0
+    bad_i = 0
+    bad_j = 0
+    bad_k = 0
 
     call timer_tic(routine, 0)
 
@@ -186,9 +205,19 @@ contains
           do i = 2, i1
             T = thl0(i,j,k) * exnf(k)
             if (T < 150) then
+              if (bad_i == 0) then
+                bad_i = i
+                bad_j = j
+                bad_k = k
+              end if
               !$acc atomic write
               too_cold = .true.
             else if (T > 550) then
+              if (bad_i == 0) then
+                bad_i = i
+                bad_j = j
+                bad_k = k
+              end if
               !$acc atomic write
               too_hot = .true.
             end if
@@ -198,11 +227,32 @@ contains
 
       !$acc wait
       if (too_cold) then
-        call finish(routine, 'temperature below 150 K encountered!')
+        thermo_crash_pending = .true.
+        thermo_crash_reason = 'temperature below 150 K encountered!'
+        thermo_crash_i = bad_i
+        thermo_crash_j = bad_j
+        thermo_crash_k = bad_k
+        thermo_crash_rtime = rtimee
+        ! return
       else if (too_hot) then
-        call finish(routine, 'temperature above 550 K encountered!')
+        thermo_crash_pending = .true.
+        thermo_crash_reason = 'temperature above 550 K encountered!'
+        thermo_crash_i = bad_i
+        thermo_crash_j = bad_j
+        thermo_crash_k = bad_k
+        thermo_crash_rtime = rtimee
+        ! return
       end if
 
+      call MPI_ALLREDUCE(thermo_crash_pending, thermo_crash_pending, 1, MPI_LOGICAL, MPI_LOR, MPI_COMM_WORLD, mpierr)
+      if (thermo_crash_pending) then
+        thermo_crash_reason = "wrong temperature"
+        thermo_crash_i = 1
+        thermo_crash_j = 1
+        thermo_crash_k = 1
+        thermo_crash_rtime = rtimee
+        return
+      end if
       ! Do the saturation adjustment on the full levels
 #if defined(DALES_GPU)
       call saturation_adjustment_gpu(qt0, thl0, presf, exnf, ql0, opt_stream=1)
