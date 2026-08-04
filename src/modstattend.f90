@@ -28,7 +28,6 @@
 module modstattend
   use modprecision, only : longint, field_r
   use modlogging, only: finish
-  use modrestart_registry, only: register_restart_handlers
 
   implicit none
   character(len=*), parameter :: modname = 'modstattend'
@@ -49,7 +48,6 @@ module modstattend
   integer,parameter :: nrfields = 11
   integer :: nsamples
   logical :: ltend = .false.
-  logical :: initialized = .false.
 
   real, allocatable :: upmn(:,:),vpmn(:,:),wpmn(:,:),thlpmn(:,:),qtpmn(:,:)
   real, allocatable :: upav(:,:),vpav(:,:),wpav(:,:),thlpav(:,:),qtpav(:,:)
@@ -69,10 +67,9 @@ subroutine initstattend
 
     integer :: ierr
 
+
     namelist/NAMSTATTEND/ &
     timeav,dtav,ltend
-
-    call register_restart_function
 
     dtav=dtav_glob;timeav=timeav_glob
 
@@ -509,31 +506,4 @@ subroutine initstattend
     deallocate (upav,vpav,wpav,thlpav,qtpav)
 
   end subroutine exitstattend
-
-  subroutine register_restart_function
-    if (initialized) return
-    call register_restart_handlers(modname, read_restart_state, write_restart_state)
-    initialized = .true.
-  end subroutine register_restart_function
-
-  subroutine write_restart_state(iunit)
-    integer, intent(in) :: iunit
-
-    write(iunit) ltend, tnext, tnextwrite, nsamples
-    if (.not. ltend) return
-    write(iunit) upmn, vpmn, wpmn, thlpmn, qtpmn
-    write(iunit) upav, vpav, wpav, thlpav, qtpav
-  end subroutine write_restart_state
-
-  subroutine read_restart_state(iunit)
-    integer, intent(in) :: iunit
-    read(iunit) ltend, tnext, tnextwrite, nsamples
-    if (.not. ltend) then
-      return
-    end if
-    if (.not. allocated(upmn)) return
-
-    read(iunit) upmn, vpmn, wpmn, thlpmn, qtpmn
-    read(iunit) upav, vpav, wpav, thlpav, qtpav
-  end subroutine read_restart_state
 end module

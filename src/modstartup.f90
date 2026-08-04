@@ -1204,7 +1204,6 @@ contains
     use modmpi,     only : myid, cmyid
     use modsubgriddata, only : ekm,ekh
     use modlsm, only : kmax_soil, tile, nlu
-    use modrestart_registry, only : run_restart_readers
 
 
     character(50) :: name
@@ -1333,8 +1332,6 @@ contains
       close(ifinput)
     end if
 
-    call run_restart_readers
-
   end subroutine readrestartfiles
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
@@ -1418,12 +1415,11 @@ contains
     use modmpi,    only : cmyid,myid
     use modsubgriddata, only : ekm,ekh
     use modlsm,    only : kmax_soil, tile, nlu
-    use modrestart_registry, only : run_restart_writers
 
     implicit none
     integer imin,ihour
     integer i,j,k,n, ilu
-    character(50) name,linkname,restart_name
+    character(50) name,linkname
 
       ihour = floor(rtimee/3600)
       imin  = floor((rtimee-ihour * 3600) /3600. * 60.)
@@ -1432,7 +1428,6 @@ contains
       write (name(11:12),'(i2.2)') imin
       name(14:21)= cmyid
       name(23:25)= cexpnr
-      restart_name = name
       open  (ifoutput,file=trim(output_prefix)//name,form='unformatted',status='replace')
 
       write(ifoutput)  (((u0 (i,j,k),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1)
@@ -1563,8 +1558,6 @@ contains
         write(*,'(A,F15.7,A,I4)') 'dump at time = ',rtimee,' unit = ',ifoutput
       end if
 
-      call run_restart_writers(restart_name)
-
   end subroutine do_writerestartfiles
 
   subroutine testwctime
@@ -1589,8 +1582,8 @@ contains
 
   subroutine exitmodules
     use modfields,         only : exitfields
-    use modglobal,         only : exitglobal,lopenbc,rtimee,cexpnr
-    use modmpi,            only : exitmpi,cmyid
+    use modglobal,         only : exitglobal,lopenbc
+    use modmpi,            only : exitmpi
     use modboundary,       only : exitboundary
     use modmicrophysics,   only : exitmicrophysics
     use modpois,           only : exitpois
@@ -1608,7 +1601,6 @@ contains
     use modibm,            only : exitibm
     use modchecksim,       only : exitchecksim
     use tstep,             only : exittstep
-    
 
     call exittimedep
     call exitthermodynamics

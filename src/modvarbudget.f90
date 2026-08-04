@@ -8,7 +8,6 @@ module modvarbudget
 
   use modprecision, only : longint, field_r
   use modlogging, only: finish
-  use modrestart_registry, only: register_restart_handlers
   implicit none
   character(len=*), parameter :: modname = 'modvarbudget'
   PRIVATE
@@ -23,7 +22,6 @@ module modvarbudget
   integer(kind=longint) :: idtav, itimeav,tnext,tnextwrite
   integer :: nsamples
   logical :: lvarbudget= .false. ! switch for variance budgets
-  logical :: initialized = .false.
 
   real, allocatable  :: thl2fav    (:)                 ! variance at full level &
   real, allocatable  :: thl2Prfav  (:), thl2Prfmn(:)   ! resolved production of variance at full level &
@@ -63,8 +61,6 @@ contains
     integer ierr
     namelist/NAMVARBUDGET/ &
     dtav,timeav,lvarbudget
-
-    call register_restart_function
 
     dtav=dtav_glob;timeav=timeav_glob
 
@@ -748,33 +744,6 @@ contains
     end if
 
   end subroutine exitvarbudget
-
-  subroutine register_restart_function
-    if (initialized) return
-    call register_restart_handlers(modname, read_restart_state, write_restart_state)
-    initialized = .true.
-  end subroutine register_restart_function
-
-  subroutine write_restart_state(iunit)
-    integer, intent(in) :: iunit
-
-    write(iunit) lvarbudget, tnext, tnextwrite, nsamples
-    if (.not. lvarbudget) return
-    write(iunit) thl2fav, thl2Prfmn, thl2Psfmn, thl2Trfmn, thl2Disfmn, thl2Sfmn, thl2bf
-    write(iunit) qt2fav, qt2Prfmn, qt2Psfmn, qt2Trfmn, qt2Disfmn, qt2Sfmn, qt2bf
-  end subroutine write_restart_state
-
-  subroutine read_restart_state(iunit)
-    integer, intent(in) :: iunit
-    read(iunit) lvarbudget, tnext, tnextwrite, nsamples
-    if (.not. lvarbudget) then
-      return
-    end if
-    if (.not. allocated(thl2fav)) return
-
-    read(iunit) thl2fav, thl2Prfmn, thl2Psfmn, thl2Trfmn, thl2Disfmn, thl2Sfmn, thl2bf
-    read(iunit) qt2fav, qt2Prfmn, qt2Psfmn, qt2Trfmn, qt2Disfmn, qt2Sfmn, qt2bf
-  end subroutine read_restart_state
 
 
 !---------------------------------------------------------------------------

@@ -29,7 +29,6 @@ module modlsmstat
 
   use modglobal, only : longint
   use modlogging, only: finish
-  use modrestart_registry, only: register_restart_handlers
 
 implicit none
 character(len=*), parameter :: modname = 'modlsmstat'
@@ -60,7 +59,6 @@ save
   real, allocatable :: tsoilmn(:)
   real, allocatable :: lambdamn(:)
   real, allocatable :: lambdasmn(:)
-  logical :: initialized = .false.
 
 contains
 !> Initialization routine, reads namelists and inits variables
@@ -79,8 +77,6 @@ contains
     integer ierr, kdim_soil
     namelist/NAMLSMSTAT/ &
     dtav,timeav,lstat
-
-    call register_restart_function
 
     dtav=dtav_glob;timeav=timeav_glob
     lstat = .false.
@@ -327,31 +323,6 @@ contains
 
 
   end subroutine exitlsmstat
-
-  subroutine register_restart_function
-    if (initialized) return
-    call register_restart_handlers(modname, read_restart_state, write_restart_state)
-    initialized = .true.
-  end subroutine register_restart_function
-
-  subroutine write_restart_state(iunit)
-    integer, intent(in) :: iunit
-
-    write(iunit) lstat, tnext, tnextwrite, nsamples
-    if (.not. lstat) return
-    write(iunit) gammasmn, phiwmn, tsoilmn, lambdamn, lambdasmn
-  end subroutine write_restart_state
-
-  subroutine read_restart_state(iunit)
-    integer, intent(in) :: iunit
-    read(iunit) lstat, tnext, tnextwrite, nsamples
-    if (.not. lstat) then
-      return
-    end if
-    if (.not. allocated(gammasmn)) return
-
-    read(iunit) gammasmn, phiwmn, tsoilmn, lambdamn, lambdasmn
-  end subroutine read_restart_state
 
 
 end module modlsmstat

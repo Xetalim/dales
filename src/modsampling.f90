@@ -36,7 +36,6 @@ module modsampling
 use modglobal, only : longint, field_r
 use modsampdata
 use modlogging, only: finish
-use modrestart_registry, only: register_restart_handlers
 
 implicit none
 character(len=*), parameter :: modname = 'modsampling'
@@ -60,7 +59,6 @@ save
   integer,allocatable, dimension(:,:) :: nrtsamphav
   character(80) :: fname = 'sampling.xxx.nc'
   integer :: ncid,nrec = 0
-  logical :: initialized = .false.
 
 contains
 !> Initialization routine, reads namelists and inits variables
@@ -81,8 +79,6 @@ contains
     namelist/NAMSAMPLING/ &
     dtav,timeav,lsampcl,lsampco,lsampup,lsampbuup,lsampcldup,lsamptend,lprocblock,ltenddec,ltendleib, &
     lsamptendu,lsamptendv,lsamptendw,lsamptendthl,lsamptendqt,lsamptendqr,lsamptendnr, lqlflux
-
-    call register_restart_function
 
 !     dtav=dtav_glob;timeav=timeav_glob
 
@@ -1151,38 +1147,5 @@ contains
     deallocate (subphav, subphmn)
 
   end subroutine writesampling
-
-  subroutine register_restart_function
-    if (initialized) return
-    call register_restart_handlers(modname, read_restart_state, write_restart_state)
-    initialized = .true.
-  end subroutine register_restart_function
-
-  subroutine write_restart_state(iunit)
-    integer, intent(in) :: iunit
-
-    write(iunit) tnext, tnextwrite, nsamples, isamptot
-    if (isamptot < 2) return
-    write(iunit) nrsampfl, wfavl, thlfavl, thvfavl, qtfavl, qlfavl, massflxhavl
-    write(iunit) wthlthavl, wthvthavl, wqtthavl, wqlthavl, uwthavl, vwthavl, qrfavl
-    write(iunit) nrsamphl, wwrhavl, wwsfavl, pfavl, dwdthavl, dwwdzhavl, dpdzhavl
-    write(iunit) duwdxhavl, dtaudxhavl, dtaudzhavl, thvhavl, fcorhavl, wh_el, sigh_el
-    write(iunit) wadvhavl, subphavl, nrtsamphav
-  end subroutine write_restart_state
-
-  subroutine read_restart_state(iunit)
-    integer, intent(in) :: iunit
-    read(iunit) tnext, tnextwrite, nsamples, isamptot
-    if (isamptot < 2) then
-      return
-    end if
-    if (.not. allocated(nrsampfl)) return
-
-    read(iunit) nrsampfl, wfavl, thlfavl, thvfavl, qtfavl, qlfavl, massflxhavl
-    read(iunit) wthlthavl, wthvthavl, wqtthavl, wqlthavl, uwthavl, vwthavl, qrfavl
-    read(iunit) nrsamphl, wwrhavl, wwsfavl, pfavl, dwdthavl, dwwdzhavl, dpdzhavl
-    read(iunit) duwdxhavl, dtaudxhavl, dtaudzhavl, thvhavl, fcorhavl, wh_el, sigh_el
-    read(iunit) wadvhavl, subphavl, nrtsamphav
-  end subroutine read_restart_state
 
 end module modsampling

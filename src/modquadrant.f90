@@ -29,7 +29,6 @@ module modquadrant
 
 use modglobal, only : longint
 use modlogging, only: finish
-use modrestart_registry, only: register_restart_handlers
 
 implicit none
 character(len=*), parameter :: modname = 'modquadrant'
@@ -59,7 +58,6 @@ save
   real, allocatable, dimension(:,:)          :: wusubl,wvsubl,wthlsubl,wqtsubl
   real, allocatable, dimension(:,:,:)        :: wsvresl,wsvsubl
   real, allocatable, dimension(:,:)          :: thlqtcovl
-  logical                                    :: initialized = .false.
 
 
 contains
@@ -79,8 +77,6 @@ contains
 
     namelist/NAMquadrant/ &
     lquadrant,dtav,timeav,hole,iwind,klow,khigh
-
-    call register_restart_function
 
     klow   = 2
     khigh  = kmax
@@ -300,7 +296,6 @@ contains
     use modgpu, only: update_host
 #endif
     implicit none
-  
     if(.not. lquadrant) return
     if (rk3step/=3) return
     if(timee<tnext .and. timee<tnextwrite) then
@@ -880,38 +875,5 @@ contains
     deallocate(wsvresnorm,wsvsubnorm                                                )
 
   end subroutine writequadrant
-
-  subroutine register_restart_function
-    if (initialized) return
-    call register_restart_handlers(modname, read_restart_state, write_restart_state)
-    initialized = .true.
-  end subroutine register_restart_function
-
-  subroutine write_restart_state(iunit)
-    integer, intent(in) :: iunit
-
-    write(iunit) lquadrant, hole, iwind, klow, khigh, knr
-    write(iunit) tnext, tnextwrite
-    if (.not. lquadrant) return
-    write(iunit) nrsampl, uavl, vavl, wavl, utotavl, thlavl, qtavl
-    write(iunit) uvarl, vvarl, wvarl, utotvarl, thlvarl, qtvarl
-    write(iunit) svavl, svvarl, wuresl, wvresl, wthlresl, wqtresl
-    write(iunit) wusubl, wvsubl, wthlsubl, wqtsubl, wsvresl, wsvsubl, thlqtcovl
-  end subroutine write_restart_state
-
-  subroutine read_restart_state(iunit)
-    integer, intent(in) :: iunit
-    read(iunit) lquadrant, hole, iwind, klow, khigh, knr
-    read(iunit) tnext, tnextwrite
-    if (.not. lquadrant) then
-      return
-    end if
-    if (.not. allocated(nrsampl)) return
-
-    read(iunit) nrsampl, uavl, vavl, wavl, utotavl, thlavl, qtavl
-    read(iunit) uvarl, vvarl, wvarl, utotvarl, thlvarl, qtvarl
-    read(iunit) svavl, svvarl, wuresl, wvresl, wthlresl, wqtresl
-    read(iunit) wusubl, wvsubl, wthlsubl, wqtsubl, wsvresl, wsvsubl, thlqtcovl
-  end subroutine read_restart_state
 
 end module modquadrant

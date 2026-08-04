@@ -82,9 +82,7 @@
     !-----------------------------------------------------------------|
 module modtilt
   use modglobal, only : longint
-  use modrestart_registry, only: register_restart_handlers
 implicit none
-character(len=*), parameter :: modname = 'modtilt'
 PRIVATE
 PUBLIC :: thldefm,thldef0, ltilted,&
          inittilt,initthla,tiltedgravity,tiltedboundary,adjustbudget,&
@@ -110,7 +108,6 @@ SAVE
   real, allocatable :: thldefmn(:)      ! time averaged temp. deficit
   real, allocatable :: thldefav(:)      ! slab averaged temp. deficit
   real, allocatable :: thlaav(:)        ! slab average of ambient pot.temp
-  logical :: initialized = .false.
 
 
 contains
@@ -132,8 +129,6 @@ contains
 
     namelist/NAMTILT/  &
          ltilted,alfa,lstat,dtav,timeav
-
-    call register_restart_function
 
     dtav=dtav_glob;timeav=timeav_glob
     if(myid==0)then
@@ -469,7 +464,6 @@ contains
   subroutine tiltstat
     use modglobal, only : rk3step,timee,dt_lim
     implicit none
-    
     if (.not.(ltilted)) return
     if (.not.(lstat))   return
     if (rk3step/=3)     return
@@ -594,43 +588,12 @@ contains
   subroutine exittilt
     implicit none
 
-    
-
     if (.not.(ltilted)) return
 
     deallocate(thldefm,thldef0,thldef0h,thla)
     if(lstat) deallocate(thlaav,thldefav,thldefmn)
 
   end subroutine exittilt
-
-  subroutine register_restart_function
-    if (initialized) return
-    call register_restart_handlers(modname, read_restart_state, write_restart_state)
-    initialized = .true.
-  end subroutine register_restart_function
-
-  subroutine write_restart_state(iunit)
-    integer, intent(in) :: iunit
-
-    write(iunit) ltilted, lstat, alfa, tnext, tnextwrite, nsamples
-    if (.not. ltilted) return
-    write(iunit) thldefm, thldef0, thldef0h
-    if (lstat) write(iunit) thldefmn, thldefav
-  end subroutine write_restart_state
-
-  subroutine read_restart_state(iunit)
-    integer, intent(in) :: iunit
-    read(iunit) ltilted, lstat, alfa, tnext, tnextwrite, nsamples
-    if (.not. ltilted) then
-      return
-    end if
-    if (.not. allocated(thldefm)) return
-
-    read(iunit) thldefm, thldef0, thldef0h
-    if (lstat) then
-      read(iunit) thldefmn, thldefav
-    end if
-  end subroutine read_restart_state
 
 !*****************************************************************************
 
