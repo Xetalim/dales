@@ -42,6 +42,7 @@ module modlsmdata
   ! Random
   real(field_r), allocatable :: du_tot(:,:)
   real, allocatable :: thv_1(:,:), land_frac(:,:), cveg(:,:)
+      integer, allocatable :: obuk_solver(:,:)
 
   ! A-Gs
   real, allocatable :: an_co2(:,:), resp_co2(:,:)
@@ -81,6 +82,7 @@ module modlsmdata
       real, allocatable :: frac(:,:)
       ! Monin-obukhov / surface layer:
       real(field_r), allocatable :: obuk(:,:)
+      integer, allocatable :: obuk_solver(:,:)
       real, allocatable :: ustar(:,:), ra(:,:)
       ! Surface fluxes:
       real, allocatable :: H(:,:), LE(:,:), G(:,:)
