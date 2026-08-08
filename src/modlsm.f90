@@ -1045,6 +1045,7 @@ subroutine calc_bulk_bcs
     use modfields,   only : rhof, thl0, u0, v0, thvh
     use modsurface,  only : phim, phih, albedo
     use modmpi,      only : excjs
+    use modchecksim, only : check_array, lstop
     use modopenboundary, only : openboundary_excjs
     use modsurfdata, only : &
         H, LE, G0, tskin, tskin_radiative, qskin, thlflux, qtflux, dthldz, dqtdz, &
@@ -1073,6 +1074,7 @@ subroutine calc_bulk_bcs
       else
         call calc_tile_bcs(tile(ilu))
       endif
+    call check_array(tile(ilu)%tskin, "tskin", "calc_tile_bcs"//tile(ilu)%lushort, [real(180.0, kind=kind(tile(ilu)%tskin)), real(350.0, kind=kind(tile(ilu)%tskin))], stop_if_invalid=lstop)
     enddo
 
     !$acc parallel loop collapse(2) default(present) async(1)
@@ -1132,6 +1134,12 @@ subroutine calc_bulk_bcs
         enddo
     enddo
     end if
+
+    ! Range check of tskin
+    !$acc update host(tskin) wait(1)
+    !$acc wait(1)
+    call check_array(tskin, "tskin", "calc_bulk_bcs", [real(180.0, kind=kind(tskin)), real(350.0, kind=kind(tskin))], stop_if_invalid=lstop)
+
     !$acc parallel loop collapse(2) default(present) async(1)
     do j=2,j1
         do i=2,i1
@@ -1445,6 +1453,7 @@ end subroutine calc_root_water_extraction
 !
 subroutine integrate_t_soil
     use modglobal, only : rk3step, rdt, i1, j1
+    use modchecksim, only : check_array, lstop
     use modsurfdata, only : tsoil, tsoilm, lambdah, G0
 
     implicit none
@@ -1494,6 +1503,11 @@ subroutine integrate_t_soil
             end do
         end do
     end do
+
+    ! Range check of tsoil
+    !$acc update host(tsoil) wait(1)
+    !$acc wait(1)
+    call check_array(tsoil, "tsoil", "integrate_t_soil", [real(180.0, kind=kind(tsoil)), real(350.0, kind=kind(tsoil))], stop_if_invalid=lstop, dump_if_invalid=.false.)
 
 end subroutine integrate_t_soil
 
