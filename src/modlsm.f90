@@ -1133,7 +1133,7 @@ subroutine calc_bulk_bcs
       else
         call calc_tile_bcs(tile(ilu))
       endif
-      call check_array(tile(ilu)%tskin, "tskin", "calc_tile_bcs", [180.0, 350.0], stop_if_invalid=lstop, dump_if_invalid=.false.)
+    call check_array(tile(ilu)%tskin, "tskin", "calc_tile_bcs", [real(180.0, kind=kind(tile(ilu)%tskin)), real(350.0, kind=kind(tile(ilu)%tskin))], stop_if_invalid=lstop)
     enddo
 
     !$acc parallel loop collapse(2) default(present) async(1)
@@ -1197,7 +1197,7 @@ subroutine calc_bulk_bcs
     ! Range check of tskin
     !$acc update host(tskin) wait(1)
     !$acc wait(1)
-    call check_array(tskin, "tskin", "calc_bulk_bcs", [180.0, 350.0], stop_if_invalid=lstop, dump_if_invalid=.false.)
+    call check_array(tskin, "tskin", "calc_bulk_bcs", [real(180.0, kind=kind(tskin)), real(350.0, kind=kind(tskin))], stop_if_invalid=lstop)
 
     !$acc parallel loop collapse(2) default(present) async(1)
     do j=2,j1
@@ -1566,7 +1566,7 @@ subroutine integrate_t_soil
     ! Range check of tsoil
     !$acc update host(tsoil) wait(1)
     !$acc wait(1)
-    call check_array(tsoil, "tsoil", "integrate_t_soil", [180.0, 350.0], stop_if_invalid=lstop, dump_if_invalid=.false.)
+    call check_array(tsoil, "tsoil", "integrate_t_soil", [real(180.0, kind=kind(tsoil)), real(350.0, kind=kind(tsoil))], stop_if_invalid=lstop, dump_if_invalid=.false.)
 
 end subroutine integrate_t_soil
 
