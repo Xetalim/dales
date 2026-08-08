@@ -1133,7 +1133,7 @@ subroutine calc_bulk_bcs
       else
         call calc_tile_bcs(tile(ilu))
       endif
-    call check_array(tile(ilu)%tskin, "tskin", "calc_tile_bcs", [real(180.0, kind=kind(tile(ilu)%tskin)), real(350.0, kind=kind(tile(ilu)%tskin))], stop_if_invalid=lstop)
+    call check_array(tile(ilu)%tskin, "tskin", "calc_tile_bcs"//tile(ilu)%lushort, [real(180.0, kind=kind(tile(ilu)%tskin)), real(350.0, kind=kind(tile(ilu)%tskin))], stop_if_invalid=lstop)
     enddo
 
     !$acc parallel loop collapse(2) default(present) async(1)
