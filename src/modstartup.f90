@@ -1369,7 +1369,7 @@ contains
     use modmpi,    only : myid, commwrld, mpierr, D_MPI_BCAST
     implicit none
 
-    logical :: lstopfile
+    logical :: lstopfile, lkillsim
     integer :: istopunit, iostat_stop
     integer(kind=longint) :: stopcheckinterval
 
@@ -1394,6 +1394,23 @@ contains
 
     if (lstopfile) then
       timeleft = 0
+    end if
+
+    lkillsim = .false.
+    if (myid == 0) then
+      inquire(file='KILLSIM', exist=lkillsim)
+      if (lkillsim) then
+        write(*,*) 'KILLSIM found, finishing run after this RK3 step.'
+        open(newunit=istopunit, file='KILLSIM', status='old', action='read', iostat=iostat_stop)
+        if (iostat_stop == 0) close(istopunit, status='delete')
+      end if
+    end if
+
+    call D_MPI_BCAST(lkillsim, 1, 0, commwrld, mpierr)
+
+    if (lkillsim) then
+      timeleft = 0
+      call finish('teststopfile', 'KILLSIM file found')
     end if
 
   end subroutine teststopfile
