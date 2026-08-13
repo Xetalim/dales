@@ -48,6 +48,7 @@ module modstat_nc
     logical :: lsync   = .false.     ! Sync NetCDF file after each writestat_*_nc
     logical :: lclassic = .false.    ! Create netCDF in CLASSIC format (less RAM usage, compression not supported)
     logical :: lparallel = .true.    !< Enable parallel I/O when supported by the library and when running with MPI.
+    logical :: nc_file_parallel = .false. !< Whether the currently opened file was created/opened with parallel access.
     integer :: deflate = 2           ! Deflate level for netCDF files (only for NETCDF4 format)
     logical :: lxychunk_tot = .false.  !< Use total domain size for xy chunking (default: left to NetCDF library)
     logical :: lxychunk_mpi = .false.  !< Use MPI subdomain size for xy chunking (default: left to NetCDF library)
@@ -188,6 +189,7 @@ contains
 
     inquire(file=trim(fname),exist=exans)
 
+    nc_file_parallel = .false.
     ncall = 0
     if (.not.exans) then
       call date_and_time(date,time)
@@ -195,6 +197,7 @@ contains
          call nchandle_error(nf90_create(fname,NF90_CLASSIC_MODEL,ncid))
       else
         if (present(comm) .and. NC_HAVE_PARALLEL) then
+          nc_file_parallel = .true.
           call nchandle_error(nf90_create(fname, NF90_NETCDF4, ncid, &
                                           comm=comm%mpi_val, info=mpi_info_null%mpi_val))
         else
@@ -295,6 +298,7 @@ contains
        nrec = 0
        ncall= 0
        if (present(comm)) then
+         if (NC_HAVE_PARALLEL) nc_file_parallel = .true.
          call nchandle_error(nf90_open (trim(fname), NF90_WRITE, ncid, &
                              comm=comm%mpi_val, info=mpi_info_null%mpi_val))
        else
@@ -376,10 +380,9 @@ contains
     logical :: var_needs_chunking !< whether we want an individual var to be chunked (not for index vars)
     logical :: custom_chunking !< whether we want to use custom chunking (only for parallel netcdf)
 
+    use_parallel = nc_file_parallel .and. lparallel .and. NC_HAVE_PARALLEL .and. (.not. lclassic)
     if (present(lcollective)) then
-      use_parallel = (lcollective .and. NC_HAVE_PARALLEL .and. (.not. lclassic))
-    else
-      use_parallel = .false.
+      use_parallel = use_parallel .and. lcollective
     end if
     custom_chunking = (lxychunk_tot .or. lxychunk_mpi) .and. use_parallel
 
@@ -487,13 +490,18 @@ contains
       !on Fugaku with netCDF-Fortran 4.5.2, netCDF 4.7.3
 
     end do
-    ! a new loop over all variables, ensuring we're in the right collective state. this is always necessary, even if the file already exists.
+    ! Only the time variable must be collective in parallel I/O; all other data fields should
+    ! remain independent. This keeps unlimited-dimension extension synchronized without making
+    ! every variable write a collective call.
     if (use_parallel) then
       do n=1,nVar
         iret = nf90_inq_varid(ncid, trim(sx(n,1)), VarID)
         if (iret == 0) then
-          ! var already exists, but we still need to set the parallel access mode if requested, as the mode is not stored in the file.
-          call nchandle_error(ncid,nf90_var_par_access(ncid, varid, NF90_COLLECTIVE))
+          if (trim(sx(n,1)) == 'time') then
+            call nchandle_error(ncid,nf90_var_par_access(ncid, varid, NF90_COLLECTIVE))
+          else
+            call nchandle_error(ncid,nf90_var_par_access(ncid, varid, NF90_INDEPENDENT))
+          end if
         end if
       end do
     end if

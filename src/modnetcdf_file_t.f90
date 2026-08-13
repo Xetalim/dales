@@ -503,7 +503,7 @@ contains
         deallocate(xcoord, ycoord)
       end if
     end if
-    call define_nc(this%ncid, this%nvar, this%names, lcollective=.true., index_dim=this%index_dims)
+    call define_nc(this%ncid, this%nvar, this%names, index_dim=this%index_dims)
 
     allocate(this%buffer(this%nlocal_points, this%nvar))
 
@@ -814,7 +814,7 @@ contains
 
     end if
 
-    call define_nc(this%ncid, this%nvar, this%names, lcollective=.true., index_dim=this%index_dims)
+    call define_nc(this%ncid, this%nvar, this%names, index_dim=this%index_dims)
 
     if (allocated(this%buffer)) deallocate(this%buffer)
     allocate(this%buffer(this%nlocal_profiles, nlevels, this%nvar))
@@ -1078,7 +1078,7 @@ contains
       end if
     end if
 
-    call define_nc(this%ncid, this%nvar, this%names, lcollective=.true.)
+    call define_nc(this%ncid, this%nvar, this%names)
 
     allocate(this%buffer(buffer_dim1_len, buffer_dim2_len, this%nvar))
 
@@ -1246,7 +1246,7 @@ contains
                              offset_x=this%x_start, offset_y=this%y_start)
     end if
 
-    call define_nc(this%ncid, this%nvar, this%names, lcollective=.true.)
+    call define_nc(this%ncid, this%nvar, this%names)
 
     if (this%nz > 0) then
       n3 = this%nz
@@ -1392,7 +1392,7 @@ contains
                              offset_x=this%x_start, offset_y=this%y_start)
     end if
 
-    call define_nc(this%ncid, this%nvar, this%names, lcollective=.true.)
+    call define_nc(this%ncid, this%nvar, this%names)
 
     nlev = this%nzs
     allocate(this%buffer(nlev,this%nvals_x,this%nvals_y,this%nvar))
