@@ -1,7 +1,7 @@
 !> Output file manager. Does the timekeeping for all output files.
 module modstat_nc_files
 
-  use modlogging,       only: finish,warning
+  use modlogging,       only: finish
   use modglobal,        only: timee, rtimee, rk3step, dt_lim, tres, ladaptive, &
                               dtmax
   use modnetcdf_file_t, only: netcdf_file_t
@@ -130,8 +130,6 @@ contains
     call timer_tic("write_output_files")
     do ifile = 1, nfiles
       if (is_writing_timestep(ifile)) then
-        call warning('Writing output file '//trim(file_list(ifile)%file%filename)//' at time ', &
-                     (timee),' s')
         call file_list(ifile)%file%write
       end if
     end do
