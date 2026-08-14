@@ -58,8 +58,10 @@ module modradrte_rrtmgp
   character(len=5), dimension(ngas)         :: gas_names = ['h2o  ', 'o3   ', 'co2  ', 'ch4  ', 'n2o  ', 'o2   ', 'cfc11', 'cfc12', 'cfc22', 'ccl4 ']
   integer                                   :: nlay, nlev, ncol, nbndlw, nbndsw, ngptsw
   logical                                   :: initialized = .false.
+  logical                                   :: sunUpState = .false.
 
   public :: radrte_rrtmgp, exit_radrte_rrtmgp
+  public :: get_sunup_rte_rrtmgp
 
 contains
 
@@ -325,6 +327,8 @@ contains
 
     if(.not.initialized) call init_radrte_rrtmgp
 
+    sunUpState = .false.
+
     do ibatch = 1, nbatch
 
       call setupColumnProfiles(ibatch)
@@ -372,6 +376,7 @@ contains
 
         ! setup incoming flux and albedo as a function of the zenith angle
         call setupSW(sunUp, ibatch)
+        sunUpState = sunUp
 
         if(sunUp) then
           ! Compute optical properties and incoming shortwave flux
@@ -805,5 +810,12 @@ contains
         enddo
       enddo
   end subroutine setupEmis
+
+  subroutine get_sunup_rte_rrtmgp(sunUp)
+    implicit none
+    logical, intent(out) :: sunUp
+
+    sunUp = sunUpState
+  end subroutine get_sunup_rte_rrtmgp
 
 end module modradrte_rrtmgp

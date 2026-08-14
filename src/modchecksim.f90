@@ -40,6 +40,10 @@ module modchecksim
   use modsubgriddata,  only: ekm
   use modmpi,          only: myid, comm3d, mpierr, mpi_sum, mpi_max, D_MPI_ALLREDUCE, &
                              D_MPI_BCAST, MPI_Wtime, nprocx, nprocy
+  use moddatetime,     only: l_datetime, datex
+  use modraddata,      only: iradiation, irad_rrtmg, irad_rte_rrtmgp
+  use modradrrtmg,     only: get_sunup_rrtmg
+  use modradrte_rrtmgp, only: get_sunup_rte_rrtmgp
   use modtimer
   use modlogging,      only: finish
 
@@ -173,6 +177,9 @@ contains
     character(len=*), parameter :: routine = modname//'/checksim'
 
     character(len=20) :: timeday
+    character(len=19) :: simDateTime
+    logical           :: sunUp
+    logical           :: hasSunUpInfo
 
     if (timee == 0) return
     if (rk3step /= 3) return
@@ -187,12 +194,34 @@ contains
     tnext = tnext+itcheck
     dtmn  = dtmn / ndt
 
+    sunUp = .false.
+    hasSunUpInfo = .false.
+    select case (iradiation)
+    case (irad_rrtmg)
+      call get_sunup_rrtmg(sunUp)
+      hasSunUpInfo = .true.
+    case (irad_rte_rrtmgp)
+      call get_sunup_rte_rrtmgp(sunUp)
+      hasSunUpInfo = .true.
+    end select
+
     if (myid == 0) then
       call date_and_time(time=timeday)
       write (*,*) '=============================================================================='
       write (*,'(7A,F11.2,A,F9.4)') 'Time of Day: ', timeday(1:2), ':', &
-      timeday(3:4), ':', timeday(5:10),' Time of Simulation: ', &
-      rtimee, '    dt: ',dtmn
+      timeday(3:4), ':', timeday(5:10), ' Time of Simulation: ', &
+      rtimee, '    dt: ', dtmn
+
+      if (l_datetime) then
+        write(simDateTime,'(I4.4,"-",I2.2,"-",I2.2,1X,I2.2,":",I2.2,":",I2.2)') &
+             datex(1), datex(2), datex(3), datex(4), datex(5), datex(6)
+        write (*,'(2A)') 'SimDateTime: ', trim(simDateTime)
+      end if
+
+      if (hasSunUpInfo) then
+        write (*,'(A,L1)') 'SunUp: ', sunUp
+      end if
+
       call ETA_stat
     end if
 
