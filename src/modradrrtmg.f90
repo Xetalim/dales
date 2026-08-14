@@ -8,9 +8,12 @@ module modradrrtmg
 
   character(len=*), parameter :: modname = 'modradrrtmg'
 
+  logical :: sunUpState = .false.
+
   public :: radrrtmg
   public :: readSounding
   public :: readTraceProfs
+  public :: get_sunup_rrtmg
 
 contains
 
@@ -40,6 +43,8 @@ contains
 
     real                   :: thlpld,thlplu,thlpsd,thlpsu
     real(KIND=kind_rb)     :: cpdair
+
+    sunUpState = .false.
 !    real(KIND=kind_rb),allocatable,dimension(:,:) :: cloudFrac, &
 !                                                     liquidRe,  &
                                                      !iceRe,     &
@@ -219,6 +224,7 @@ contains
       end if
       if (rad_shortw) then
          call setupSW(sunUp,j)
+        sunUpState = sunUp
          if (sunUp) then
            call rrtmg_sw & !comments = corresponding variable names in the RRTMGP library
                    (int(imax,kind_im), int(nzrad+1,kind_im), ioverlap, & !ncol, nlay, icld, (+ iaer in later versions !)
@@ -999,6 +1005,12 @@ contains
   end subroutine calc_albedo_zenith
 
 #endif
+
+  subroutine get_sunup_rrtmg(sunUp)
+    logical, intent(out) :: sunUp
+
+    sunUp = sunUpState
+  end subroutine get_sunup_rrtmg
 
   ! CJ: copied from rrtmg_lw, so we can compile without rrtmg
 	subroutine getAbsorberIndex(AbsorberName, AbsorberIndex)
