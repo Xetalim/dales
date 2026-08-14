@@ -988,7 +988,7 @@ subroutine calc_tile_bcs(tile)
     type(T_lsm_tile), intent(inout) :: tile
     integer :: i, j
     real :: Ts, esats, qsats, desatdTs, dqsatdTs, &
-        rs_lim, fH, fLE, fG, num, denom, Ta, qsat_new, Qnet
+        rs_lim, fH, fLE, fG, num, denom, Ta, qsat_new, Qnet, swu_tile, lwu_tile
 #ifndef _OPENACC
     real :: rhocp_i(1), rholv_i(1)
 #endif
@@ -1049,7 +1049,11 @@ subroutine calc_tile_bcs(tile)
                 tile%H (i,j) = fH  * (tile%tskin(i,j) - Ta)
                 tile%LE(i,j) = fLE * (qsat_new - qt0(i,j,1))
                 tile%G (i,j) = fG  * (tsoil(i,j,kmax_soil) - tile%tskin(i,j))
-                tile%Qnet(i,j) = Qnet
+                ! Diagnostic tile net radiation from explicit radiative terms
+                ! (tile-own reflected SW and emitted LW).
+                swu_tile = -tile%albedo(i,j) * swd(i,j,1)
+                lwu_tile = boltz * tile%tskin(i,j)**4
+                tile%Qnet(i,j) = swd(i,j,1) + swu_tile + lwd(i,j,1) + lwu_tile
 
                 ! Calculate kinematic surface fluxes
                 tile%wthl(i,j) = tile%H (i,j) * rhocp_i(1)
@@ -1130,6 +1134,7 @@ subroutine calc_bulk_bcs
         H, LE, G0, tskin, tskin_radiative, qskin, thlflux, qtflux, dthldz, dqtdz, &
         dudz, dvdz, ustar, obl, cliq, ra, rsveg, rssoil, Qnet
     use modslurb, only : fraction_slurb, slurb_tile, enable_slurb
+    use modslurbdata, only : nzt_roof, nzb_roof
     implicit none
 
     integer :: i, j
@@ -1184,8 +1189,30 @@ subroutine calc_bulk_bcs
                     ! are each calculated like an individual LSM tile is calculated, with their own resistances.
                     ! note that we will later subtract the urban contribution to the skin temperature, to later add the 
                     ! urban radiative temperature instead.
+                    tile(ilu)%H(i,j) = slurb_tile%shf_urb(i,j)
+                    tile(ilu)%LE(i,j) = slurb_tile%qsws_urb(i,j)
+                    tile(ilu)%wthl(i,j) = tile(ilu)%H(i,j) * rhocp_i(1)
+                    tile(ilu)%wqt(i,j) = tile(ilu)%LE(i,j) * rholv_i(1)
+                    tile(ilu)%ustar(i,j) = slurb_tile%f_bld(i,j) * slurb_tile%us_roof(i,j) + &
+                                           (1 - slurb_tile%f_bld(i,j)) * slurb_tile%us_can(i,j)
+                    tile(ilu)%thlskin(i,j) = slurb_tile%thlskin(i,j)
+                    tile(ilu)%qtskin(i,j) = slurb_tile%qtskin(i,j)
+                    tile(ilu)%tskin(i,j) = slurb_tile%thlskin(i,j)
+                    tile(ilu)%ra(i,j) = slurb_tile%f_bld(i,j) * slurb_tile%rah_roof(i,j) + &
+                                        (1 - slurb_tile%f_bld(i,j)) * slurb_tile%rah_can(i,j)
+                    tile(ilu)%obuk(i,j) = slurb_tile%ol_urb(i,j)
+                    if (nzt_roof < nzb_roof) then
+                        tile(ilu)%G(i,j) = slurb_tile%f_bld(i,j) * slurb_tile%conductivity_roof(nzt_roof,i,j) * &
+                                           (slurb_tile%t_roof_0(nzt_roof+1,i,j) - slurb_tile%t_roof_0(nzt_roof,i,j))
+                    else
+                        tile(ilu)%G(i,j) = 0.0_field_r
+                    end if
+                    tile(ilu)%Qnet(i,j) = slurb_tile%rad_lw_net_urb(i,j) + slurb_tile%rad_sw_net_urb(i,j)
+                    tile(ilu)%albedo(i,j) = slurb_tile%albedo_urb(i,j)
+
                     H(i,j)      = H(i,j)     + fraction_slurb(i,j) * slurb_tile%shf_urb(i,j)
                     LE(i,j)     = LE(i,j)    + fraction_slurb(i,j) * slurb_tile%qsws_urb(i,j)
+                    Qnet(i,j)   = Qnet(i,j)  + fraction_slurb(i,j) * tile(ilu)%Qnet(i,j)
                     ! G0(i,j)     = G0(i,j)    + tile(ilu)%frac(i,j) * tile(ilu)%G(i,j)
                     ustar(i,j)  = ustar(i,j) + fraction_slurb(i,j) * (slurb_tile%f_bld(i,j) * slurb_tile%us_roof(i,j) &
                                                                 + (1 - slurb_tile%f_bld(i,j)) * slurb_tile%us_can(i,j))
