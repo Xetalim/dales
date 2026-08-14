@@ -27,11 +27,14 @@ module modlsm
 
     character(len=*), parameter :: modname = 'modlsm'
 
-    public :: initlsm, lsm, exitlsm, init_lsm_tiles
+    public :: initlsm, lsm, exitlsm, init_lsm_tiles, lsm_post_initslurb
 
 #ifdef _OPENACC
     real :: rhocp_i(1), rholv_i(1)
 #endif
+
+    logical, save :: obuk_nonconv_in_tstep = .false.
+    logical, allocatable, save :: obuk_nonconv_tile_in_tstep(:)
 
 contains
 
@@ -819,14 +822,31 @@ end subroutine calc_canopy_resistance_ags
 ! Calculate Obukhov length, ustar, and aerodynamic resistance, for all tiles
 !
 subroutine calc_stability
-  use modglobal, only : i1, j1, cu, cv, rv, rd
+    use modglobal, only : i1, j1, cu, cv, rv, rd, rk3step
   use modfields, only : u0, v0, thl0, qt0
+    use modmpi, only : myid
   use modtimer, only:   timer_tic, timer_toc
   implicit none
 
 !  real, parameter :: du_min = 0.1
   real :: du, dv
-  integer :: i, j
+    integer :: i, j, any_nonconv
+    logical :: had_nonconv_tile
+
+    if (.not. allocated(obuk_nonconv_tile_in_tstep)) then
+        allocate(obuk_nonconv_tile_in_tstep(nlu))
+        obuk_nonconv_tile_in_tstep(:) = .false.
+    else if (size(obuk_nonconv_tile_in_tstep) /= nlu) then
+        deallocate(obuk_nonconv_tile_in_tstep)
+        allocate(obuk_nonconv_tile_in_tstep(nlu))
+        obuk_nonconv_tile_in_tstep(:) = .false.
+    end if
+
+    if (rk3step == 1) then
+        obuk_nonconv_in_tstep = .false.
+        obuk_nonconv_tile_in_tstep(:) = .false.
+    end if
+
   call timer_tic('lsm_calc_stability_du_thv')
   ! Calculate properties shared by all tiles:
   ! Absolute wind speed difference, and virtual potential temperature atmosphere
@@ -849,7 +869,8 @@ subroutine calc_stability
   call timer_tic('lsm_calc_stability_obuk_ustar_ra')
   do ilu=1, nlu
     if (tile(ilu)%lushort == "slb") then; cycle; endif
-        call calc_obuk_ustar_ra(tile(ilu))
+        call calc_obuk_ustar_ra(tile(ilu), had_nonconv=had_nonconv_tile)
+        if (had_nonconv_tile) obuk_nonconv_tile_in_tstep(ilu) = .true.
 
         !$acc parallel loop collapse(2) default(present) async(1)
         do j=2,j1
@@ -859,6 +880,29 @@ subroutine calc_stability
         end do
   end do
   call timer_toc('lsm_calc_stability_obuk_ustar_ra')
+
+    !$acc wait(1)
+    !$acc update host(obuk_solver(2:i1,2:j1))
+    any_nonconv = maxval(obuk_solver(2:i1,2:j1))
+    if (any_nonconv > 0) obuk_nonconv_in_tstep = .true.
+
+    if (rk3step == 3 .and. obuk_nonconv_in_tstep) then
+            if (myid == 0) then
+                    write(*,'(a)') 'WARNING: Obukhov solver did not converge for at least one non-slurb tile in this timestep.'
+                    write(*,'(a)', advance='no') 'WARNING: Unstable (non-converged) tile types:'
+                    do ilu=1,nlu
+                        if (tile(ilu)%lushort == "slb") then
+                            cycle
+                        end if
+                        if (obuk_nonconv_tile_in_tstep(ilu)) then
+                            write(*,'(1x,a)', advance='no') trim(tile(ilu)%lushort)
+                        end if
+                    end do
+                    write(*,*)
+            end if
+            obuk_nonconv_in_tstep = .false.
+            obuk_nonconv_tile_in_tstep(:) = .false.
+    end if
 
 end subroutine calc_stability
 
@@ -874,7 +918,7 @@ subroutine calc_obuk_ustar_ra(tile, had_nonconv)
     logical, intent(out), optional :: had_nonconv
     integer :: i, j
     logical :: local_nonconv
-    real :: thvs
+    real(field_r) :: thvs
     real(field_r) :: l_new, zsl, log_zsl, z0m_i, z0h_i, fm_i, dm_i, dh_i, du_i
 
     local_nonconv = .false.
@@ -900,9 +944,8 @@ subroutine calc_obuk_ustar_ra(tile, had_nonconv)
                 l_new = calc_obuk_dirichlet( &
                     tile%obuk(i,j), du_tot(i,j), tile%db(i,j), zsl, tile%z0m(i,j), tile%z0h(i,j))
                 if (abs(l_new) > 1e20_field_r) then
-                    tile%obuk(i,j) = 1e-9_field_r
+                    tile%obuk(i,j) = l_new
                     tile%obuk_solver(i,j) = 1
-                    local_nonconv = .true.
                 else
                     tile%obuk(i,j) = l_new
                     tile%obuk_solver(i,j) = 0
@@ -923,6 +966,9 @@ subroutine calc_obuk_ustar_ra(tile, had_nonconv)
     end do
 
     if (present(had_nonconv)) then
+        !$acc wait(1)
+        !$acc update host(tile%obuk_solver(2:i1,2:j1))
+        local_nonconv = (maxval(tile%obuk_solver(2:i1,2:j1)) > 0)
         had_nonconv = local_nonconv
     end if
 
@@ -1718,6 +1764,9 @@ subroutine initlsm
     call allocate_on_device()
 
 end subroutine initlsm
+subroutine lsm_post_initslurb
+    call post_init_heterogeneous_nc
+end subroutine lsm_post_initslurb
 
 subroutine allocate_on_device()
 
@@ -2820,8 +2869,9 @@ subroutine init_heterogeneous_nc
     tile(ilu_ws)%albedo = 0
 
     do ilu=1,nlu
-        if (tile(ilu)%lushort == "slb") then; cycle; endif
       if (tile(ilu)%laqu) then
+        cycle
+      else if (tile(ilu)%lushort == "slb") then
         cycle
       else
         tile(ilu_ws)%z0m(:,:) = tile(ilu_ws)%z0m(:,:) + tile(ilu)%base_frac(:,:)*tile(ilu)%z0m(:,:)
@@ -2916,6 +2966,16 @@ subroutine init_heterogeneous_nc
     ! !call flush()
 
 end subroutine init_heterogeneous_nc
+subroutine post_init_heterogeneous_nc
+    use modslurb, only : slurb_tile, fraction_slurb
+    integer :: ilu_ws
+    ilu_ws = nlu
+    tile(ilu_ws)%z0m(:,:) = tile(ilu_ws)%z0m(:,:) + fraction_slurb(:,:)*slurb_tile%z0_urb(:,:)
+    tile(ilu_ws)%z0h(:,:) = tile(ilu_ws)%z0h(:,:) + fraction_slurb(:,:)*slurb_tile%z0_urb(:,:)
+    tile(ilu_ws)%lambda_stable(:,:) = tile(ilu_ws)%lambda_stable(:,:) + fraction_slurb(:,:)*0
+    tile(ilu_ws)%lambda_unstable(:,:) = tile(ilu_ws)%lambda_unstable(:,:) + fraction_slurb(:,:)*0 ! assume 0 conductivity for urban surfaces
+    tile(ilu_ws)%albedo = tile(ilu_ws)%albedo + fraction_slurb(:,:)*slurb_tile%albedo_urb(:,:)
+    end subroutine post_init_heterogeneous_nc
 !
 ! Check if the rougness lengths are smaller than the first vertical grid level. If they are larger, MOST is not valid and the model will likely crash.
 !
@@ -3123,7 +3183,7 @@ pure function calc_obuk_dirichlet(L_in, du, db_in, zsl, z0m, z0h) result(res)
         ! if L and db are of different sign, or the last calculation did not converge,
         ! the stability has changed and the procedure needs to be reset
         if (L*db <= 0) then
-            nlim = 25
+            nlim = 200
             if (db >= 0) then
                 L = l_floor
             else
@@ -3187,13 +3247,12 @@ pure function calc_obuk_dirichlet(L_in, du, db_in, zsl, z0m, z0h) result(res)
             ! Convergence has not been reached, procedure restarted once
             L = l_floor
             m = m+1
-            nlim = 25
+            nlim = 200
         end if
     end do
 
     if (m > 1) then
-        ! res = huge(1.0_field_r)
-        res = l_floor
+        res = huge(1.0_field_r)
         ! print*,'WARNING: convergence has not been reached in Obukhov length iteration'
         ! print*,'Input: ', L_in, du, db_in, zsl, z0m, z0h
         return
@@ -3357,7 +3416,7 @@ pure function calc_obuk_dirichlet_1(L_in, du, db_in, zsl, z0m, z0h) result(res)
         ! print*,'Input: ', L_in, du, db_in, zsl, z0m, z0h
 #endif
         !stop
-        res = 1e-9
+        res = huge(1.0_field_r)
         ! call timer_toc('calc_obuk_dirichlet')
         return
     end if
