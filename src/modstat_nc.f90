@@ -48,6 +48,7 @@ module modstat_nc
     logical :: lsync   = .false.     ! Sync NetCDF file after each writestat_*_nc
     logical :: lclassic = .false.    ! Create netCDF in CLASSIC format (less RAM usage, compression not supported)
     logical :: lparallel = .true.    !< Enable parallel I/O when supported by the library and when running with MPI.
+    logical :: lnofill = .false.     !< Use NF90_NOFILL when creating NetCDF files.
     integer :: deflate = 2           ! Deflate level for netCDF files (only for NETCDF4 format)
     logical :: lxychunk_tot = .false.  !< Use total domain size for xy chunking (default: left to NetCDF library)
     logical :: lxychunk_mpi = .false.  !< Use MPI subdomain size for xy chunking (default: left to NetCDF library)
@@ -127,7 +128,7 @@ contains
     integer             :: ierr
 
     namelist/NAMNETCDFSTATS/ &
-    lnetcdf, lsync, lclassic, lparallel, deflate, lxychunk_tot, lxychunk_mpi
+    lnetcdf, lsync, lclassic, lparallel, lnofill, deflate, lxychunk_tot, lxychunk_mpi
 
     if(myid==0)then
       open(ifnamopt,file=fname_options,status='old',iostat=ierr)
@@ -141,6 +142,7 @@ contains
     call D_MPI_BCAST(lsync       ,1, 0,comm3d,mpierr)
     call D_MPI_BCAST(lclassic    ,1, 0,comm3d,mpierr)
     call D_MPI_BCAST(lparallel   ,1, 0,comm3d,mpierr)
+    call D_MPI_BCAST(lnofill     ,1, 0,comm3d,mpierr)
     call D_MPI_BCAST(deflate     ,1, 0,comm3d,mpierr)
     call D_MPI_BCAST(lxychunk_tot,1, 0,comm3d,mpierr)
     call D_MPI_BCAST(lxychunk_mpi,1, 0,comm3d,mpierr)
@@ -183,6 +185,7 @@ contains
 
     character (len=12):: date='',time=''
     integer :: iret,varid,ncall,RecordDimID
+    integer :: create_mode
     real, allocatable :: xtimes(:)
     logical :: exans
 
@@ -191,14 +194,17 @@ contains
     ncall = 0
     if (.not.exans) then
       call date_and_time(date,time)
+      create_mode = NF90_NETCDF4
+      if (lclassic) create_mode = NF90_CLASSIC_MODEL
+      if (lnofill) create_mode = ior(create_mode, NF90_NOFILL)
       if (lclassic) then
-         call nchandle_error(nf90_create(fname,NF90_CLASSIC_MODEL,ncid))
+         call nchandle_error(nf90_create(fname, create_mode, ncid))
       else
         if (present(comm) .and. NC_HAVE_PARALLEL) then
-          call nchandle_error(nf90_create(fname, NF90_NETCDF4, ncid, &
+          call nchandle_error(nf90_create(fname, create_mode, ncid, &
                                           comm=comm%mpi_val, info=mpi_info_null%mpi_val))
         else
-          call nchandle_error(nf90_create(fname,NF90_NETCDF4,ncid))
+          call nchandle_error(nf90_create(fname, create_mode, ncid))
         end if
       end if
 
