@@ -1,6 +1,7 @@
 !> Type definitions for various NetCDF file types.
 module modnetcdf_file_t
 
+  use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
   use fortran_support, only: finish
   use mpi_f08,         only: MPI_Comm_split, MPI_Comm_free
   use modglobal,       only: imax, jmax, kmax, itot, jtot, rtimee, cexpnr
@@ -1101,8 +1102,22 @@ contains
 
     integer :: n1, n2, ivar
     integer :: offsets(2)
+    real(field_r) :: nc_max_value
+
+    nc_max_value = real(huge(nc_fillvalue), kind=field_r)
 
     !$acc update host(this%buffer) if(this%lgpu)
+
+    do ivar = 1, this%nvar
+      do n2 = 1, size(this%buffer, dim=2)
+        do n1 = 1, size(this%buffer, dim=1)
+          if (.not. ieee_is_finite(this%buffer(n1,n2,ivar)) .or. &
+              abs(this%buffer(n1,n2,ivar)) > nc_max_value) then
+            this%buffer(n1,n2,ivar) = real(nc_fillvalue, kind=field_r)
+          end if
+        end do
+      end do
+    end do
 
     if (this%x_start > 0 .and. this%y_start > 0) then
       offsets = [this%x_start, this%y_start]
