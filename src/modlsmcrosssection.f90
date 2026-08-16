@@ -211,31 +211,31 @@ contains
         end if
 
         do ilu_idx = 1, nlu
-          vname = trim(tile(ilu_idx)%lushort)//'_H'
+          call make_tile_var_name(tile(ilu_idx)%lushort, '_H', vname)
           call surf_file%add_var(trim(vname), 'Tile sensible heat flux', 'W/m^2', 'tt0t')
-          vname = trim(tile(ilu_idx)%lushort)//'_LE'
+          call make_tile_var_name(tile(ilu_idx)%lushort, '_LE', vname)
           call surf_file%add_var(trim(vname), 'Tile latent heat flux', 'W/m^2', 'tt0t')
-          vname = trim(tile(ilu_idx)%lushort)//'_G'
+          call make_tile_var_name(tile(ilu_idx)%lushort, '_G', vname)
           call surf_file%add_var(trim(vname), 'Tile ground heat flux', 'W/m^2', 'tt0t')
-          vname = trim(tile(ilu_idx)%lushort)//'_wthl'
+          call make_tile_var_name(tile(ilu_idx)%lushort, '_wthl', vname)
           call surf_file%add_var(trim(vname), 'Tile kinematic heat flux', 'K m/s', 'tt0t')
-          vname = trim(tile(ilu_idx)%lushort)//'_wqt'
+          call make_tile_var_name(tile(ilu_idx)%lushort, '_wqt', vname)
           call surf_file%add_var(trim(vname), 'Tile kinematic moisture flux', 'kg/kg m/s', 'tt0t')
-          vname = trim(tile(ilu_idx)%lushort)//'_tskin'
+          call make_tile_var_name(tile(ilu_idx)%lushort, '_tskin', vname)
           call surf_file%add_var(trim(vname), 'Tile skin temperature', 'K', 'tt0t')
-          vname = trim(tile(ilu_idx)%lushort)//'_thlskin'
+          call make_tile_var_name(tile(ilu_idx)%lushort, '_thlskin', vname)
           call surf_file%add_var(trim(vname), 'Tile skin liquid water potential temperature', 'K', 'tt0t')
-          vname = trim(tile(ilu_idx)%lushort)//'_qtskin'
+          call make_tile_var_name(tile(ilu_idx)%lushort, '_qtskin', vname)
           call surf_file%add_var(trim(vname), 'Tile skin specific humidity', 'kg/kg', 'tt0t')
-          vname = trim(tile(ilu_idx)%lushort)//'_db'
+          call make_tile_var_name(tile(ilu_idx)%lushort, '_db', vname)
           call surf_file%add_var(trim(vname), 'Tile buoyancy difference surface-atmosphere', 'm s^-2', 'tt0t')
-          vname = trim(tile(ilu_idx)%lushort)//'_Qnet'
+          call make_tile_var_name(tile(ilu_idx)%lushort, '_Qnet', vname)
           call surf_file%add_var(trim(vname), 'Tile net radiation', 'W/m^2', 'tt0t')
-          vname = trim(tile(ilu_idx)%lushort)//'_obuk'
+          call make_tile_var_name(tile(ilu_idx)%lushort, '_obuk', vname)
           call surf_file%add_var(trim(vname), 'Tile Obukhov length', 'm', 'tt0t')
-          vname = trim(tile(ilu_idx)%lushort)//'_ustar'
+          call make_tile_var_name(tile(ilu_idx)%lushort, '_ustar', vname)
           call surf_file%add_var(trim(vname), 'Tile friction velocity', 'm/s^-1', 'tt0t')
-          vname = trim(tile(ilu_idx)%lushort)//'_ra'
+          call make_tile_var_name(tile(ilu_idx)%lushort, '_ra', vname)
           call surf_file%add_var(trim(vname), 'Tile aerodynamic resistance', 's/m', 'tt0t')
         end do
       end if
@@ -253,6 +253,16 @@ contains
         call surf_file%add_var('db', 'Grid-cell mean buoyancy difference surface-atmosphere', 'm s^-2', 'tt0t')
         call surf_file%add_var('thl0_1', 'Lowest model level liquid water potential temperature', 'K', 'tt0t')
         call surf_file%add_var('qt0_1', 'Lowest model level specific humidity', 'kg/kg', 'tt0t')
+        call surf_file%add_var('sbtke', 'Lowest model level turbulent kinetic energy', 'm^2/s^2', 'tt0t')
+        call surf_file%add_var('ekm', 'Lowest model level momentum eddy diffusivity', 'm^2/s', 'tt0t')
+        call surf_file%add_var('tdef2', 'Lowest model level deformation term at the surface', 's^-2', 'tt0t')
+        call surf_file%add_var('tdef2_uvw', 'Surface deformation component from resolved velocity gradients', 's^-2', 'tt0t')
+        call surf_file%add_var('tdef2_xz', 'Surface deformation component from x-z shear', 's^-2', 'tt0t')
+        call surf_file%add_var('tdef2_xy', 'Surface deformation component from horizontal shear coupling', 's^-2', 'tt0t')
+        call surf_file%add_var('tdef2_yz', 'Surface deformation component from y-z shear', 's^-2', 'tt0t')
+        call surf_file%add_var('sbshr', 'Lowest model level shear', 'm^2/s^2', 'tt0t')
+        call surf_file%add_var('sbbuo', 'Lowest model level buoyancy', 'm^2/s^2', 'tt0t')
+        call surf_file%add_var('sbdiss', 'Lowest model level dissipation', 'm^2/s^2', 'tt0t')
       end if
     end if
 
@@ -344,10 +354,11 @@ contains
 
   !> Do the xy lsmcrosssections and dump them to file
   subroutine wrtsurf
-    use modglobal,   only : i1, j1, cp, rlv
-    use modfields,   only : rhof, thl0, qt0
+    use modglobal,   only : i1, j1, cp, rlv, cu, cv, dzfi, dxi, dyi
+    use modfields,   only : rhof, rhobf, e120, thl0, qt0, u0, v0, w0
     use modlsm,      only : f1, f2b, lags, an_co2, resp_co2
     use modlsmdata,  only : tile, nlu, obuk_solver
+    use modsubgriddata, only : ekm, sbshr, sbbuo, sbdiss
     use modstat_nc,  only : lnetcdf
     use modsurfdata, only : Qnet, H, LE, G0, rs, ra, tskin, tendskin, &
                             cliq, rsveg, rssoil, Wl, isurf, obl, ustar, &
@@ -362,7 +373,11 @@ contains
                               hfss_ptr(:,:), hfls_ptr(:,:), obuk_ptr(:,:), ustar_ptr(:,:), cs_ptr(:,:), cm_ptr(:,:), &
                   z0h_ptr(:,:), z0m_ptr(:,:), f1_ptr(:,:), f2_b_ptr(:,:), an_co2_ptr(:,:), resp_co2_ptr(:,:), &
                   dudz_ptr(:,:), dvdz_ptr(:,:), dqtdz_ptr(:,:), dthldz_ptr(:,:), thlskin_ptr(:,:), qtskin_ptr(:,:), &
-            db_ptr(:,:), thl0_1_ptr(:,:), qt0_1_ptr(:,:), obuk_solver_ptr(:,:), tile_ptr(:,:)
+                db_ptr(:,:), thl0_1_ptr(:,:), qt0_1_ptr(:,:), obuk_solver_ptr(:,:), tile_ptr(:,:), sbtke_ptr(:,:), ekm_ptr(:,:), tdef2_ptr(:,:), &
+                tdef2_uvw_ptr(:,:), tdef2_xz_ptr(:,:), tdef2_xy_ptr(:,:), tdef2_yz_ptr(:,:), sbshr_ptr(:,:), sbbuo_ptr(:,:), sbdiss_ptr(:,:)
+
+    real(field_r) :: horv, uwflux, vwflux, local_dudz, local_dvdz
+    real(field_r) :: tdef2_uvw, tdef2_xz, tdef2_xy, tdef2_yz
 
     if (.not. (lnetcdf .and. surf_enabled)) return
 
@@ -451,55 +466,55 @@ contains
       obuk_solver_ptr(:,:) = real(obuk_solver(2:i1,2:j1), field_r)
 
       do ilu_idx = 1, nlu
-        vname = trim(tile(ilu_idx)%lushort)//'_H'
+        call make_tile_var_name(tile(ilu_idx)%lushort, '_H', vname)
         call surf_file%get_pointer(trim(vname), tile_ptr)
         tile_ptr(:,:) = tile(ilu_idx)%H(2:i1,2:j1)
 
-        vname = trim(tile(ilu_idx)%lushort)//'_LE'
+        call make_tile_var_name(tile(ilu_idx)%lushort, '_LE', vname)
         call surf_file%get_pointer(trim(vname), tile_ptr)
         tile_ptr(:,:) = tile(ilu_idx)%LE(2:i1,2:j1)
 
-        vname = trim(tile(ilu_idx)%lushort)//'_G'
+        call make_tile_var_name(tile(ilu_idx)%lushort, '_G', vname)
         call surf_file%get_pointer(trim(vname), tile_ptr)
         tile_ptr(:,:) = tile(ilu_idx)%G(2:i1,2:j1)
 
-        vname = trim(tile(ilu_idx)%lushort)//'_wthl'
+        call make_tile_var_name(tile(ilu_idx)%lushort, '_wthl', vname)
         call surf_file%get_pointer(trim(vname), tile_ptr)
         tile_ptr(:,:) = tile(ilu_idx)%wthl(2:i1,2:j1)
 
-        vname = trim(tile(ilu_idx)%lushort)//'_wqt'
+        call make_tile_var_name(tile(ilu_idx)%lushort, '_wqt', vname)
         call surf_file%get_pointer(trim(vname), tile_ptr)
         tile_ptr(:,:) = tile(ilu_idx)%wqt(2:i1,2:j1)
 
-        vname = trim(tile(ilu_idx)%lushort)//'_tskin'
+        call make_tile_var_name(tile(ilu_idx)%lushort, '_tskin', vname)
         call surf_file%get_pointer(trim(vname), tile_ptr)
         tile_ptr(:,:) = tile(ilu_idx)%tskin(2:i1,2:j1)
 
-        vname = trim(tile(ilu_idx)%lushort)//'_thlskin'
+        call make_tile_var_name(tile(ilu_idx)%lushort, '_thlskin', vname)
         call surf_file%get_pointer(trim(vname), tile_ptr)
         tile_ptr(:,:) = tile(ilu_idx)%thlskin(2:i1,2:j1)
 
-        vname = trim(tile(ilu_idx)%lushort)//'_qtskin'
+        call make_tile_var_name(tile(ilu_idx)%lushort, '_qtskin', vname)
         call surf_file%get_pointer(trim(vname), tile_ptr)
         tile_ptr(:,:) = tile(ilu_idx)%qtskin(2:i1,2:j1)
 
-        vname = trim(tile(ilu_idx)%lushort)//'_db'
+        call make_tile_var_name(tile(ilu_idx)%lushort, '_db', vname)
         call surf_file%get_pointer(trim(vname), tile_ptr)
         tile_ptr(:,:) = tile(ilu_idx)%db(2:i1,2:j1)
 
-        vname = trim(tile(ilu_idx)%lushort)//'_Qnet'
+        call make_tile_var_name(tile(ilu_idx)%lushort, '_Qnet', vname)
         call surf_file%get_pointer(trim(vname), tile_ptr)
         tile_ptr(:,:) = tile(ilu_idx)%Qnet(2:i1,2:j1)
 
-        vname = trim(tile(ilu_idx)%lushort)//'_obuk'
+        call make_tile_var_name(tile(ilu_idx)%lushort, '_obuk', vname)
         call surf_file%get_pointer(trim(vname), tile_ptr)
         tile_ptr(:,:) = tile(ilu_idx)%obuk(2:i1,2:j1)
 
-        vname = trim(tile(ilu_idx)%lushort)//'_ustar'
+        call make_tile_var_name(tile(ilu_idx)%lushort, '_ustar', vname)
         call surf_file%get_pointer(trim(vname), tile_ptr)
         tile_ptr(:,:) = tile(ilu_idx)%ustar(2:i1,2:j1)
 
-        vname = trim(tile(ilu_idx)%lushort)//'_ra'
+        call make_tile_var_name(tile(ilu_idx)%lushort, '_ra', vname)
         call surf_file%get_pointer(trim(vname), tile_ptr)
         tile_ptr(:,:) = tile(ilu_idx)%ra(2:i1,2:j1)
       end do
@@ -530,16 +545,64 @@ contains
         !$acc update host(tile(ilu_idx)%thlskin, tile(ilu_idx)%qtskin, tile(ilu_idx)%db, tile(ilu_idx)%frac)
       end do
 
+      !$acc update host(u0, v0, w0, ustar, dudz, dvdz)
+
       call surf_file%get_pointer('thlskin', thlskin_ptr)
       call surf_file%get_pointer('qtskin', qtskin_ptr)
       call surf_file%get_pointer('db', db_ptr)
       call surf_file%get_pointer('thl0_1', thl0_1_ptr)
       call surf_file%get_pointer('qt0_1', qt0_1_ptr)
+      call surf_file%get_pointer("sbtke", sbtke_ptr)
+      call surf_file%get_pointer('ekm', ekm_ptr)
+      call surf_file%get_pointer('tdef2', tdef2_ptr)
+      call surf_file%get_pointer('tdef2_uvw', tdef2_uvw_ptr)
+      call surf_file%get_pointer('tdef2_xz', tdef2_xz_ptr)
+      call surf_file%get_pointer('tdef2_xy', tdef2_xy_ptr)
+      call surf_file%get_pointer('tdef2_yz', tdef2_yz_ptr)
+      call surf_file%get_pointer("sbshr", sbshr_ptr)
+      call surf_file%get_pointer("sbbuo", sbbuo_ptr)
+      call surf_file%get_pointer("sbdiss", sbdiss_ptr)
 
       thlskin_ptr(:,:) = tskin(2:i1,2:j1)
       qtskin_ptr(:,:) = qskin(2:i1,2:j1)
       thl0_1_ptr(:,:) = thl0(2:i1,2:j1,1)
       qt0_1_ptr(:,:) = qt0(2:i1,2:j1,1)
+      sbtke_ptr(:,:) = e120(2:i1,2:j1,1)**2 * rhobf(1)
+      ekm_ptr(:,:) = ekm(2:i1,2:j1,1)
+
+      do j = 2, j1
+        do i = 2, i1
+          tdef2_uvw = 2._field_r * ( &
+              ((u0(i+1,j  ,1)-u0(i,j,1))*dxi)**2 + &
+              ((v0(i  ,j+1,1)-v0(i,j,1))*dyi)**2 + &
+              ((w0(i  ,j  ,2)-w0(i,j,1))*dzfi(1))**2 )
+
+          horv = max(sqrt((u0(i,j,1)+cu)**2 + (v0(i,j,1)+cv)**2), 0.01_field_r)
+          uwflux = -ustar(i,j)*ustar(i,j) * ((u0(i,j,1)+cu)/horv)
+          local_dudz = -uwflux / ekm(i,j,1)
+          tdef2_xz = (0.25_field_r*(w0(i+1,j,2)-w0(i-1,j,2))*dxi + local_dudz)**2
+
+          tdef2_xy = 0.25_field_r * ( &
+              ((u0(i  ,j+1,1)-u0(i  ,j  ,1))*dyi + (v0(i  ,j+1,1)-v0(i-1,j+1,1))*dxi)**2 + &
+              ((u0(i  ,j  ,1)-u0(i  ,j-1,1))*dyi + (v0(i  ,j  ,1)-v0(i-1,j  ,1))*dxi)**2 + &
+              ((u0(i+1,j  ,1)-u0(i+1,j-1,1))*dyi + (v0(i+1,j  ,1)-v0(i  ,j  ,1))*dxi)**2 + &
+              ((u0(i+1,j+1,1)-u0(i+1,j  ,1))*dyi + (v0(i+1,j+1,1)-v0(i  ,j+1,1))*dxi)**2 )
+
+          vwflux = -ustar(i,j)*ustar(i,j) * ((v0(i,j,1)+cv)/horv)
+          local_dvdz = -vwflux / ekm(i,j,1)
+          tdef2_yz = (0.25_field_r*(w0(i,j+1,2)-w0(i,j-1,2))*dyi + local_dvdz)**2
+
+          tdef2_ptr(i,j) = tdef2_uvw + tdef2_xz + tdef2_xy + tdef2_yz
+          tdef2_uvw_ptr(i,j) = tdef2_uvw
+          tdef2_xz_ptr(i,j) = tdef2_xz
+          tdef2_xy_ptr(i,j) = tdef2_xy
+          tdef2_yz_ptr(i,j) = tdef2_yz
+        end do
+      end do
+
+      sbshr_ptr(:,:) = sbshr(2:i1,2:j1,1) * rhobf(1)
+      sbbuo_ptr(:,:) = sbbuo(2:i1,2:j1,1) * rhobf(1)
+      sbdiss_ptr(:,:) = sbdiss(2:i1,2:j1,1) * rhobf(1)
 
       db_ptr(:,:) = 0._field_r
       do ilu_idx = 1, nlu
@@ -556,5 +619,26 @@ contains
 
 
   end subroutine wrtsurf
+
+  !> Build tile variable names safely, stripping possible C-style NUL terminators.
+  subroutine make_tile_var_name(raw_short_name, suffix, out_name)
+    character(len=*), intent(in) :: raw_short_name
+    character(len=*), intent(in) :: suffix
+    character(len=*), intent(out) :: out_name
+
+    character(len=64) :: base_name
+    integer :: nul_pos
+
+    base_name = ' '
+    nul_pos = index(raw_short_name, achar(0))
+
+    if (nul_pos > 0) then
+      if (nul_pos > 1) base_name = trim(raw_short_name(:nul_pos-1))
+    else
+      base_name = trim(raw_short_name)
+    end if
+
+    out_name = trim(base_name)//suffix
+  end subroutine make_tile_var_name
 
 end module modlsmcrosssection
