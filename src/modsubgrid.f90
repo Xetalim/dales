@@ -155,6 +155,9 @@ contains
     call D_MPI_BCAST(Rigc            ,1, 0,comm3d,mpierr)
     call D_MPI_BCAST(Prandtl         ,1, 0,comm3d,mpierr)
     call D_MPI_BCAST(sgs_surface_fix ,1, 0,comm3d,mpierr)
+    call D_MPI_BCAST(sgs_surface_shear_virt_velocity ,1, 0,comm3d,mpierr)
+    call D_MPI_BCAST(sgs_surface_shear_ustar ,1, 0,comm3d,mpierr)
+    call D_MPI_BCAST(sgs_surface_buoyancy ,1, 0,comm3d,mpierr)
     call D_MPI_BCAST(ch1             ,1, 0,comm3d,mpierr)
   end subroutine subgridnamelist
 
