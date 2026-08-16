@@ -88,6 +88,11 @@ module modchecksim
 
     integer :: prevntrun
 
+  integer, parameter :: dt_reason_history_len = 100
+  integer, allocatable :: dt_reason_history(:)
+  integer :: dt_reason_history_count = 0
+  integer :: dt_reason_history_idx = 0
+
   ! explanations for dt_limit, determined in tstep_update()
   character (len=15) :: dt_reasons(0:5) = [character(len=15) :: &
     "initial step", "timee", "dt_lim" , "idtmax", "velocity", "diffusion"]
@@ -146,6 +151,10 @@ contains
     tnext = itcheck + btime
 
     allocate(courx(kmax), coury(kmax), courz(kmax), courtot(kmax), peclettot(kmax))
+    allocate(dt_reason_history(dt_reason_history_len))
+    dt_reason_history = 0
+    dt_reason_history_count = 0
+    dt_reason_history_idx = 0
 
     !$acc enter data create(courx, coury, courz, courtot, peclettot)
 
@@ -168,6 +177,7 @@ contains
     !$acc exit data delete(courx, coury, courz, courtot, peclettot)
 
     deallocate(courx, coury, courz, courtot, peclettot)
+    deallocate(dt_reason_history)
 
   end subroutine exitchecksim
 
@@ -183,6 +193,8 @@ contains
 
     if (timee == 0) return
     if (rk3step /= 3) return
+
+    call push_dt_reason(dt_reason)
 
     dtmn = dtmn + rdt
     ndt = ndt + 1
@@ -234,6 +246,44 @@ contains
     call timer_toc('modchecksim/checksim')
 
   end subroutine checksim
+
+  !> Store dt_reason in a rolling history buffer.
+  subroutine push_dt_reason(reason)
+
+    integer, intent(in) :: reason
+
+    dt_reason_history_idx = mod(dt_reason_history_idx, dt_reason_history_len) + 1
+    dt_reason_history(dt_reason_history_idx) = reason
+    dt_reason_history_count = min(dt_reason_history_count + 1, dt_reason_history_len)
+
+  end subroutine push_dt_reason
+
+  !> Return the most common dt_reason in the history buffer.
+  integer function most_common_dt_reason() result(reason)
+
+    integer :: i
+    integer :: max_count
+    integer :: counts(0:5)
+    integer :: val
+
+    counts = 0
+    do i = 1, dt_reason_history_count
+      val = dt_reason_history(i)
+      if (val >= lbound(counts, 1) .and. val <= ubound(counts, 1)) then
+        counts(val) = counts(val) + 1
+      end if
+    end do
+
+    reason = dt_reason
+    max_count = -1
+    do i = lbound(counts, 1), ubound(counts, 1)
+      if (counts(i) > max_count) then
+        max_count = counts(i)
+        reason = i
+      end if
+    end do
+
+  end function most_common_dt_reason
 
   !> Calculates the remaining time left in hh:mm:ss, iteration speed
   !! and a core scaling number, it/s * (gridcells / core)
@@ -365,7 +415,7 @@ contains
 
     if (myid == 0) then
       write(6 ,'(A,2ES11.2,A,A)')'divmax, divtot = ', divmax, divtot,  &
-        '       dt limited by ', dt_reasons(dt_reason)
+        '       dt limited by ', dt_reasons(most_common_dt_reason())
    end if
 
   end subroutine chkdiv
