@@ -2967,14 +2967,15 @@ subroutine init_heterogeneous_nc
 
 end subroutine init_heterogeneous_nc
 subroutine post_init_heterogeneous_nc
+    use modglobal, only: i1,j1
     use modslurb, only : slurb_tile, fraction_slurb
     integer :: ilu_ws
     ilu_ws = nlu
-    tile(ilu_ws)%z0m(:,:) = tile(ilu_ws)%z0m(:,:) + fraction_slurb(:,:)*slurb_tile%z0_urb(:,:)
-    tile(ilu_ws)%z0h(:,:) = tile(ilu_ws)%z0h(:,:) + fraction_slurb(:,:)*slurb_tile%z0_urb(:,:)
-    tile(ilu_ws)%lambda_stable(:,:) = tile(ilu_ws)%lambda_stable(:,:) + fraction_slurb(:,:)*0
-    tile(ilu_ws)%lambda_unstable(:,:) = tile(ilu_ws)%lambda_unstable(:,:) + fraction_slurb(:,:)*0 ! assume 0 conductivity for urban surfaces
-    tile(ilu_ws)%albedo = tile(ilu_ws)%albedo + fraction_slurb(:,:)*slurb_tile%albedo_urb(:,:)
+    tile(ilu_ws)%z0m(2:i1,2:j1) = tile(ilu_ws)%z0m(2:i1,2:j1) + fraction_slurb(2:i1,2:j1)*slurb_tile%z0_urb(2:i1,2:j1)
+    tile(ilu_ws)%z0h(2:i1,2:j1) = tile(ilu_ws)%z0h(2:i1,2:j1) + fraction_slurb(2:i1,2:j1)*slurb_tile%z0_urb(2:i1,2:j1)
+    tile(ilu_ws)%lambda_stable(2:i1,2:j1) = tile(ilu_ws)%lambda_stable(2:i1,2:j1) + fraction_slurb(2:i1,2:j1)*0
+    tile(ilu_ws)%lambda_unstable(2:i1,2:j1) = tile(ilu_ws)%lambda_unstable(2:i1,2:j1) + fraction_slurb(2:i1,2:j1)*0 ! assume 0 conductivity for urban surfaces
+    tile(ilu_ws)%albedo(2:i1,2:j1) = tile(ilu_ws)%albedo(2:i1,2:j1) + fraction_slurb(2:i1,2:j1)*slurb_tile%albedo_urb(2:i1,2:j1)
     end subroutine post_init_heterogeneous_nc
 !
 ! Check if the rougness lengths are smaller than the first vertical grid level. If they are larger, MOST is not valid and the model will likely crash.
