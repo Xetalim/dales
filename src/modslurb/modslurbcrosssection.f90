@@ -181,6 +181,11 @@ contains
     call slurb_urb_file%add_var('ram_urb', 'urban aerodynamic resistance for momentum', 's/m', 'tt0t')
     call slurb_urb_file%add_var('rib_urb', 'urban bulk-Richardson number', '-', 'tt0t')
     call slurb_urb_file%add_var('shf_urb', 'total urban sensible heat flux', 'W/m^2', 'tt0t')
+    call slurb_urb_file%add_var('shf_tile', 'SLUrb tile sensible heat flux routed to LSM (roof+canopy-air coupling only)', 'W/m^2', 'tt0t')
+    call slurb_urb_file%add_var('lhf_tile', 'SLUrb tile latent heat flux routed to LSM (roof+canopy-air coupling only)', 'W/m^2', 'tt0t')
+    call slurb_urb_file%add_var('ghf_tile', 'SLUrb tile ground heat flux routed to LSM (roof layer 1 to layer 2)', 'W/m^2', 'tt0t')
+    call slurb_urb_file%add_var('qnet_tile', 'SLUrb tile net radiation routed to LSM (LSM sign convention)', 'W/m^2', 'tt0t')
+    call slurb_urb_file%add_var('seb_residual_tile', 'SLUrb tile SEB closure residual (qnet+h+le+g)', 'W/m^2', 'tt0t')
     call slurb_urb_file%add_var('t_2m_urb', 'urban 2-metre temperature', 'K', 'tt0t')
     call slurb_urb_file%add_var('t_c_urb', 'complete urban surface temperature', 'K', 'tt0t')
     call slurb_urb_file%add_var('t_h_urb', 'effective urban surface temperature', 'K', 'tt0t')
@@ -282,7 +287,8 @@ contains
 
     real(field_r), pointer :: albedo_urb(:,:), ol_urb(:,:), qsws_urb(:,:), rad_lw_in_urb(:,:), &
                               rad_lw_out_urb(:,:), rad_sw_in_urb(:,:), rad_sw_out_urb(:,:), ram_urb(:,:), rib_urb(:,:), &
-                              shf_urb(:,:), t_2m_urb(:,:), t_c_urb(:,:), t_h_urb(:,:), thl_rad_urb(:,:), usws_urb(:,:), &
+                              shf_urb(:,:), shf_tile(:,:), lhf_tile(:,:), ghf_tile(:,:), qnet_tile(:,:), seb_residual_tile(:,:), &
+                              t_2m_urb(:,:), t_c_urb(:,:), t_h_urb(:,:), thl_rad_urb(:,:), usws_urb(:,:), &
                               vsws_urb(:,:), thlskin(:,:), qtskin(:,:), q_can_0(:,:), t_can_0(:,:), &
                               tq_can(:,:), tt_can(:,:), shf_can(:,:), shf_external(:,:), shf_traffic(:,:), &
                               qsws_can(:,:), qsws_external(:,:), rad_lw_net_can(:,:), rad_lw_net_urb(:,:), rad_sw_net_urb(:,:), &
@@ -305,6 +311,11 @@ contains
       call slurb_urb_file%get_pointer('ram_urb', ram_urb)
       call slurb_urb_file%get_pointer('rib_urb', rib_urb)
       call slurb_urb_file%get_pointer('shf_urb', shf_urb)
+      call slurb_urb_file%get_pointer('shf_tile', shf_tile)
+      call slurb_urb_file%get_pointer('lhf_tile', lhf_tile)
+      call slurb_urb_file%get_pointer('ghf_tile', ghf_tile)
+      call slurb_urb_file%get_pointer('qnet_tile', qnet_tile)
+      call slurb_urb_file%get_pointer('seb_residual_tile', seb_residual_tile)
       call slurb_urb_file%get_pointer('t_2m_urb', t_2m_urb)
       call slurb_urb_file%get_pointer('t_c_urb', t_c_urb)
       call slurb_urb_file%get_pointer('t_h_urb', t_h_urb)
@@ -360,6 +371,16 @@ contains
       ram_urb(:,:) = slurb_tile%ram_urb(2:i1,2:j1)
       rib_urb(:,:) = slurb_tile%rib_urb(2:i1,2:j1)
       shf_urb(:,:) = slurb_tile%shf_urb(2:i1,2:j1)
+      shf_tile(:,:) = slurb_tile%shf_urb(2:i1,2:j1)
+      lhf_tile(:,:) = slurb_tile%qsws_urb(2:i1,2:j1)
+      if (nzt_roof < nzb_roof) then
+        ghf_tile(:,:) = slurb_tile%f_bld(2:i1,2:j1) * slurb_tile%conductivity_roof(nzt_roof,2:i1,2:j1) * &
+                        (slurb_tile%t_roof_0(nzt_roof+1,2:i1,2:j1) - slurb_tile%t_roof_0(nzt_roof,2:i1,2:j1))
+      else
+        ghf_tile(:,:) = 0.0_field_r
+      end if
+      qnet_tile(:,:) = -(shf_tile(:,:) + lhf_tile(:,:) + ghf_tile(:,:))
+      seb_residual_tile(:,:) = qnet_tile(:,:) + shf_tile(:,:) + lhf_tile(:,:) + ghf_tile(:,:)
       t_2m_urb(:,:) = slurb_tile%t_2m_urb(2:i1,2:j1)
       t_c_urb(:,:) = slurb_tile%t_c_urb(2:i1,2:j1)
       t_h_urb(:,:) = slurb_tile%t_h_urb(2:i1,2:j1)
