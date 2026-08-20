@@ -280,7 +280,7 @@ contains
     use modglobal,    only : i1, j1, cp
     use modfields,    only : rhof
     use modslurbdata, only : slurb_tile, facade_rah_doe, enable_slurb, output_slurb_bc, slurb_cross_output, &
-                             slurb_cross_output_tendencies, slurb_cross_output_radiation
+                             slurb_cross_output_tendencies, slurb_cross_output_radiation, nzb_roof, nzt_roof
     use modstat_nc,   only : lnetcdf
 
     implicit none
