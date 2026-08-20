@@ -1130,6 +1130,7 @@ subroutine calc_bulk_bcs
         H, LE, G0, tskin, tskin_radiative, qskin, thlflux, qtflux, dthldz, dqtdz, &
         dudz, dvdz, ustar, obl, cliq, ra, rsveg, rssoil, Qnet
     use modslurb, only : fraction_slurb, slurb_tile, enable_slurb
+    use modslurbdata, only : nzt_roof, nzb_roof
     implicit none
 
     integer :: i, j
@@ -1196,7 +1197,13 @@ subroutine calc_bulk_bcs
                     tile(ilu)%ra(i,j) = slurb_tile%f_bld(i,j) * slurb_tile%rah_roof(i,j) + &
                                         (1 - slurb_tile%f_bld(i,j)) * slurb_tile%rah_can(i,j)
                     tile(ilu)%obuk(i,j) = slurb_tile%ol_urb(i,j)
-                    tile(ilu)%Qnet(i,j) = -(tile(ilu)%H(i,j) + tile(ilu)%LE(i,j))
+                    if (nzt_roof < nzb_roof) then
+                        tile(ilu)%G(i,j) = slurb_tile%f_bld(i,j) * slurb_tile%conductivity_roof(nzt_roof,i,j) * &
+                                           (slurb_tile%t_roof_0(nzt_roof+1,i,j) - slurb_tile%t_roof_0(nzt_roof,i,j))
+                    else
+                        tile(ilu)%G(i,j) = 0.0_field_r
+                    end if
+                    tile(ilu)%Qnet(i,j) = slurb_tile%rad_lw_net_urb(i,j) + slurb_tile%rad_sw_net_urb(i,j)
                     tile(ilu)%albedo(i,j) = slurb_tile%albedo_urb(i,j)
 
                     H(i,j)      = H(i,j)     + fraction_slurb(i,j) * slurb_tile%shf_urb(i,j)

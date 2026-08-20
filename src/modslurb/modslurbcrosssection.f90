@@ -184,7 +184,7 @@ contains
     call slurb_urb_file%add_var('shf_tile', 'SLUrb tile sensible heat flux routed to LSM (roof+canopy-air coupling only)', 'W/m^2', 'tt0t')
     call slurb_urb_file%add_var('lhf_tile', 'SLUrb tile latent heat flux routed to LSM (roof+canopy-air coupling only)', 'W/m^2', 'tt0t')
     call slurb_urb_file%add_var('ghf_tile', 'SLUrb tile ground heat flux routed to LSM (roof layer 1 to layer 2)', 'W/m^2', 'tt0t')
-    call slurb_urb_file%add_var('qnet_tile', 'SLUrb tile net radiation routed to LSM (LSM sign convention)', 'W/m^2', 'tt0t')
+    call slurb_urb_file%add_var('qnet_tile', 'SLUrb tile radiative net (shortwave + longwave)', 'W/m^2', 'tt0t')
     call slurb_urb_file%add_var('seb_residual_tile', 'SLUrb tile SEB closure residual (qnet+h+le+g)', 'W/m^2', 'tt0t')
     call slurb_urb_file%add_var('t_2m_urb', 'urban 2-metre temperature', 'K', 'tt0t')
     call slurb_urb_file%add_var('t_c_urb', 'complete urban surface temperature', 'K', 'tt0t')
@@ -379,7 +379,7 @@ contains
       else
         ghf_tile(:,:) = 0.0_field_r
       end if
-      qnet_tile(:,:) = -(shf_tile(:,:) + lhf_tile(:,:) + ghf_tile(:,:))
+      qnet_tile(:,:) = slurb_tile%rad_lw_net_urb(2:i1,2:j1) + slurb_tile%rad_sw_net_urb(2:i1,2:j1)
       seb_residual_tile(:,:) = qnet_tile(:,:) + shf_tile(:,:) + lhf_tile(:,:) + ghf_tile(:,:)
       t_2m_urb(:,:) = slurb_tile%t_2m_urb(2:i1,2:j1)
       t_c_urb(:,:) = slurb_tile%t_c_urb(2:i1,2:j1)
