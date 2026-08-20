@@ -357,9 +357,7 @@ contains
     use modglobal,   only : i1, j1, cp, rlv, cu, cv, dzfi, dxi, dyi
     use modfields,   only : rhof, rhobf, e120, thl0, qt0, u0, v0, w0
     use modlsm,      only : f1, f2b, lags, an_co2, resp_co2
-    use modslurb,    only : enable_slurb, fraction_slurb
     use modlsmdata,  only : tile, nlu, obuk_solver
-    use modslurbdata, only : slurb_tile, nzt_roof, nzb_roof
     use modsubgriddata, only : ekm, sbshr, sbbuo, sbdiss
     use modstat_nc,  only : lnetcdf
     use modsurfdata, only : Qnet, H, LE, G0, rs, ra, tskin, tendskin, &
@@ -453,11 +451,6 @@ contains
       h_ptr(:,:) = H(2:i1,2:j1)
       le_ptr(:,:) = LE(2:i1,2:j1)
       g0_ptr(:,:) = G0(2:i1,2:j1)
-      if (enable_slurb .and. nzt_roof < nzb_roof) then
-        g0_ptr(:,:) = g0_ptr(:,:) + fraction_slurb(2:i1,2:j1) * slurb_tile%f_bld(2:i1,2:j1) * &
-                      slurb_tile%conductivity_roof(nzt_roof,2:i1,2:j1) * &
-                      (slurb_tile%t_roof_0(nzt_roof+1,2:i1,2:j1) - slurb_tile%t_roof_0(nzt_roof,2:i1,2:j1))
-      end if
       tskin_ptr(:,:) = tskin(2:i1,2:j1)
       obuk_ptr(:,:) = obl(2:i1,2:j1)
       ustar_ptr(:,:) = ustar(2:i1,2:j1)
@@ -475,48 +468,23 @@ contains
       do ilu_idx = 1, nlu
         call make_tile_var_name(tile(ilu_idx)%lushort, '_H', vname)
         call surf_file%get_pointer(trim(vname), tile_ptr)
-        if (tile(ilu_idx)%lushort == 'slb') then
-          tile_ptr(:,:) = slurb_tile%shf_urb(2:i1,2:j1)
-        else
-          tile_ptr(:,:) = tile(ilu_idx)%H(2:i1,2:j1)
-        end if
+        tile_ptr(:,:) = tile(ilu_idx)%H(2:i1,2:j1)
 
         call make_tile_var_name(tile(ilu_idx)%lushort, '_LE', vname)
         call surf_file%get_pointer(trim(vname), tile_ptr)
-        if (tile(ilu_idx)%lushort == 'slb') then
-          tile_ptr(:,:) = slurb_tile%qsws_urb(2:i1,2:j1)
-        else
-          tile_ptr(:,:) = tile(ilu_idx)%LE(2:i1,2:j1)
-        end if
+        tile_ptr(:,:) = tile(ilu_idx)%LE(2:i1,2:j1)
 
         call make_tile_var_name(tile(ilu_idx)%lushort, '_G', vname)
         call surf_file%get_pointer(trim(vname), tile_ptr)
-        if (tile(ilu_idx)%lushort == 'slb') then
-          if (nzt_roof < nzb_roof) then
-            tile_ptr(:,:) = slurb_tile%f_bld(2:i1,2:j1) * slurb_tile%conductivity_roof(nzt_roof,2:i1,2:j1) * &
-                            (slurb_tile%t_roof_0(nzt_roof+1,2:i1,2:j1) - slurb_tile%t_roof_0(nzt_roof,2:i1,2:j1))
-          else
-            tile_ptr(:,:) = 0.0_field_r
-          end if
-        else
-          tile_ptr(:,:) = tile(ilu_idx)%G(2:i1,2:j1)
-        end if
+        tile_ptr(:,:) = tile(ilu_idx)%G(2:i1,2:j1)
 
         call make_tile_var_name(tile(ilu_idx)%lushort, '_wthl', vname)
         call surf_file%get_pointer(trim(vname), tile_ptr)
-        if (tile(ilu_idx)%lushort == 'slb') then
-          tile_ptr(:,:) = slurb_tile%shf_urb(2:i1,2:j1) / (rhof(1) * cp)
-        else
-          tile_ptr(:,:) = tile(ilu_idx)%wthl(2:i1,2:j1)
-        end if
+        tile_ptr(:,:) = tile(ilu_idx)%wthl(2:i1,2:j1)
 
         call make_tile_var_name(tile(ilu_idx)%lushort, '_wqt', vname)
         call surf_file%get_pointer(trim(vname), tile_ptr)
-        if (tile(ilu_idx)%lushort == 'slb') then
-          tile_ptr(:,:) = slurb_tile%qsws_urb(2:i1,2:j1) / (rhof(1) * rlv)
-        else
-          tile_ptr(:,:) = tile(ilu_idx)%wqt(2:i1,2:j1)
-        end if
+        tile_ptr(:,:) = tile(ilu_idx)%wqt(2:i1,2:j1)
 
         call make_tile_var_name(tile(ilu_idx)%lushort, '_tskin', vname)
         call surf_file%get_pointer(trim(vname), tile_ptr)
@@ -524,19 +492,11 @@ contains
 
         call make_tile_var_name(tile(ilu_idx)%lushort, '_thlskin', vname)
         call surf_file%get_pointer(trim(vname), tile_ptr)
-        if (tile(ilu_idx)%lushort == 'slb') then
-          tile_ptr(:,:) = slurb_tile%thlskin(2:i1,2:j1)
-        else
-          tile_ptr(:,:) = tile(ilu_idx)%thlskin(2:i1,2:j1)
-        end if
+        tile_ptr(:,:) = tile(ilu_idx)%thlskin(2:i1,2:j1)
 
         call make_tile_var_name(tile(ilu_idx)%lushort, '_qtskin', vname)
         call surf_file%get_pointer(trim(vname), tile_ptr)
-        if (tile(ilu_idx)%lushort == 'slb') then
-          tile_ptr(:,:) = slurb_tile%qtskin(2:i1,2:j1)
-        else
-          tile_ptr(:,:) = tile(ilu_idx)%qtskin(2:i1,2:j1)
-        end if
+        tile_ptr(:,:) = tile(ilu_idx)%qtskin(2:i1,2:j1)
 
         call make_tile_var_name(tile(ilu_idx)%lushort, '_db', vname)
         call surf_file%get_pointer(trim(vname), tile_ptr)
@@ -544,17 +504,7 @@ contains
 
         call make_tile_var_name(tile(ilu_idx)%lushort, '_Qnet', vname)
         call surf_file%get_pointer(trim(vname), tile_ptr)
-        if (tile(ilu_idx)%lushort == 'slb') then
-          if (nzt_roof < nzb_roof) then
-            tile_ptr(:,:) = -(slurb_tile%shf_urb(2:i1,2:j1) + slurb_tile%qsws_urb(2:i1,2:j1) + &
-                            slurb_tile%f_bld(2:i1,2:j1) * slurb_tile%conductivity_roof(nzt_roof,2:i1,2:j1) * &
-                            (slurb_tile%t_roof_0(nzt_roof+1,2:i1,2:j1) - slurb_tile%t_roof_0(nzt_roof,2:i1,2:j1)))
-          else
-            tile_ptr(:,:) = -(slurb_tile%shf_urb(2:i1,2:j1) + slurb_tile%qsws_urb(2:i1,2:j1))
-          end if
-        else
-          tile_ptr(:,:) = tile(ilu_idx)%Qnet(2:i1,2:j1)
-        end if
+        tile_ptr(:,:) = tile(ilu_idx)%Qnet(2:i1,2:j1)
 
         call make_tile_var_name(tile(ilu_idx)%lushort, '_obuk', vname)
         call surf_file%get_pointer(trim(vname), tile_ptr)
