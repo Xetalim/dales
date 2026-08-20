@@ -357,6 +357,7 @@ contains
     use modglobal,   only : i1, j1, cp, rlv, cu, cv, dzfi, dxi, dyi
     use modfields,   only : rhof, rhobf, e120, thl0, qt0, u0, v0, w0
     use modlsm,      only : f1, f2b, lags, an_co2, resp_co2
+    use modslurb,    only : enable_slurb, fraction_slurb
     use modlsmdata,  only : tile, nlu, obuk_solver
     use modsubgriddata, only : ekm, sbshr, sbbuo, sbdiss
     use modstat_nc,  only : lnetcdf
@@ -399,6 +400,13 @@ contains
       h_ptr(:,:) = H(2:i1,2:j1)
       le_ptr(:,:) = LE(2:i1,2:j1)
       g0_ptr(:,:) = G0(2:i1,2:j1)
+      if (enable_slurb) then
+        do ilu_idx = 1, nlu
+          if (tile(ilu_idx)%lushort == 'slb') then
+            g0_ptr(:,:) = g0_ptr(:,:) + fraction_slurb(2:i1,2:j1) * tile(ilu_idx)%G(2:i1,2:j1)
+          end if
+        end do
+      end if
       tskin_ptr(:,:) = tskin(2:i1,2:j1)
       tendskin_ptr(:,:) = tendskin(2:i1,2:j1)
       rs_ptr(:,:) = rs(2:i1,2:j1)
@@ -451,6 +459,13 @@ contains
       h_ptr(:,:) = H(2:i1,2:j1)
       le_ptr(:,:) = LE(2:i1,2:j1)
       g0_ptr(:,:) = G0(2:i1,2:j1)
+      if (enable_slurb) then
+        do ilu_idx = 1, nlu
+          if (tile(ilu_idx)%lushort == 'slb') then
+            g0_ptr(:,:) = g0_ptr(:,:) + fraction_slurb(2:i1,2:j1) * tile(ilu_idx)%G(2:i1,2:j1)
+          end if
+        end do
+      end if
       tskin_ptr(:,:) = tskin(2:i1,2:j1)
       obuk_ptr(:,:) = obl(2:i1,2:j1)
       ustar_ptr(:,:) = ustar(2:i1,2:j1)
