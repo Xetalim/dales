@@ -988,7 +988,7 @@ subroutine calc_tile_bcs(tile)
     type(T_lsm_tile), intent(inout) :: tile
     integer :: i, j
     real :: Ts, esats, qsats, desatdTs, dqsatdTs, &
-        rs_lim, fH, fLE, fG, num, denom, Ta, qsat_new, Qnet
+        rs_lim, fH, fLE, fG, num, denom, Ta, qsat_new, Qnet, swu_tile, lwu_tile
 #ifndef _OPENACC
     real :: rhocp_i(1), rholv_i(1)
 #endif
@@ -1049,7 +1049,11 @@ subroutine calc_tile_bcs(tile)
                 tile%H (i,j) = fH  * (tile%tskin(i,j) - Ta)
                 tile%LE(i,j) = fLE * (qsat_new - qt0(i,j,1))
                 tile%G (i,j) = fG  * (tsoil(i,j,kmax_soil) - tile%tskin(i,j))
-                tile%Qnet(i,j) = Qnet
+                ! Diagnostic tile net radiation from explicit radiative terms
+                ! (tile-own reflected SW and emitted LW).
+                swu_tile = -tile%albedo(i,j) * swd(i,j,1)
+                lwu_tile = boltz * tile%tskin(i,j)**4
+                tile%Qnet(i,j) = swd(i,j,1) + swu_tile + lwd(i,j,1) + lwu_tile
 
                 ! Calculate kinematic surface fluxes
                 tile%wthl(i,j) = tile%H (i,j) * rhocp_i(1)
@@ -1208,6 +1212,7 @@ subroutine calc_bulk_bcs
 
                     H(i,j)      = H(i,j)     + fraction_slurb(i,j) * slurb_tile%shf_urb(i,j)
                     LE(i,j)     = LE(i,j)    + fraction_slurb(i,j) * slurb_tile%qsws_urb(i,j)
+                    Qnet(i,j)   = Qnet(i,j)  + fraction_slurb(i,j) * tile(ilu)%Qnet(i,j)
                     ! G0(i,j)     = G0(i,j)    + tile(ilu)%frac(i,j) * tile(ilu)%G(i,j)
                     ustar(i,j)  = ustar(i,j) + fraction_slurb(i,j) * (slurb_tile%f_bld(i,j) * slurb_tile%us_roof(i,j) &
                                                                 + (1 - slurb_tile%f_bld(i,j)) * slurb_tile%us_can(i,j))
