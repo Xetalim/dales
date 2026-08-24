@@ -144,7 +144,7 @@ subroutine tstep_update
                              + (wm(i,j,k)*rdt/dzh(k)) * (wm(i,j,k)*rdt/dzh(k)))
               min_size_sq = min(dzh(k),min(dx,dy))**2
               min_hor_size_sq = min(dx,dy)**2
-              min_size_sq_mom = merge(min_hor_size_sq, min_size_sq, lvdiff_imex_momentum)
+              min_size_sq_mom = min_size_sq
               min_size_sq_sca = merge(min_hor_size_sq, min_size_sq, lvdiff_imex_scalar)
               pe_ekm = ekm(i,j,k)*rdt/min_size_sq_mom
               pe_ekh = ekh(i,j,k)*rdt/min_size_sq_sca
@@ -194,7 +194,7 @@ subroutine tstep_update
                              + (wm(i,j,k)*rdt/dzh(k)) * (wm(i,j,k)*rdt/dzh(k)))
               min_size_sq = min(dzh(k),min(dx,dy))**2
               min_hor_size_sq = min(dx,dy)**2
-              min_size_sq_mom = merge(min_hor_size_sq, min_size_sq, lvdiff_imex_momentum)
+              min_size_sq_mom = min_size_sq
               min_size_sq_sca = merge(min_hor_size_sq, min_size_sq, lvdiff_imex_scalar)
               pe_ekm = ekm(i,j,k)*rdt/min_size_sq_mom
               pe_ekh = ekh(i,j,k)*rdt/min_size_sq_sca
