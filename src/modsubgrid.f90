@@ -188,13 +188,13 @@ contains
     !$acc wait
 
         if (lvdiff_imex_momentum) then
-    #ifdef _OPENACC
+#ifdef _OPENACC
       call finish(modname//'/subgrid', 'lvdiff_imex_momentum is not supported with OpenACC builds yet')
-    #else
+#else
       call diffu_imex(up,sx)
       call diffv_imex(vp,sy)
       call diffw_imex(wp)
-    #endif
+#endif
         else
       call diffu(up,sx)
       call diffv(vp,sy)
@@ -912,15 +912,16 @@ contains
     real(field_r), intent(in)     :: a_in(2-ih:i1+ih,2-jh:j1+jh,k1,nsv)
     real(field_r), intent(inout)  :: a_out(2-ih:i1+ih,2-jh:j1+jh,k1,nsv)
     real, intent(in)              :: flux(i2,j2,nsv)
-    real(field_r), allocatable    :: a_out_base(:,:,:,:)
+    real(field_r), allocatable    :: a_out_base(:,:,:)
 
     integer :: i,j,k,n
 
-    allocate(a_out_base(2-ih:i1+ih,2-jh:j1+jh,k1,nsv))
-    a_out_base = a_out
+    allocate(a_out_base(2-ih:i1+ih,2-jh:j1+jh,k1))
 
-    !$acc parallel loop collapse(4) default(present) async(1)
     do n = 1, nsv
+      a_out_base = a_out(:,:,:,n)
+
+      !$acc parallel loop collapse(3) default(present) async(1)
       do k = 2, kmax
         do j = 2, j1
           do i = 2, i1
@@ -932,10 +933,8 @@ contains
           end do
         end do
       end do
-    end do
 
-    !$acc parallel loop collapse(3) default(present) async(2)
-    do n = 1, nsv
+      !$acc parallel loop collapse(2) default(present) async(2)
       do j = 2, j1
         do i = 2, i1
           a_out(i,j,1,n) = a_out(i,j,1,n) + 0.5_field_r * ( &
@@ -946,15 +945,16 @@ contains
                 + ( rhobh(1)/rhobf(1) * flux(i,j,n) * 2 )*dzfi(1) )
         end do
       end do
-    end do
-    !$acc wait(1,2)
+      !$acc wait(1,2)
 
-    call imex_vertical_diffusion_scalar_sv(a_in, a_out, a_out_base)
+      call imex_vertical_diffusion_scalar(a_in(:,:,:,n), a_out(:,:,:,n), a_out_base)
+    end do
+
     deallocate(a_out_base)
   end subroutine diffcsv_imex
 
   subroutine diffu_imex(a_out, sx)
-    use modglobal,    only : i1,ih,j1,jh,k1,kmax,dxi,dx2i,dyi,dzfi,cu,cv
+    use modglobal,    only : i1,ih,j1,jh,k1,kmax,dxi,dx2i,dyi,dzf,dzfi,dzhi,cu,cv
     use modfields,    only : u0,v0,w0,rhobf,rhobh
     use modsurfdata,  only : ustar
     implicit none
@@ -962,7 +962,7 @@ contains
     real(field_r), intent(inout)  :: a_out(2-ih:i1+ih,2-jh:j1+jh,k1)
     integer, intent(in)           :: sx
     real(field_r), allocatable    :: a_out_base(:,:,:)
-    real(field_r)                 :: emmo, empo
+    real(field_r)                 :: emmo, emom, emop, empo
     real(field_r)                 :: fu
     real(field_r)                 :: ucu, upcu
     integer                       :: i,j,k
@@ -970,10 +970,16 @@ contains
     allocate(a_out_base(2-ih:i1+ih,2-jh:j1+jh,k1))
     a_out_base = a_out
 
-    !$acc parallel loop collapse(3) default(present) private(empo, emmo) async(1)
+    !$acc parallel loop collapse(3) default(present) private(emom, emop, empo, emmo) async(1)
     do k = 2, kmax
       do j = 2, j1
         do i = sx, i1
+          emom = ( dzf(k-1) * ( ekm(i,j,k) + ekm(i-1,j,k) ) + &
+                   dzf(k)   * ( ekm(i,j,k-1) + ekm(i-1,j,k-1) ) ) * ( .25_field_r * dzhi(k) )
+
+          emop = ( dzf(k+1) * ( ekm(i,j,k) + ekm(i-1,j,k) ) + &
+                   dzf(k)   * ( ekm(i,j,k+1) + ekm(i-1,j,k+1) ) ) * ( .25_field_r * dzhi(k+1) )
+
           empo = 0.25_field_r * ( ekm(i,j,k)+ekm(i,j+1,k)+ekm(i-1,j+1,k)+ekm(i-1,j,k) )
           emmo = 0.25_field_r * ( ekm(i,j,k)+ekm(i,j-1,k)+ekm(i-1,j-1,k)+ekm(i-1,j,k) )
 
@@ -981,16 +987,20 @@ contains
                   + ( ekm(i,j,k) * (u0(i+1,j,k)-u0(i,j,k)) &
                      -ekm(i-1,j,k) * (u0(i,j,k)-u0(i-1,j,k)) ) * 2 * dx2i * anis_fac(k) &
                   + ( empo * ( (u0(i,j+1,k)-u0(i,j,k)) * dyi + (v0(i,j+1,k)-v0(i-1,j+1,k)) * dxi ) &
-                     -emmo * ( (u0(i,j,k)-u0(i,j-1,k)) * dyi + (v0(i,j,k)-v0(i-1,j,k)) * dxi ) ) * dyi * anis_fac(k)
+                     -emmo * ( (u0(i,j,k)-u0(i,j-1,k)) * dyi + (v0(i,j,k)-v0(i-1,j,k)) * dxi ) ) * dyi * anis_fac(k) &
+                  + ( rhobh(k+1)/rhobf(k) * emop * (w0(i,j,k+1)-w0(i-1,j,k+1)) * dxi &
+                     -rhobh(k)/rhobf(k)   * emom * (w0(i,j,k)-w0(i-1,j,k)) * dxi ) * dzfi(k)
         end do
       end do
     end do
 
-    !$acc parallel loop collapse(2) default(present) private(empo, emmo, ucu, upcu, fu) async(2)
+    !$acc parallel loop collapse(2) default(present) private(empo, emmo, emop, ucu, upcu, fu) async(2)
     do j = 2, j1
       do i = sx, i1
         empo = 0.25_field_r * ( ekm(i,j,1)+ekm(i,j+1,1)+ekm(i-1,j+1,1)+ekm(i-1,j,1) )
         emmo = 0.25_field_r * ( ekm(i,j,1)+ekm(i,j-1,1)+ekm(i-1,j-1,1)+ekm(i-1,j,1) )
+        emop = ( dzf(2) * ( ekm(i,j,1) + ekm(i-1,j,1) ) + &
+                 dzf(1) * ( ekm(i,j,2) + ekm(i-1,j,2) ) ) * ( .25_field_r * dzhi(2) )
 
         ucu = 0.5_field_r * (u0(i,j,1)+u0(i+1,j,1)) + cu
         upcu = sign(1._field_r,ucu) * max(abs(ucu),1.e-10_field_r)
@@ -1003,6 +1013,7 @@ contains
                -ekm(i-1,j,1) * (u0(i,j,1)-u0(i-1,j,1)) ) * 2 * dx2i * anis_fac(1) &
               + ( empo * ( (u0(i,j+1,1)-u0(i,j,1))*dyi + (v0(i,j+1,1)-v0(i-1,j+1,1))*dxi ) &
                  -emmo * ( (u0(i,j,1)-u0(i,j-1,1))*dyi + (v0(i,j,1)-v0(i-1,j,1))*dxi ) ) * dyi * anis_fac(1) &
+            + rhobh(2)/rhobf(1) * emop * (w0(i,j,2)-w0(i-1,j,2)) * dxi * dzfi(1) &
               - rhobh(1)/rhobf(1) * fu * dzfi(1)
       end do
     end do
@@ -1013,7 +1024,7 @@ contains
   end subroutine diffu_imex
 
   subroutine diffv_imex(a_out, sy)
-    use modglobal,    only : i1,ih,j1,jh,k1,kmax,dxi,dyi,dy2i,dzfi,cu,cv
+    use modglobal,    only : i1,ih,j1,jh,k1,kmax,dxi,dyi,dy2i,dzf,dzfi,dzhi,cu,cv
     use modfields,    only : u0,v0,w0,rhobf,rhobh
     use modsurfdata,  only : ustar
     implicit none
@@ -1021,17 +1032,23 @@ contains
     real(field_r), intent(inout)  :: a_out(2-ih:i1+ih,2-jh:j1+jh,k1)
     integer, intent(in)           :: sy
     real(field_r), allocatable    :: a_out_base(:,:,:)
-    real(field_r)                 :: emmo, epmo
+    real(field_r)                 :: emmo, eomm, eomp, epmo
     real(field_r)                 :: fv, vcv, vpcv
     integer                       :: i,j,k
 
     allocate(a_out_base(2-ih:i1+ih,2-jh:j1+jh,k1))
     a_out_base = a_out
 
-    !$acc parallel loop collapse(3) default(present) private(emmo, epmo) async(3)
+    !$acc parallel loop collapse(3) default(present) private(eomm, eomp, emmo, epmo) async(3)
     do k = 2, kmax
       do j = sy, j1
         do i = 2, i1
+          eomm = ( dzf(k-1) * ( ekm(i,j,k) + ekm(i,j-1,k) ) + &
+                   dzf(k)   * ( ekm(i,j,k-1) + ekm(i,j-1,k-1) ) ) * ( .25_field_r * dzhi(k) )
+
+          eomp = ( dzf(k+1) * ( ekm(i,j,k) + ekm(i,j-1,k) ) + &
+                   dzf(k)   * ( ekm(i,j,k+1) + ekm(i,j-1,k+1) ) ) * ( .25_field_r * dzhi(k+1) )
+
           emmo = 0.25_field_r * ( ekm(i,j,k)+ekm(i,j-1,k)+ekm(i-1,j-1,k)+ekm(i-1,j,k) )
           epmo = 0.25_field_r * ( ekm(i,j,k)+ekm(i,j-1,k)+ekm(i+1,j-1,k)+ekm(i+1,j,k) )
 
@@ -1039,16 +1056,20 @@ contains
                 + ( epmo * ( (v0(i+1,j,k)-v0(i,j,k))*dxi + (u0(i+1,j,k)-u0(i+1,j-1,k))*dyi ) &
                    -emmo * ( (v0(i,j,k)-v0(i-1,j,k))*dxi + (u0(i,j,k)-u0(i,j-1,k))*dyi ) ) * dxi * anis_fac(k) &
                 + ( ekm(i,j,k) * (v0(i,j+1,k)-v0(i,j,k)) &
-                   -ekm(i,j-1,k) * (v0(i,j,k)-v0(i,j-1,k)) ) * 2 * dy2i * anis_fac(k)
+                   -ekm(i,j-1,k) * (v0(i,j,k)-v0(i,j-1,k)) ) * 2 * dy2i * anis_fac(k) &
+                + ( rhobh(k+1)/rhobf(k) * eomp * (w0(i,j,k+1)-w0(i,j-1,k+1)) * dyi &
+                   -rhobh(k)/rhobf(k)   * eomm * (w0(i,j,k)-w0(i,j-1,k)) * dyi ) * dzfi(k)
         end do
       end do
     end do
 
-    !$acc parallel loop collapse(2) default(present) private(emmo, epmo, vcv, vpcv, fv) async(4)
+    !$acc parallel loop collapse(2) default(present) private(emmo, epmo, eomp, vcv, vpcv, fv) async(4)
     do j = sy, j1
       do i = 2, i1
         emmo = 0.25_field_r * ( ekm(i,j,1)+ekm(i,j-1,1)+ekm(i-1,j-1,1)+ekm(i-1,j,1) )
         epmo = 0.25_field_r * ( ekm(i,j,1)+ekm(i,j-1,1)+ekm(i+1,j-1,1)+ekm(i+1,j,1) )
+        eomp = ( dzf(2) * ( ekm(i,j,1) + ekm(i,j-1,1) ) + &
+                 dzf(1) * ( ekm(i,j,2) + ekm(i,j-1,2) ) ) * ( .25_field_r * dzhi(2) )
 
         vcv = 0.5_field_r * (v0(i,j,1)+v0(i,j+1,1)) + cv
         vpcv = sign(1._field_r, vcv) * max(abs(vcv),1.e-10_field_r)
@@ -1061,6 +1082,7 @@ contains
                    -emmo * ( (v0(i,j,1)-v0(i-1,j,1))*dxi + (u0(i,j,1)-u0(i,j-1,1))*dyi ) ) * dxi * anis_fac(1) &
                 + ( ekm(i,j,1) * (v0(i,j+1,1)-v0(i,j,1)) &
                    -ekm(i,j-1,1) * (v0(i,j,1)-v0(i,j-1,1)) ) * 2 * dy2i * anis_fac(1) &
+               + rhobh(2)/rhobf(1) * eomp * (w0(i,j,2)-w0(i,j-1,2)) * dyi * dzfi(1) &
                 - rhobh(1)/rhobf(1) * fv * dzfi(1)
       end do
     end do
@@ -1124,6 +1146,7 @@ contains
 
     real(field_r) :: dtstage
     real(field_r) :: km, kp, denom
+    real(field_r), parameter :: denom_floor = 1.e-20_field_r
     real(field_r) :: rhs(kmax), diag(kmax), lower(kmax), upper(kmax), cprime(kmax), xnew(kmax)
     integer :: i, j, k
 
@@ -1135,26 +1158,35 @@ contains
           km = 0.5_field_r * rhobh(k)/rhobf(k) * (dzf(k-1)*ekh(i,j,k) + dzf(k)*ekh(i,j,k-1)) * dzhi(k)**2 * dzfi(k)
           kp = 0.5_field_r * rhobh(k+1)/rhobf(k) * (dzf(k+1)*ekh(i,j,k) + dzf(k)*ekh(i,j,k+1)) * dzhi(k+1)**2 * dzfi(k)
 
+          km = max(km, 0._field_r)
+          kp = max(kp, 0._field_r)
           lower(k) = -dtstage * km
           diag(k)  = 1._field_r + dtstage * (km + kp)
           upper(k) = -dtstage * kp
 
           rhs(k) = a_in(i,j,k) + dtstage * (a_out(i,j,k) - a_out_base(i,j,k))
+
+          if (k == kmax) then
+            rhs(k) = rhs(k) + dtstage * kp * a_in(i,j,k1)
+            upper(k) = 0._field_r
+          end if
         end do
 
         km = 0._field_r
         kp = 0.5_field_r * rhobh(2)/rhobf(1) * (dzf(2)*ekh(i,j,1) + dzf(1)*ekh(i,j,2)) * dzhi(2)**2 * dzfi(1)
+        kp = max(kp, 0._field_r)
         lower(1) = 0._field_r
         diag(1)  = 1._field_r + dtstage * kp
         upper(1) = -dtstage * kp
         rhs(1)   = a_in(i,j,1) + dtstage * (a_out(i,j,1) - a_out_base(i,j,1))
 
-        denom = diag(1)
+        denom = sign(max(abs(diag(1)), denom_floor), diag(1))
         cprime(1) = upper(1) / denom
         xnew(1) = rhs(1) / denom
 
         do k = 2, kmax
           denom = diag(k) - lower(k) * cprime(k-1)
+          denom = sign(max(abs(denom), denom_floor), denom)
           cprime(k) = upper(k) / denom
           xnew(k) = (rhs(k) - lower(k) * xnew(k-1)) / denom
         end do
@@ -1200,6 +1232,11 @@ contains
             upper(k) = -dtstage * kp
 
             rhs(k) = a_in(i,j,k,n) + dtstage * (a_out(i,j,k,n) - a_out_base(i,j,k,n))
+
+            if (k == kmax) then
+              rhs(k) = rhs(k) + dtstage * kp * a_in(i,j,k1,n)
+              upper(k) = 0._field_r
+            end if
           end do
 
           km = 0._field_r
@@ -1244,6 +1281,7 @@ contains
 
     real(field_r) :: dtstage
     real(field_r) :: km, kp, denom
+    real(field_r), parameter :: denom_floor = 1.e-20_field_r
     real(field_r) :: rhs(kmax), diag(kmax), lower(kmax), upper(kmax), cprime(kmax), xnew(kmax)
     integer :: i, j, k
 
@@ -1257,28 +1295,37 @@ contains
           kp = 0.25_field_r * rhobh(k+1)/rhobf(k) * (dzf(k+1) * (ekm(i,j,k) + ekm(i-1,j,k)) + &
                dzf(k) * (ekm(i,j,k+1) + ekm(i-1,j,k+1))) * dzhi(k+1)**2 * dzfi(k)
 
+          km = max(km, 0._field_r)
+          kp = max(kp, 0._field_r)
           lower(k) = -dtstage * km
           diag(k)  = 1._field_r + dtstage * (km + kp)
           upper(k) = -dtstage * kp
 
           rhs(k) = u0(i,j,k) + dtstage * (a_out(i,j,k) - a_out_base(i,j,k))
+
+          if (k == kmax) then
+            rhs(k) = rhs(k) + dtstage * kp * u0(i,j,k1)
+            upper(k) = 0._field_r
+          end if
         end do
 
         km = 0._field_r
         kp = 0.25_field_r * rhobh(2)/rhobf(1) * (dzf(2) * (ekm(i,j,1) + ekm(i-1,j,1)) + &
              dzf(1) * (ekm(i,j,2) + ekm(i-1,j,2))) * dzhi(2)**2 * dzfi(1)
 
+        kp = max(kp, 0._field_r)
         lower(1) = 0._field_r
         diag(1)  = 1._field_r + dtstage * kp
         upper(1) = -dtstage * kp
         rhs(1)   = u0(i,j,1) + dtstage * (a_out(i,j,1) - a_out_base(i,j,1))
 
-        denom = diag(1)
+        denom = sign(max(abs(diag(1)), denom_floor), diag(1))
         cprime(1) = upper(1) / denom
         xnew(1) = rhs(1) / denom
 
         do k = 2, kmax
           denom = diag(k) - lower(k) * cprime(k-1)
+          denom = sign(max(abs(denom), denom_floor), denom)
           cprime(k) = upper(k) / denom
           xnew(k) = (rhs(k) - lower(k) * xnew(k-1)) / denom
         end do
@@ -1307,6 +1354,7 @@ contains
 
     real(field_r) :: dtstage
     real(field_r) :: km, kp, denom
+    real(field_r), parameter :: denom_floor = 1.e-20_field_r
     real(field_r) :: rhs(kmax), diag(kmax), lower(kmax), upper(kmax), cprime(kmax), xnew(kmax)
     integer :: i, j, k
 
@@ -1320,28 +1368,37 @@ contains
           kp = 0.25_field_r * rhobh(k+1)/rhobf(k) * (dzf(k+1) * (ekm(i,j,k) + ekm(i,j-1,k)) + &
                dzf(k) * (ekm(i,j,k+1) + ekm(i,j-1,k+1))) * dzhi(k+1)**2 * dzfi(k)
 
+          km = max(km, 0._field_r)
+          kp = max(kp, 0._field_r)
           lower(k) = -dtstage * km
           diag(k)  = 1._field_r + dtstage * (km + kp)
           upper(k) = -dtstage * kp
 
           rhs(k) = v0(i,j,k) + dtstage * (a_out(i,j,k) - a_out_base(i,j,k))
+
+          if (k == kmax) then
+            rhs(k) = rhs(k) + dtstage * kp * v0(i,j,k1)
+            upper(k) = 0._field_r
+          end if
         end do
 
         km = 0._field_r
         kp = 0.25_field_r * rhobh(2)/rhobf(1) * (dzf(2) * (ekm(i,j,1) + ekm(i,j-1,1)) + &
              dzf(1) * (ekm(i,j,2) + ekm(i,j-1,2))) * dzhi(2)**2 * dzfi(1)
 
+        kp = max(kp, 0._field_r)
         lower(1) = 0._field_r
         diag(1)  = 1._field_r + dtstage * kp
         upper(1) = -dtstage * kp
         rhs(1)   = v0(i,j,1) + dtstage * (a_out(i,j,1) - a_out_base(i,j,1))
 
-        denom = diag(1)
+        denom = sign(max(abs(diag(1)), denom_floor), diag(1))
         cprime(1) = upper(1) / denom
         xnew(1) = rhs(1) / denom
 
         do k = 2, kmax
           denom = diag(k) - lower(k) * cprime(k-1)
+          denom = sign(max(abs(denom), denom_floor), denom)
           cprime(k) = upper(k) / denom
           xnew(k) = (rhs(k) - lower(k) * xnew(k-1)) / denom
         end do
@@ -1369,6 +1426,7 @@ contains
 
     real(field_r) :: dtstage
     real(field_r) :: km, kp, rhsb, denom
+    real(field_r), parameter :: denom_floor = 1.e-20_field_r
     real(field_r) :: rhs(kmax), diag(kmax), lower(kmax), upper(kmax), cprime(kmax), xnew(kmax)
     integer :: i, j, k
 
@@ -1380,6 +1438,8 @@ contains
           km = 2._field_r * dzhi(k) / rhobh(k) * rhobf(k-1) * ekm(i,j,k-1) * dzfi(k-1)
           kp = 2._field_r * dzhi(k) / rhobh(k) * rhobf(k)   * ekm(i,j,k)   * dzfi(k)
 
+          km = max(km, 0._field_r)
+          kp = max(kp, 0._field_r)
           lower(k) = -dtstage * km
           diag(k)  = 1._field_r + dtstage * (km + kp)
           upper(k) = -dtstage * kp
@@ -1390,12 +1450,13 @@ contains
           rhs(k) = rhsb
         end do
 
-        denom = diag(2)
+        denom = sign(max(abs(diag(2)), denom_floor), diag(2))
         cprime(2) = upper(2) / denom
         xnew(2) = rhs(2) / denom
 
         do k = 3, kmax
           denom = diag(k) - lower(k) * cprime(k-1)
+          denom = sign(max(abs(denom), denom_floor), denom)
           cprime(k) = upper(k) / denom
           xnew(k) = (rhs(k) - lower(k) * xnew(k-1)) / denom
         end do
