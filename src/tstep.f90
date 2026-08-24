@@ -110,12 +110,14 @@ subroutine tstep_update
                         kmax,dx,dy,dzh,dt_lim,ladaptive,timeleft,idtmax,rdt,tres,longint ,lwarmstart
   use modfields, only : um,vm,wm,up,vp,wp,thlp,svp,qtp,e12p
   use modsubgrid,only : ekm,ekh
+  use modsubgriddata, only : lvdiff_imex_scalar, lvdiff_imex_momentum
   use modmpi,    only : comm3d,mpierr,mpi_max,D_MPI_ALLREDUCE
   implicit none
 
   integer       :: i, j, k, n
   real,save     :: courtotmax=-1,peclettot=-1
   real          :: courold, cfl_sq_l, cfl_sq, peclettotl, pecletold, pe_ekm, pe_ekh, min_size_sq
+  real          :: min_size_sq_mom, min_size_sq_sca, min_hor_size_sq
   logical,save  :: spinup=.true.
 
   call timer_tic('tstep/tstep_update', 0)
@@ -141,8 +143,11 @@ subroutine tstep_update
                              + (vm(i,j,k)*rdt/dy) * (vm(i,j,k)*rdt/dy) &
                              + (wm(i,j,k)*rdt/dzh(k)) * (wm(i,j,k)*rdt/dzh(k)))
               min_size_sq = min(dzh(k),min(dx,dy))**2
-              pe_ekm = ekm(i,j,k)*rdt/min_size_sq
-              pe_ekh = ekh(i,j,k)*rdt/min_size_sq
+              min_hor_size_sq = min(dx,dy)**2
+              min_size_sq_mom = merge(min_hor_size_sq, min_size_sq, lvdiff_imex_momentum)
+              min_size_sq_sca = merge(min_hor_size_sq, min_size_sq, lvdiff_imex_scalar)
+              pe_ekm = ekm(i,j,k)*rdt/min_size_sq_mom
+              pe_ekh = ekh(i,j,k)*rdt/min_size_sq_sca
               peclettotl = max(peclettotl, &
                                max(pe_ekm, pe_ekh))
             enddo
@@ -188,8 +193,11 @@ subroutine tstep_update
                              + (vm(i,j,k)*rdt/dy) * (vm(i,j,k)*rdt/dy) &
                              + (wm(i,j,k)*rdt/dzh(k)) * (wm(i,j,k)*rdt/dzh(k)))
               min_size_sq = min(dzh(k),min(dx,dy))**2
-              pe_ekm = ekm(i,j,k)*rdt/min_size_sq
-              pe_ekh = ekh(i,j,k)*rdt/min_size_sq
+              min_hor_size_sq = min(dx,dy)**2
+              min_size_sq_mom = merge(min_hor_size_sq, min_size_sq, lvdiff_imex_momentum)
+              min_size_sq_sca = merge(min_hor_size_sq, min_size_sq, lvdiff_imex_scalar)
+              pe_ekm = ekm(i,j,k)*rdt/min_size_sq_mom
+              pe_ekh = ekh(i,j,k)*rdt/min_size_sq_sca
               peclettotl = max(peclettotl, &
                                max(pe_ekm, pe_ekh))
             enddo
