@@ -38,7 +38,9 @@ save
   logical :: lsmagorinsky = .false. !<  switch for smagorinsky subgrid scheme
   logical :: lanisotrop   = .false. !<  switch for anisotropic diffusion
   logical :: lD80R        = .false. !<  switch for D80R subgrid scheme
-
+  logical :: lvdiff_imex_scalar = .false. !< switch for IMEX treatment of scalar vertical SGS diffusion
+  logical :: lvdiff_imex_momentum = .false. !< switch for IMEX treatment of momentum vertical SGS diffusion
+  
   real(field_r) :: cf      = 2.5  !< filter constant
   real(field_r) :: Rigc    = 0.25 !< critical Richardson number
   real(field_r) :: Prandtl = (1.0/3.0)
@@ -54,6 +56,7 @@ save
   real(field_r) :: alpha_kolm  = 1.5     !< factor in Kolmogorov expression for spectral energy
   real(field_r) :: beta_kolm   = 1.      !< factor in Kolmogorov relation for temperature spectrum
   logical :: sgs_surface_fix = .false.  !< which fix to apply to coupling of SGSTKE to surface
+  real(field_r) :: imex_peclet_limit = -1._field_r !< optional cap for implicit vertical diffusion strength per RK stage (<=0 disables)
 
   real(field_r), allocatable :: ekm(:,:,:)   !< k-coefficient for momentum
   real(field_r), allocatable :: ekh(:,:,:)   !< k-coefficient for heat and q_tot
