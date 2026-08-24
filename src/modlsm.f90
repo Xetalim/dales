@@ -1183,52 +1183,14 @@ subroutine calc_bulk_bcs
     do j=2,j1
         do i=2,i1
             do ilu=1,nlu
-                if (tile(ilu)%lushort == "slb") then
-                    ! we treat the urban canyon and roof separately. SHF and LE have been aggregated in the urban tile already.
-                    ! we calculate thlskin/qtskin in slurb as the weighted average of roof and canyon skin temperature/humidity, which
-                    ! are each calculated like an individual LSM tile is calculated, with their own resistances.
-                    ! note that we will later subtract the urban contribution to the skin temperature, to later add the 
-                    ! urban radiative temperature instead.
-                    tile(ilu)%H(i,j) = slurb_tile%shf_urb(i,j)
-                    tile(ilu)%LE(i,j) = slurb_tile%qsws_urb(i,j)
-                    tile(ilu)%wthl(i,j) = tile(ilu)%H(i,j) * rhocp_i(1)
-                    tile(ilu)%wqt(i,j) = tile(ilu)%LE(i,j) * rholv_i(1)
-                    tile(ilu)%ustar(i,j) = slurb_tile%f_bld(i,j) * slurb_tile%us_roof(i,j) + &
-                                           (1 - slurb_tile%f_bld(i,j)) * slurb_tile%us_can(i,j)
-                    tile(ilu)%thlskin(i,j) = slurb_tile%thlskin(i,j)
-                    tile(ilu)%qtskin(i,j) = slurb_tile%qtskin(i,j)
-                    tile(ilu)%tskin(i,j) = slurb_tile%thlskin(i,j)
-                    tile(ilu)%ra(i,j) = slurb_tile%f_bld(i,j) * slurb_tile%rah_roof(i,j) + &
-                                        (1 - slurb_tile%f_bld(i,j)) * slurb_tile%rah_can(i,j)
-                    tile(ilu)%obuk(i,j) = slurb_tile%ol_urb(i,j)
-                    if (nzt_roof < nzb_roof) then
-                        tile(ilu)%G(i,j) = slurb_tile%f_bld(i,j) * slurb_tile%conductivity_roof(nzt_roof,i,j) * &
-                                           (slurb_tile%t_roof_0(nzt_roof+1,i,j) - slurb_tile%t_roof_0(nzt_roof,i,j))
-                    else
-                        tile(ilu)%G(i,j) = 0.0_field_r
-                    end if
-                    tile(ilu)%Qnet(i,j) = slurb_tile%rad_lw_net_urb(i,j) + slurb_tile%rad_sw_net_urb(i,j)
-                    tile(ilu)%albedo(i,j) = slurb_tile%albedo_urb(i,j)
-
-                    H(i,j)      = H(i,j)     + fraction_slurb(i,j) * slurb_tile%shf_urb(i,j)
-                    LE(i,j)     = LE(i,j)    + fraction_slurb(i,j) * slurb_tile%qsws_urb(i,j)
-                    Qnet(i,j)   = Qnet(i,j)  + fraction_slurb(i,j) * tile(ilu)%Qnet(i,j)
-                    ! G0(i,j)     = G0(i,j)    + tile(ilu)%frac(i,j) * tile(ilu)%G(i,j)
-                    ustar(i,j)  = ustar(i,j) + fraction_slurb(i,j) * (slurb_tile%f_bld(i,j) * slurb_tile%us_roof(i,j) &
-                                                                + (1 - slurb_tile%f_bld(i,j)) * slurb_tile%us_can(i,j))
-                    tskin(i,j)  = tskin(i,j) + fraction_slurb(i,j) * slurb_tile%thlskin(i,j)
-                    qskin(i,j)  = qskin(i,j) + fraction_slurb(i,j) * slurb_tile%qtskin(i,j)
-                    albedo(i,j) = albedo(i,j) + fraction_slurb(i,j) * slurb_tile%albedo_urb(i,j)
-                else
-                    H(i,j)      = H(i,j)     + tile(ilu)%frac(i,j) * tile(ilu)%H(i,j)
-                    LE(i,j)     = LE(i,j)    + tile(ilu)%frac(i,j) * tile(ilu)%LE(i,j)
-                    G0(i,j)     = G0(i,j)    + tile(ilu)%frac(i,j) * tile(ilu)%G(i,j)
-                    ustar(i,j)  = ustar(i,j) + tile(ilu)%frac(i,j) * tile(ilu)%ustar(i,j)
-                    tskin(i,j)  = tskin(i,j) + tile(ilu)%frac(i,j) * tile(ilu)%thlskin(i,j)
-                    qskin(i,j)  = qskin(i,j) + tile(ilu)%frac(i,j) * tile(ilu)%qtskin(i,j)
-                    Qnet(i,j)   = Qnet(i,j)  + tile(ilu)%frac(i,j) * tile(ilu)%Qnet(i,j)
-                    albedo(i,j) = albedo(i,j) + tile(ilu)%frac(i,j) * tile(ilu)%albedo(i,j)
-                endif
+                H(i,j)      = H(i,j)     + tile(ilu)%frac(i,j) * tile(ilu)%H(i,j)
+                LE(i,j)     = LE(i,j)    + tile(ilu)%frac(i,j) * tile(ilu)%LE(i,j)
+                G0(i,j)     = G0(i,j)    + tile(ilu)%frac(i,j) * tile(ilu)%G(i,j)
+                ustar(i,j)  = ustar(i,j) + tile(ilu)%frac(i,j) * tile(ilu)%ustar(i,j)
+                tskin(i,j)  = tskin(i,j) + tile(ilu)%frac(i,j) * tile(ilu)%thlskin(i,j)
+                qskin(i,j)  = qskin(i,j) + tile(ilu)%frac(i,j) * tile(ilu)%qtskin(i,j)
+                Qnet(i,j)   = Qnet(i,j)  + tile(ilu)%frac(i,j) * tile(ilu)%Qnet(i,j)
+                albedo(i,j) = albedo(i,j) + tile(ilu)%frac(i,j) * tile(ilu)%albedo(i,j)
            enddo
         enddo
     enddo

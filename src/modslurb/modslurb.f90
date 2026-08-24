@@ -1636,10 +1636,12 @@ SUBROUTINE slurb_canyon_model
  SUBROUTINE slurb_urban_aggregation_model
     use modglobal, only : i1, j1, rlv, cp
     use modfields, only : u0, v0, rhof, qt0, thl0
+    use modlsmdata, only: tile, nlu
     INTEGER ::  i       !< running index
     INTEGER ::  j       !< running index
     INTEGER ::  k_topo  !< k index of topography
     INTEGER ::  k_atm   !< k index of the first atmospheric level
+    integer :: ilu      !< loop index for lsm tiles
 
     LOGICAL ::  runge_l  !< flag for timestep scheme to allow vectorization
     real :: rhocp_i, rholv_i
@@ -1697,6 +1699,33 @@ SUBROUTINE slurb_canyon_model
         slurb_tile%qtskin(i,j) = slurb_tile%f_bld(i,j) * (qt0(i,j,1) + (slurb_tile%qsws_roof(i,j) * rholv_i) * slurb_tile%rah_roof(i,j)) + (1.0_field_r - slurb_tile%f_bld(i,j)) * (qt0(i,j,1) + (slurb_tile%qsws_can(i,j) * rholv_i) * slurb_tile%rah_can(i,j))
       enddo
     enddo
+
+    do ilu=1,nlu
+        if (tile(ilu)%lushort /= "slb") cycle
+        do j=2,j1
+            do i=2,i1
+                ! we treat the urban canyon and roof separately. SHF and LE have been aggregated in the urban tile already.
+                ! we calculate thlskin/qtskin in slurb as the weighted average of roof and canyon skin temperature/humidity, which
+                ! are each calculated like an individual LSM tile is calculated, with their own resistances.
+                ! note that we will later subtract the urban contribution to the skin temperature, to later add the 
+                ! urban radiative temperature instead.
+                tile(ilu)%H(i,j) = slurb_tile%shf_urb(i,j)
+                tile(ilu)%LE(i,j) = slurb_tile%qsws_urb(i,j)
+                tile(ilu)%ustar(i,j) = slurb_tile%f_bld(i,j) * slurb_tile%us_roof(i,j) + &
+                                        (1 - slurb_tile%f_bld(i,j)) * slurb_tile%us_can(i,j)
+                tile(ilu)%thlskin(i,j) = slurb_tile%thlskin(i,j)
+                tile(ilu)%qtskin(i,j) = slurb_tile%qtskin(i,j)
+                tile(ilu)%tskin(i,j) = slurb_tile%thlskin(i,j)
+                tile(ilu)%ra(i,j) = slurb_tile%f_bld(i,j) * slurb_tile%rah_roof(i,j) + &
+                                    (1 - slurb_tile%f_bld(i,j)) * slurb_tile%rah_can(i,j)
+                tile(ilu)%obuk(i,j) = slurb_tile%ol_urb(i,j)
+                tile(ilu)%G(i,j) = slurb_tile%f_bld(i,j) * slurb_tile%conductivity_roof(nzt_roof,i,j) * &
+                                    (slurb_tile%t_roof_0(nzt_roof+1,i,j) - slurb_tile%t_roof_0(nzt_roof,i,j))
+                tile(ilu)%Qnet(i,j) = slurb_tile%rad_lw_net_urb(i,j) + slurb_tile%rad_sw_net_urb(i,j)
+                tile(ilu)%albedo(i,j) = slurb_tile%albedo_urb(i,j)
+            end do
+        end do
+    end do
 
  CONTAINS
 
