@@ -2995,8 +2995,10 @@ subroutine init_heterogeneous_nc
 end subroutine init_heterogeneous_nc
 subroutine post_init_heterogeneous_nc
     use modglobal, only: i1,j1
-    use modslurb, only : slurb_tile, fraction_slurb
+    use modslurb, only : slurb_tile, fraction_slurb, enable_slurb
+    implicit none
     integer :: ilu_ws
+    if (.not. enable_slurb) return
     ilu_ws = nlu
     tile(ilu_ws)%z0m(2:i1,2:j1) = tile(ilu_ws)%z0m(2:i1,2:j1) + fraction_slurb(2:i1,2:j1)*slurb_tile%z0_urb(2:i1,2:j1)
     tile(ilu_ws)%z0h(2:i1,2:j1) = tile(ilu_ws)%z0h(2:i1,2:j1) + fraction_slurb(2:i1,2:j1)*slurb_tile%z0_urb(2:i1,2:j1)
