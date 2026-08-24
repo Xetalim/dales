@@ -125,7 +125,9 @@ contains
     integer :: ierr
 
     namelist/NAMSUBGRID/ &
-        ldelta,lmason,cf,cn,Rigc,Prandtl,lsmagorinsky,cs,nmason,sgs_surface_fix,ch1,lanisotrop,lD80R,sgs_surface_shear_ustar,sgs_surface_shear_virt_velocity,sgs_surface_buoyancy
+      ldelta,lmason,cf,cn,Rigc,Prandtl,lsmagorinsky,cs,nmason,sgs_surface_fix,ch1,lanisotrop,lD80R, &
+      sgs_surface_shear_ustar,sgs_surface_shear_virt_velocity,sgs_surface_buoyancy,lvdiff_imex_scalar, &
+      lvdiff_imex_momentum,imex_peclet_limit
 
     if(myid==0)then
       open(ifnamopt,file=fname_options,status='old',iostat=ierr)
@@ -158,6 +160,9 @@ contains
     call D_MPI_BCAST(sgs_surface_shear_virt_velocity ,1, 0,comm3d,mpierr)
     call D_MPI_BCAST(sgs_surface_shear_ustar ,1, 0,comm3d,mpierr)
     call D_MPI_BCAST(sgs_surface_buoyancy ,1, 0,comm3d,mpierr)
+    call D_MPI_BCAST(lvdiff_imex_scalar ,1, 0,comm3d,mpierr)
+    call D_MPI_BCAST(lvdiff_imex_momentum ,1, 0,comm3d,mpierr)
+    call D_MPI_BCAST(imex_peclet_limit ,1, 0,comm3d,mpierr)
     call D_MPI_BCAST(ch1             ,1, 0,comm3d,mpierr)
   end subroutine subgridnamelist
 
@@ -182,19 +187,41 @@ contains
     call closure
     !$acc wait
 
-    call diffu(up,sx)
-    call diffv(vp,sy)
-    call diffw(wp)
+        if (lvdiff_imex_momentum) then
+    #ifdef _OPENACC
+      call finish(modname//'/subgrid', 'lvdiff_imex_momentum is not supported with OpenACC builds yet')
+    #else
+      call diffu_imex(up,sx)
+      call diffv_imex(vp,sy)
+      call diffw_imex(wp)
+    #endif
+        else
+      call diffu(up,sx)
+      call diffv(vp,sy)
+      call diffw(wp)
+        end if
     ! All kernels in diff* are async. Wait here.
     !$acc wait
 
     if (.not. lsmagorinsky) call diffe(e12p)
 
-    call diffc(thl0, thlp, thlflux)
-    if (lmoist) call diffc( qt0, qtp, qtflux)
-    if (nsv > 0 ) then
-      call diffcsv(sv0, svp, svflux)
-    endif
+    if (lvdiff_imex_scalar) then
+#ifdef _OPENACC
+      call finish(modname//'/subgrid', 'lvdiff_imex_scalar is not supported with OpenACC builds yet')
+#else
+      call diffc_imex(thl0, thlp, thlflux)
+      if (lmoist) call diffc_imex(qt0, qtp, qtflux)
+      if (nsv > 0 ) then
+        call diffcsv_imex(sv0, svp, svflux)
+      endif
+#endif
+    else
+      call diffc(thl0, thlp, thlflux)
+      if (lmoist) call diffc(qt0, qtp, qtflux)
+      if (nsv > 0 ) then
+        call diffcsv(sv0, svp, svflux)
+      endif
+    end if
 
     if (.not. lsmagorinsky) call sources
 
@@ -721,7 +748,7 @@ contains
   end subroutine sources
 
   subroutine diffc (a_in,a_out,flux)
-    use modglobal, only : i1,ih,i2,j1,jh,j2,k1,kmax,dx2i,dzf,dy2i,dzhi,dzfi
+    use modglobal, only : i1,ih,i2,j1,jh,j2,k1,kmax,dx2i,dzf,dy2i,dzhi,dzfi,rdt,rk3step
     use modfields, only : rhobf,rhobh
     implicit none
 
@@ -771,10 +798,11 @@ contains
       end do
     end do
     !$acc wait(1,2)
+
   end subroutine diffc
 
   subroutine diffcsv (a_in,a_out,flux)
-    use modglobal, only : i1,ih,i2,j1,jh,j2,k1,kmax,dx2i,dzf,dy2i,nsv,dzfi,dzhi
+    use modglobal, only : i1,ih,i2,j1,jh,j2,k1,kmax,dx2i,dzf,dy2i,nsv,dzfi,dzhi,rdt,rk3step
     use modfields, only : rhobf,rhobh
     implicit none
 
@@ -828,7 +856,560 @@ contains
       end do
     end do
     !$acc wait(1,2)
+
   end subroutine diffcsv
+
+  subroutine diffc_imex(a_in,a_out,flux)
+    use modglobal, only : i1,ih,i2,j1,jh,j2,k1,kmax,dx2i,dy2i,dzfi
+    use modfields, only : rhobf,rhobh
+    implicit none
+
+    real(field_r), intent(in)    :: a_in(2-ih:i1+ih,2-jh:j1+jh,k1)
+    real(field_r), intent(inout) :: a_out(2-ih:i1+ih,2-jh:j1+jh,k1)
+    real, intent(in)             :: flux(i2,j2)
+    real(field_r), allocatable   :: a_out_base(:,:,:)
+
+    integer :: i,j,k
+
+    allocate(a_out_base(2-ih:i1+ih,2-jh:j1+jh,k1))
+    a_out_base = a_out
+
+    !$acc parallel loop collapse(3) default(present) async(1)
+    do k = 2, kmax
+      do j = 2, j1
+        do i = 2, i1
+          a_out(i,j,k) = a_out(i,j,k) + 0.5_field_r * ( &
+                  ( (ekh(i+1,j,k)+ekh(i,j,k))*(a_in(i+1,j,k)-a_in(i,j,k)) &
+                    -(ekh(i,j,k)+ekh(i-1,j,k))*(a_in(i,j,k)-a_in(i-1,j,k)))*dx2i * anis_fac(k) &
+                + ( (ekh(i,j+1,k)+ekh(i,j,k))*(a_in(i,j+1,k)-a_in(i,j,k)) &
+                    -(ekh(i,j,k)+ekh(i,j-1,k))*(a_in(i,j,k)-a_in(i,j-1,k)) )*dy2i * anis_fac(k) )
+        end do
+      end do
+    end do
+
+    !$acc parallel loop collapse(2) default(present) async(2)
+    do j = 2, j1
+      do i = 2, i1
+        a_out(i,j,1) = a_out(i,j,1) + 0.5_field_r * ( &
+                ( (ekh(i+1,j,1)+ekh(i,j,1))*(a_in(i+1,j,1)-a_in(i,j,1)) &
+                 -(ekh(i,j,1)+ekh(i-1,j,1))*(a_in(i,j,1)-a_in(i-1,j,1)) )*dx2i * anis_fac(1) &
+              + ( (ekh(i,j+1,1)+ekh(i,j,1))*(a_in(i,j+1,1)-a_in(i,j,1)) &
+                 -(ekh(i,j,1)+ekh(i,j-1,1))*(a_in(i,j,1)-a_in(i,j-1,1)) )*dy2i * anis_fac(1) &
+              + ( rhobh(1)/rhobf(1)*flux(i,j) * 2 )*dzfi(1) )
+      end do
+    end do
+    !$acc wait(1,2)
+
+    call imex_vertical_diffusion_scalar(a_in, a_out, a_out_base)
+    deallocate(a_out_base)
+  end subroutine diffc_imex
+
+  subroutine diffcsv_imex(a_in,a_out,flux)
+    use modglobal, only : i1,ih,i2,j1,jh,j2,k1,kmax,dx2i,dy2i,nsv,dzfi
+    use modfields, only : rhobf,rhobh
+    implicit none
+
+    real(field_r), intent(in)     :: a_in(2-ih:i1+ih,2-jh:j1+jh,k1,nsv)
+    real(field_r), intent(inout)  :: a_out(2-ih:i1+ih,2-jh:j1+jh,k1,nsv)
+    real, intent(in)              :: flux(i2,j2,nsv)
+    real(field_r), allocatable    :: a_out_base(:,:,:,:)
+
+    integer :: i,j,k,n
+
+    allocate(a_out_base(2-ih:i1+ih,2-jh:j1+jh,k1,nsv))
+    a_out_base = a_out
+
+    !$acc parallel loop collapse(4) default(present) async(1)
+    do n = 1, nsv
+      do k = 2, kmax
+        do j = 2, j1
+          do i = 2, i1
+            a_out(i,j,k,n) = a_out(i,j,k,n) + 0.5_field_r * ( &
+                    ( (ekh(i+1,j,k)+ekh(i,j,k))*(a_in(i+1,j,k,n)-a_in(i,j,k,n)) &
+                     -(ekh(i,j,k)+ekh(i-1,j,k))*(a_in(i,j,k,n)-a_in(i-1,j,k,n)) )*dx2i * anis_fac(k) &
+                  + ( (ekh(i,j+1,k)+ekh(i,j,k))*(a_in(i,j+1,k,n)-a_in(i,j,k,n)) &
+                     -(ekh(i,j,k)+ekh(i,j-1,k))*(a_in(i,j,k,n)-a_in(i,j-1,k,n)) )*dy2i * anis_fac(k) )
+          end do
+        end do
+      end do
+    end do
+
+    !$acc parallel loop collapse(3) default(present) async(2)
+    do n = 1, nsv
+      do j = 2, j1
+        do i = 2, i1
+          a_out(i,j,1,n) = a_out(i,j,1,n) + 0.5_field_r * ( &
+                  ( (ekh(i+1,j,1)+ekh(i,j,1))*(a_in(i+1,j,1,n)-a_in(i,j,1,n)) &
+                   -(ekh(i,j,1)+ekh(i-1,j,1))*(a_in(i,j,1,n)-a_in(i-1,j,1,n)) )*dx2i * anis_fac(1) &
+                + ( (ekh(i,j+1,1)+ekh(i,j,1))*(a_in(i,j+1,1,n)-a_in(i,j,1,n)) &
+                   -(ekh(i,j,1)+ekh(i,j-1,1))*(a_in(i,j,1,n)-a_in(i,j-1,1,n)) )*dy2i * anis_fac(1) &
+                + ( rhobh(1)/rhobf(1) * flux(i,j,n) * 2 )*dzfi(1) )
+        end do
+      end do
+    end do
+    !$acc wait(1,2)
+
+    call imex_vertical_diffusion_scalar_sv(a_in, a_out, a_out_base)
+    deallocate(a_out_base)
+  end subroutine diffcsv_imex
+
+  subroutine diffu_imex(a_out, sx)
+    use modglobal,    only : i1,ih,j1,jh,k1,kmax,dxi,dx2i,dyi,dzfi,cu,cv
+    use modfields,    only : u0,v0,w0,rhobf,rhobh
+    use modsurfdata,  only : ustar
+    implicit none
+
+    real(field_r), intent(inout)  :: a_out(2-ih:i1+ih,2-jh:j1+jh,k1)
+    integer, intent(in)           :: sx
+    real(field_r), allocatable    :: a_out_base(:,:,:)
+    real(field_r)                 :: emmo, empo
+    real(field_r)                 :: fu
+    real(field_r)                 :: ucu, upcu
+    integer                       :: i,j,k
+
+    allocate(a_out_base(2-ih:i1+ih,2-jh:j1+jh,k1))
+    a_out_base = a_out
+
+    !$acc parallel loop collapse(3) default(present) private(empo, emmo) async(1)
+    do k = 2, kmax
+      do j = 2, j1
+        do i = sx, i1
+          empo = 0.25_field_r * ( ekm(i,j,k)+ekm(i,j+1,k)+ekm(i-1,j+1,k)+ekm(i-1,j,k) )
+          emmo = 0.25_field_r * ( ekm(i,j,k)+ekm(i,j-1,k)+ekm(i-1,j-1,k)+ekm(i-1,j,k) )
+
+          a_out(i,j,k) = a_out(i,j,k) &
+                  + ( ekm(i,j,k) * (u0(i+1,j,k)-u0(i,j,k)) &
+                     -ekm(i-1,j,k) * (u0(i,j,k)-u0(i-1,j,k)) ) * 2 * dx2i * anis_fac(k) &
+                  + ( empo * ( (u0(i,j+1,k)-u0(i,j,k)) * dyi + (v0(i,j+1,k)-v0(i-1,j+1,k)) * dxi ) &
+                     -emmo * ( (u0(i,j,k)-u0(i,j-1,k)) * dyi + (v0(i,j,k)-v0(i-1,j,k)) * dxi ) ) * dyi * anis_fac(k)
+        end do
+      end do
+    end do
+
+    !$acc parallel loop collapse(2) default(present) private(empo, emmo, ucu, upcu, fu) async(2)
+    do j = 2, j1
+      do i = sx, i1
+        empo = 0.25_field_r * ( ekm(i,j,1)+ekm(i,j+1,1)+ekm(i-1,j+1,1)+ekm(i-1,j,1) )
+        emmo = 0.25_field_r * ( ekm(i,j,1)+ekm(i,j-1,1)+ekm(i-1,j-1,1)+ekm(i-1,j,1) )
+
+        ucu = 0.5_field_r * (u0(i,j,1)+u0(i+1,j,1)) + cu
+        upcu = sign(1._field_r,ucu) * max(abs(ucu),1.e-10_field_r)
+
+        fu = (0.5_field_r * (ustar(i,j)+ustar(i-1,j)))**2 * upcu / sqrt(upcu**2 + &
+             ((v0(i,j,1)+v0(i-1,j,1)+v0(i,j+1,1)+v0(i-1,j+1,1))/4+cv)**2)
+
+        a_out(i,j,1) =  a_out(i,j,1) + &
+              ( ekm(i,j,1) * (u0(i+1,j,1)-u0(i,j,1)) &
+               -ekm(i-1,j,1) * (u0(i,j,1)-u0(i-1,j,1)) ) * 2 * dx2i * anis_fac(1) &
+              + ( empo * ( (u0(i,j+1,1)-u0(i,j,1))*dyi + (v0(i,j+1,1)-v0(i-1,j+1,1))*dxi ) &
+                 -emmo * ( (u0(i,j,1)-u0(i,j-1,1))*dyi + (v0(i,j,1)-v0(i-1,j,1))*dxi ) ) * dyi * anis_fac(1) &
+              - rhobh(1)/rhobf(1) * fu * dzfi(1)
+      end do
+    end do
+    !$acc wait(1,2)
+
+    call imex_vertical_diffusion_u(a_out, a_out_base, sx)
+    deallocate(a_out_base)
+  end subroutine diffu_imex
+
+  subroutine diffv_imex(a_out, sy)
+    use modglobal,    only : i1,ih,j1,jh,k1,kmax,dxi,dyi,dy2i,dzfi,cu,cv
+    use modfields,    only : u0,v0,w0,rhobf,rhobh
+    use modsurfdata,  only : ustar
+    implicit none
+
+    real(field_r), intent(inout)  :: a_out(2-ih:i1+ih,2-jh:j1+jh,k1)
+    integer, intent(in)           :: sy
+    real(field_r), allocatable    :: a_out_base(:,:,:)
+    real(field_r)                 :: emmo, epmo
+    real(field_r)                 :: fv, vcv, vpcv
+    integer                       :: i,j,k
+
+    allocate(a_out_base(2-ih:i1+ih,2-jh:j1+jh,k1))
+    a_out_base = a_out
+
+    !$acc parallel loop collapse(3) default(present) private(emmo, epmo) async(3)
+    do k = 2, kmax
+      do j = sy, j1
+        do i = 2, i1
+          emmo = 0.25_field_r * ( ekm(i,j,k)+ekm(i,j-1,k)+ekm(i-1,j-1,k)+ekm(i-1,j,k) )
+          epmo = 0.25_field_r * ( ekm(i,j,k)+ekm(i,j-1,k)+ekm(i+1,j-1,k)+ekm(i+1,j,k) )
+
+          a_out(i,j,k) = a_out(i,j,k) &
+                + ( epmo * ( (v0(i+1,j,k)-v0(i,j,k))*dxi + (u0(i+1,j,k)-u0(i+1,j-1,k))*dyi ) &
+                   -emmo * ( (v0(i,j,k)-v0(i-1,j,k))*dxi + (u0(i,j,k)-u0(i,j-1,k))*dyi ) ) * dxi * anis_fac(k) &
+                + ( ekm(i,j,k) * (v0(i,j+1,k)-v0(i,j,k)) &
+                   -ekm(i,j-1,k) * (v0(i,j,k)-v0(i,j-1,k)) ) * 2 * dy2i * anis_fac(k)
+        end do
+      end do
+    end do
+
+    !$acc parallel loop collapse(2) default(present) private(emmo, epmo, vcv, vpcv, fv) async(4)
+    do j = sy, j1
+      do i = 2, i1
+        emmo = 0.25_field_r * ( ekm(i,j,1)+ekm(i,j-1,1)+ekm(i-1,j-1,1)+ekm(i-1,j,1) )
+        epmo = 0.25_field_r * ( ekm(i,j,1)+ekm(i,j-1,1)+ekm(i+1,j-1,1)+ekm(i+1,j,1) )
+
+        vcv = 0.5_field_r * (v0(i,j,1)+v0(i,j+1,1)) + cv
+        vpcv = sign(1._field_r, vcv) * max(abs(vcv),1.e-10_field_r)
+
+        fv = (0.5_field_r * (ustar(i,j)+ustar(i,j-1)))**2 * vpcv / sqrt(vpcv**2 + &
+             ((u0(i,j,1)+u0(i+1,j,1)+u0(i,j-1,1)+u0(i+1,j-1,1))/4.+cu)**2)
+
+        a_out(i,j,1) = a_out(i,j,1) &
+                + ( epmo * ( (v0(i+1,j,1)-v0(i,j,1))*dxi + (u0(i+1,j,1)-u0(i+1,j-1,1))*dyi ) &
+                   -emmo * ( (v0(i,j,1)-v0(i-1,j,1))*dxi + (u0(i,j,1)-u0(i,j-1,1))*dyi ) ) * dxi * anis_fac(1) &
+                + ( ekm(i,j,1) * (v0(i,j+1,1)-v0(i,j,1)) &
+                   -ekm(i,j-1,1) * (v0(i,j,1)-v0(i,j-1,1)) ) * 2 * dy2i * anis_fac(1) &
+                - rhobh(1)/rhobf(1) * fv * dzfi(1)
+      end do
+    end do
+    !$acc wait(3,4)
+
+    call imex_vertical_diffusion_v(a_out, a_out_base, sy)
+    deallocate(a_out_base)
+  end subroutine diffv_imex
+
+  subroutine diffw_imex(a_out)
+    use modglobal, only : i1,ih,j1,jh,k1,kmax,dxi,dyi,dzf,dzhi
+    use modfields, only : u0,v0,w0
+    implicit none
+
+    real(field_r), intent(inout)  :: a_out(2-ih:i1+ih,2-jh:j1+jh,k1)
+    real(field_r), allocatable    :: a_out_base(:,:,:)
+    real(field_r)                 :: emom, eomm, eopm, epom
+    integer                       :: i,j,k
+
+    allocate(a_out_base(2-ih:i1+ih,2-jh:j1+jh,k1))
+    a_out_base = a_out
+
+    !$acc parallel loop collapse(3) default(present) private(emom, eomm, eopm, epom) async(5)
+    do k = 2, kmax
+      do j = 2, j1
+        do i = 2, i1
+          emom = ( dzf(k-1) * ( ekm(i,j,k) + ekm(i-1,j,k) ) + &
+                   dzf(k)   * ( ekm(i,j,k-1) + ekm(i-1,j,k-1) ) ) * ( .25_field_r * dzhi(k) )
+
+          eomm = ( dzf(k-1) * ( ekm(i,j,k) + ekm(i,j-1,k) ) + &
+                   dzf(k)   * ( ekm(i,j,k-1) + ekm(i,j-1,k-1) ) ) * ( .25_field_r * dzhi(k) )
+
+          eopm = ( dzf(k-1) * ( ekm(i,j,k) + ekm(i,j+1,k) ) + &
+                   dzf(k)   * ( ekm(i,j,k-1) + ekm(i,j+1,k-1) ) ) * ( .25_field_r * dzhi(k) )
+
+          epom = ( dzf(k-1) * ( ekm(i,j,k) + ekm(i+1,j,k) ) + &
+                   dzf(k)   * ( ekm(i,j,k-1) + ekm(i+1,j,k-1) ) ) * ( .25_field_r * dzhi(k) )
+
+          a_out(i,j,k) = a_out(i,j,k) &
+                + ( epom * ( (w0(i+1,j,k)-w0(i,j,k)) * dxi + (u0(i+1,j,k)-u0(i+1,j,k-1)) * dzhi(k) ) &
+                   -emom * ( (w0(i,j,k)-w0(i-1,j,k)) * dxi + (u0(i,j,k)-u0(i,j,k-1)) * dzhi(k) ) ) * dxi * anis_fac(k) &
+                + ( eopm * ( (w0(i,j+1,k)-w0(i,j,k)) * dyi + (v0(i,j+1,k)-v0(i,j+1,k-1)) * dzhi(k) ) &
+                   -eomm * ( (w0(i,j,k)-w0(i,j-1,k)) * dyi + (v0(i,j,k)-v0(i,j,k-1)) * dzhi(k) ) ) * dyi * anis_fac(k)
+        end do
+      end do
+    end do
+    !$acc wait(5)
+
+    call imex_vertical_diffusion_w(a_out, a_out_base)
+    deallocate(a_out_base)
+  end subroutine diffw_imex
+
+  subroutine imex_vertical_diffusion_scalar(a_in, a_out, a_out_base)
+    use modglobal, only : i1,ih,j1,jh,k1,kmax,rdt,rk3step,dzf,dzfi,dzhi
+    use modfields, only : rhobf,rhobh
+    implicit none
+
+    real(field_r), intent(in)    :: a_in(2-ih:i1+ih,2-jh:j1+jh,k1)
+    real(field_r), intent(inout) :: a_out(2-ih:i1+ih,2-jh:j1+jh,k1)
+    real(field_r), intent(in)    :: a_out_base(2-ih:i1+ih,2-jh:j1+jh,k1)
+
+    real(field_r) :: dtstage
+    real(field_r) :: km, kp, denom
+    real(field_r) :: rhs(kmax), diag(kmax), lower(kmax), upper(kmax), cprime(kmax), xnew(kmax)
+    integer :: i, j, k
+
+    dtstage = rdt / (4._field_r - real(rk3step, field_r))
+
+    do j = 2, j1
+      do i = 2, i1
+        do k = 2, kmax
+          km = 0.5_field_r * rhobh(k)/rhobf(k) * (dzf(k-1)*ekh(i,j,k) + dzf(k)*ekh(i,j,k-1)) * dzhi(k)**2 * dzfi(k)
+          kp = 0.5_field_r * rhobh(k+1)/rhobf(k) * (dzf(k+1)*ekh(i,j,k) + dzf(k)*ekh(i,j,k+1)) * dzhi(k+1)**2 * dzfi(k)
+
+          lower(k) = -dtstage * km
+          diag(k)  = 1._field_r + dtstage * (km + kp)
+          upper(k) = -dtstage * kp
+
+          rhs(k) = a_in(i,j,k) + dtstage * (a_out(i,j,k) - a_out_base(i,j,k))
+        end do
+
+        km = 0._field_r
+        kp = 0.5_field_r * rhobh(2)/rhobf(1) * (dzf(2)*ekh(i,j,1) + dzf(1)*ekh(i,j,2)) * dzhi(2)**2 * dzfi(1)
+        lower(1) = 0._field_r
+        diag(1)  = 1._field_r + dtstage * kp
+        upper(1) = -dtstage * kp
+        rhs(1)   = a_in(i,j,1) + dtstage * (a_out(i,j,1) - a_out_base(i,j,1))
+
+        denom = diag(1)
+        cprime(1) = upper(1) / denom
+        xnew(1) = rhs(1) / denom
+
+        do k = 2, kmax
+          denom = diag(k) - lower(k) * cprime(k-1)
+          cprime(k) = upper(k) / denom
+          xnew(k) = (rhs(k) - lower(k) * xnew(k-1)) / denom
+        end do
+
+        do k = kmax-1, 1, -1
+          xnew(k) = xnew(k) - cprime(k) * xnew(k+1)
+        end do
+
+        do k = 2, kmax
+          a_out(i,j,k) = a_out_base(i,j,k) + (xnew(k) - a_in(i,j,k)) / dtstage
+        end do
+
+        a_out(i,j,1) = a_out_base(i,j,1) + (xnew(1) - a_in(i,j,1)) / dtstage
+      end do
+    end do
+  end subroutine imex_vertical_diffusion_scalar
+
+  subroutine imex_vertical_diffusion_scalar_sv(a_in, a_out, a_out_base)
+    use modglobal, only : i1,ih,j1,jh,k1,kmax,nsv,rdt,rk3step,dzf,dzfi,dzhi
+    use modfields, only : rhobf,rhobh
+    implicit none
+
+    real(field_r), intent(in)    :: a_in(2-ih:i1+ih,2-jh:j1+jh,k1,nsv)
+    real(field_r), intent(inout) :: a_out(2-ih:i1+ih,2-jh:j1+jh,k1,nsv)
+    real(field_r), intent(in)    :: a_out_base(2-ih:i1+ih,2-jh:j1+jh,k1,nsv)
+
+    real(field_r) :: dtstage
+    real(field_r) :: km, kp, denom
+    real(field_r) :: rhs(kmax), diag(kmax), lower(kmax), upper(kmax), cprime(kmax), xnew(kmax)
+    integer :: i, j, k, n
+
+    dtstage = rdt / (4._field_r - real(rk3step, field_r))
+
+    do n = 1, nsv
+      do j = 2, j1
+        do i = 2, i1
+          do k = 2, kmax
+            km = 0.5_field_r * rhobh(k)/rhobf(k) * (dzf(k-1)*ekh(i,j,k) + dzf(k)*ekh(i,j,k-1)) * dzhi(k)**2 * dzfi(k)
+            kp = 0.5_field_r * rhobh(k+1)/rhobf(k) * (dzf(k+1)*ekh(i,j,k) + dzf(k)*ekh(i,j,k+1)) * dzhi(k+1)**2 * dzfi(k)
+
+            lower(k) = -dtstage * km
+            diag(k)  = 1._field_r + dtstage * (km + kp)
+            upper(k) = -dtstage * kp
+
+            rhs(k) = a_in(i,j,k,n) + dtstage * (a_out(i,j,k,n) - a_out_base(i,j,k,n))
+          end do
+
+          km = 0._field_r
+          kp = 0.5_field_r * rhobh(2)/rhobf(1) * (dzf(2)*ekh(i,j,1) + dzf(1)*ekh(i,j,2)) * dzhi(2)**2 * dzfi(1)
+          lower(1) = 0._field_r
+          diag(1)  = 1._field_r + dtstage * kp
+          upper(1) = -dtstage * kp
+          rhs(1)   = a_in(i,j,1,n) + dtstage * (a_out(i,j,1,n) - a_out_base(i,j,1,n))
+
+          denom = diag(1)
+          cprime(1) = upper(1) / denom
+          xnew(1) = rhs(1) / denom
+
+          do k = 2, kmax
+            denom = diag(k) - lower(k) * cprime(k-1)
+            cprime(k) = upper(k) / denom
+            xnew(k) = (rhs(k) - lower(k) * xnew(k-1)) / denom
+          end do
+
+          do k = kmax-1, 1, -1
+            xnew(k) = xnew(k) - cprime(k) * xnew(k+1)
+          end do
+
+          do k = 2, kmax
+            a_out(i,j,k,n) = a_out_base(i,j,k,n) + (xnew(k) - a_in(i,j,k,n)) / dtstage
+          end do
+
+          a_out(i,j,1,n) = a_out_base(i,j,1,n) + (xnew(1) - a_in(i,j,1,n)) / dtstage
+        end do
+      end do
+    end do
+  end subroutine imex_vertical_diffusion_scalar_sv
+
+  subroutine imex_vertical_diffusion_u(a_out, a_out_base, sx)
+    use modglobal, only : i1,ih,j1,jh,k1,kmax,rdt,rk3step,dzf,dzfi,dzhi
+    use modfields, only : u0,rhobf,rhobh
+    implicit none
+
+    real(field_r), intent(inout) :: a_out(2-ih:i1+ih,2-jh:j1+jh,k1)
+    real(field_r), intent(in)    :: a_out_base(2-ih:i1+ih,2-jh:j1+jh,k1)
+    integer, intent(in)          :: sx
+
+    real(field_r) :: dtstage
+    real(field_r) :: km, kp, denom
+    real(field_r) :: rhs(kmax), diag(kmax), lower(kmax), upper(kmax), cprime(kmax), xnew(kmax)
+    integer :: i, j, k
+
+    dtstage = rdt / (4._field_r - real(rk3step, field_r))
+
+    do j = 2, j1
+      do i = sx, i1
+        do k = 2, kmax
+          km = 0.25_field_r * rhobh(k)/rhobf(k) * (dzf(k-1) * (ekm(i,j,k) + ekm(i-1,j,k)) + &
+               dzf(k) * (ekm(i,j,k-1) + ekm(i-1,j,k-1))) * dzhi(k)**2 * dzfi(k)
+          kp = 0.25_field_r * rhobh(k+1)/rhobf(k) * (dzf(k+1) * (ekm(i,j,k) + ekm(i-1,j,k)) + &
+               dzf(k) * (ekm(i,j,k+1) + ekm(i-1,j,k+1))) * dzhi(k+1)**2 * dzfi(k)
+
+          lower(k) = -dtstage * km
+          diag(k)  = 1._field_r + dtstage * (km + kp)
+          upper(k) = -dtstage * kp
+
+          rhs(k) = u0(i,j,k) + dtstage * (a_out(i,j,k) - a_out_base(i,j,k))
+        end do
+
+        km = 0._field_r
+        kp = 0.25_field_r * rhobh(2)/rhobf(1) * (dzf(2) * (ekm(i,j,1) + ekm(i-1,j,1)) + &
+             dzf(1) * (ekm(i,j,2) + ekm(i-1,j,2))) * dzhi(2)**2 * dzfi(1)
+
+        lower(1) = 0._field_r
+        diag(1)  = 1._field_r + dtstage * kp
+        upper(1) = -dtstage * kp
+        rhs(1)   = u0(i,j,1) + dtstage * (a_out(i,j,1) - a_out_base(i,j,1))
+
+        denom = diag(1)
+        cprime(1) = upper(1) / denom
+        xnew(1) = rhs(1) / denom
+
+        do k = 2, kmax
+          denom = diag(k) - lower(k) * cprime(k-1)
+          cprime(k) = upper(k) / denom
+          xnew(k) = (rhs(k) - lower(k) * xnew(k-1)) / denom
+        end do
+
+        do k = kmax-1, 1, -1
+          xnew(k) = xnew(k) - cprime(k) * xnew(k+1)
+        end do
+
+        do k = 2, kmax
+          a_out(i,j,k) = a_out_base(i,j,k) + (xnew(k) - u0(i,j,k)) / dtstage
+        end do
+
+        a_out(i,j,1) = a_out_base(i,j,1) + (xnew(1) - u0(i,j,1)) / dtstage
+      end do
+    end do
+  end subroutine imex_vertical_diffusion_u
+
+  subroutine imex_vertical_diffusion_v(a_out, a_out_base, sy)
+    use modglobal, only : i1,ih,j1,jh,k1,kmax,rdt,rk3step,dzf,dzfi,dzhi
+    use modfields, only : v0,rhobf,rhobh
+    implicit none
+
+    real(field_r), intent(inout) :: a_out(2-ih:i1+ih,2-jh:j1+jh,k1)
+    real(field_r), intent(in)    :: a_out_base(2-ih:i1+ih,2-jh:j1+jh,k1)
+    integer, intent(in)          :: sy
+
+    real(field_r) :: dtstage
+    real(field_r) :: km, kp, denom
+    real(field_r) :: rhs(kmax), diag(kmax), lower(kmax), upper(kmax), cprime(kmax), xnew(kmax)
+    integer :: i, j, k
+
+    dtstage = rdt / (4._field_r - real(rk3step, field_r))
+
+    do j = sy, j1
+      do i = 2, i1
+        do k = 2, kmax
+          km = 0.25_field_r * rhobh(k)/rhobf(k) * (dzf(k-1) * (ekm(i,j,k) + ekm(i,j-1,k)) + &
+               dzf(k) * (ekm(i,j,k-1) + ekm(i,j-1,k-1))) * dzhi(k)**2 * dzfi(k)
+          kp = 0.25_field_r * rhobh(k+1)/rhobf(k) * (dzf(k+1) * (ekm(i,j,k) + ekm(i,j-1,k)) + &
+               dzf(k) * (ekm(i,j,k+1) + ekm(i,j-1,k+1))) * dzhi(k+1)**2 * dzfi(k)
+
+          lower(k) = -dtstage * km
+          diag(k)  = 1._field_r + dtstage * (km + kp)
+          upper(k) = -dtstage * kp
+
+          rhs(k) = v0(i,j,k) + dtstage * (a_out(i,j,k) - a_out_base(i,j,k))
+        end do
+
+        km = 0._field_r
+        kp = 0.25_field_r * rhobh(2)/rhobf(1) * (dzf(2) * (ekm(i,j,1) + ekm(i,j-1,1)) + &
+             dzf(1) * (ekm(i,j,2) + ekm(i,j-1,2))) * dzhi(2)**2 * dzfi(1)
+
+        lower(1) = 0._field_r
+        diag(1)  = 1._field_r + dtstage * kp
+        upper(1) = -dtstage * kp
+        rhs(1)   = v0(i,j,1) + dtstage * (a_out(i,j,1) - a_out_base(i,j,1))
+
+        denom = diag(1)
+        cprime(1) = upper(1) / denom
+        xnew(1) = rhs(1) / denom
+
+        do k = 2, kmax
+          denom = diag(k) - lower(k) * cprime(k-1)
+          cprime(k) = upper(k) / denom
+          xnew(k) = (rhs(k) - lower(k) * xnew(k-1)) / denom
+        end do
+
+        do k = kmax-1, 1, -1
+          xnew(k) = xnew(k) - cprime(k) * xnew(k+1)
+        end do
+
+        do k = 2, kmax
+          a_out(i,j,k) = a_out_base(i,j,k) + (xnew(k) - v0(i,j,k)) / dtstage
+        end do
+
+        a_out(i,j,1) = a_out_base(i,j,1) + (xnew(1) - v0(i,j,1)) / dtstage
+      end do
+    end do
+  end subroutine imex_vertical_diffusion_v
+
+  subroutine imex_vertical_diffusion_w(a_out, a_out_base)
+    use modglobal, only : i1,ih,j1,jh,k1,kmax,rdt,rk3step,dzfi,dzhi
+    use modfields, only : w0,rhobf,rhobh
+    implicit none
+
+    real(field_r), intent(inout) :: a_out(2-ih:i1+ih,2-jh:j1+jh,k1)
+    real(field_r), intent(in)    :: a_out_base(2-ih:i1+ih,2-jh:j1+jh,k1)
+
+    real(field_r) :: dtstage
+    real(field_r) :: km, kp, rhsb, denom
+    real(field_r) :: rhs(kmax), diag(kmax), lower(kmax), upper(kmax), cprime(kmax), xnew(kmax)
+    integer :: i, j, k
+
+    dtstage = rdt / (4._field_r - real(rk3step, field_r))
+
+    do j = 2, j1
+      do i = 2, i1
+        do k = 2, kmax
+          km = 2._field_r * dzhi(k) / rhobh(k) * rhobf(k-1) * ekm(i,j,k-1) * dzfi(k-1)
+          kp = 2._field_r * dzhi(k) / rhobh(k) * rhobf(k)   * ekm(i,j,k)   * dzfi(k)
+
+          lower(k) = -dtstage * km
+          diag(k)  = 1._field_r + dtstage * (km + kp)
+          upper(k) = -dtstage * kp
+
+          rhsb = w0(i,j,k) + dtstage * (a_out(i,j,k) - a_out_base(i,j,k))
+          if (k == 2) rhsb = rhsb + dtstage * km * w0(i,j,1)
+          if (k == kmax) rhsb = rhsb + dtstage * kp * w0(i,j,kmax+1)
+          rhs(k) = rhsb
+        end do
+
+        denom = diag(2)
+        cprime(2) = upper(2) / denom
+        xnew(2) = rhs(2) / denom
+
+        do k = 3, kmax
+          denom = diag(k) - lower(k) * cprime(k-1)
+          cprime(k) = upper(k) / denom
+          xnew(k) = (rhs(k) - lower(k) * xnew(k-1)) / denom
+        end do
+
+        do k = kmax-1, 2, -1
+          xnew(k) = xnew(k) - cprime(k) * xnew(k+1)
+        end do
+
+        do k = 2, kmax
+          a_out(i,j,k) = a_out_base(i,j,k) + (xnew(k) - w0(i,j,k)) / dtstage
+        end do
+      end do
+    end do
+  end subroutine imex_vertical_diffusion_w
 
   subroutine diffe(a_out)
     use modglobal, only : i1,ih,j1,jh,k1,kmax,dx2i,dzf,dzfi,dy2i,dzhi
@@ -1141,6 +1722,7 @@ contains
         end do
       end do
     end do
+
   end subroutine diffw
 
 end module
