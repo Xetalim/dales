@@ -125,8 +125,7 @@ contains
 
     namelist/NAMSUBGRID/ &
       ldelta,lmason,cf,cn,Rigc,Prandtl,lsmagorinsky,cs,nmason,sgs_surface_fix,ch1,lanisotrop,lD80R, &
-      lvdiff_imex_momentum,imex_peclet_limit
-      sgs_surface_shear_ustar,sgs_surface_shear_virt_velocity,sgs_surface_buoyancy,lvdiff_imex_scalar, &
+      lvdiff_imex_momentum,imex_peclet_limit, lvdiff_imex_scalar
 
     if(myid==0)then
       open(ifnamopt,file=fname_options,status='old',iostat=ierr)
