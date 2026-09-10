@@ -69,7 +69,7 @@ contains
       !-----------------------------------------------------------------|
 
     use modglobal,         only : version,initglobal,iexpnr, ltotruntime, runtime, dtmax, dtav_glob,timeav_glob,&
-                                  lwarmstart,startfile,trestart,&
+                                  lwarmstart,startfile,trestart,lrestart_netcdf,&
                                   nsv,itot,jtot,kmax,xsize,ysize,xlat,xlon,xyear,xday,xtime,xyrot,&
                                   lcoriol,lpressgrad,igrw_damp,geodamptime,uvdamprate,lmomsubs,cu,cv,&
                                   ifnamopt,fname_options,llsadv, &
@@ -113,6 +113,7 @@ contains
     use modchecksim,       only : chkdiv
     use modnamelist,       only : read_namelists
     use modspraying,       only : initspraying
+    use modrestart_registry, only : register_restart_handlers
     use fortran_support,   only: nnml_output
 
     implicit none
@@ -128,7 +129,7 @@ contains
     !declare namelists
     namelist/RUN/ &
         iexpnr,lwarmstart,startfile,ltotruntime, runtime,dtmax,wctime,dtav_glob,timeav_glob,&
-        trestart,irandom,randthl,randqt,krand,nsv,courant,peclet,ladaptive,author,&
+      trestart,lrestart_netcdf,irandom,randthl,randqt,krand,nsv,courant,peclet,ladaptive,author,&
         krandumin, krandumax, randu,&
         nprocx,nprocy,loutdirs, iinput
     namelist/DOMAIN/ &
@@ -213,6 +214,7 @@ contains
   !broadcast namelists
     call D_MPI_BCAST(iexpnr     ,1,0,commwrld,mpierr) ! RUN
     call D_MPI_BCAST(lwarmstart ,1,0,commwrld,mpierr)
+    call D_MPI_BCAST(lrestart_netcdf,1,0,commwrld,mpierr)
     call D_MPI_BCAST(startfile  ,50,0,commwrld,mpierr)
     call D_MPI_BCAST(author     ,80,0,commwrld,mpierr)
     call D_MPI_BCAST(runtime    ,1,0,commwrld,mpierr)
@@ -351,6 +353,10 @@ contains
     call initdrydep
     call initsubgrid
     call initslurb
+
+    call register_restart_handlers('state', reader=read_restart_state_handler, writer=write_restart_state_handler, include_in_cleanup=.false.)
+    call register_restart_handlers('scalar', reader=read_restart_scalar_handler, writer=write_restart_scalar_handler, include_in_cleanup=.false.)
+    call register_restart_handlers('surface', reader=read_restart_surface_handler, writer=write_restart_surface_handler, include_in_cleanup=.false.)
 
     if (loutdirs) then
        output_prefix(1:3) = cmyidy
@@ -1171,29 +1177,15 @@ contains
   end subroutine readinitfiles
 
   subroutine readrestartfiles
-
-    use modsurfdata, only : ustar,thlflux,qtflux,svflux,dthldz,dqtdz,ps,thls,qts,thvs,oblav,&
-                           tsoil,phiw,tskin,Wl,isurf,ksoilmax,Qnet,swdavn,swuavn,lwdavn,lwuavn,nradtime,&
-                           obl,qskin
-    use modraddata, only: iradiation,useMcICA, tnext_radiation => tnext, &
-                          thlprad,swd,swu,lwd,lwu,swdca,swuca,lwdca,lwuca,swdir,swdif,lwc,&
-                          SW_up_TOA,SW_dn_TOA,LW_up_TOA,LW_dn_TOA,&
-                          SW_up_ca_TOA,SW_dn_ca_TOA,LW_up_ca_TOA,LW_dn_ca_TOA
-    use modfields,  only : u0,v0,w0,thl0,qt0,ql0,ql0h,e120,dthvdz,presf,presh,initial_presf,initial_presh,sv0,tmp0,esl,qvsl,qvsi
-    use modglobal,  only : i1,i2,ih,j1,j2,jh,k1,startfile,timee,&
-                           tres,ifinput,nsv,dt,output_prefix
-    use modboundary, only: dqt, dtheta, dsv
+    use modsurfdata, only : isurf
+    use modglobal,  only : startfile,ifinput,nsv
     use modmpi,     only : myid, cmyid
-    use modsubgriddata, only : ekm,ekh
-    use modlsm, only : kmax_soil, tile, nlu
-    use modslurb, only : enable_slurb, slurb_tile
-    use modslurbdata, only : moist_physics
-    use modlogging, only : finish
+    use modrestart_registry, only : close_restart_file, open_restart_file, run_restart_reader
 
 
     character(len=*), parameter :: routine = modname//'/readrestartfiles'
     character(50) :: name
-    integer i,j,k,n, ilu
+    integer i,j,k,n
     !********************************************************************
 
   !    1.0 Read initfiles
@@ -1202,137 +1194,33 @@ contains
     name(5:5) = 'd'
     name(14:21)=cmyid
     if (myid == 0) write(6,*) 'loading ',name
-    open(unit=ifinput,file=trim(output_prefix)//name,form='unformatted', status='old')
+    call open_restart_file(name, ifinput, status='old', action='read')
 
-      read(ifinput)  (((u0    (i,j,k),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1)
-!       u0 = u0-cu
-      read(ifinput)  (((v0    (i,j,k),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1)
-!       v0 = v0-cv
-      read(ifinput)  (((w0    (i,j,k),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1)
-      read(ifinput)  (((thl0  (i,j,k),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1)
-      read(ifinput)  (((qt0   (i,j,k),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1)
-      read(ifinput)  (((ql0   (i,j,k),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1)
-      read(ifinput)  (((ql0h  (i,j,k),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1)
-      read(ifinput)  (((e120  (i,j,k),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1)
-      read(ifinput)  (((dthvdz(i,j,k),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1)
-      read(ifinput)  (((ekm   (i,j,k),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1)
-      read(ifinput)  (((ekh   (i,j,k),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1)
-      read(ifinput)  (((tmp0   (i,j,k),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1)
-      read(ifinput)  (((esl   (i,j,k),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1)
-      read(ifinput)  (((qvsl   (i,j,k),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1)
-      read(ifinput)  (((qvsi   (i,j,k),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1)
-      read(ifinput)   ((ustar (i,j  ),i=1,i2      ),j=1,j2      )
-      read(ifinput)   ((thlflux (i,j  ),i=1,i2      ),j=1,j2      )
-      read(ifinput)   ((qtflux  (i,j  ),i=1,i2      ),j=1,j2      )
-      read(ifinput)   ((dthldz(i,j  ),i=1,i2      ),j=1,j2      )
-      read(ifinput)   ((dqtdz (i,j  ),i=1,i2      ),j=1,j2      )
-      read(ifinput)  (  presf (    k)                            ,k=1,k1)
-      read(ifinput)  (  presh (    k)                            ,k=1,k1)
-      read(ifinput)  (  initial_presf (    k)                            ,k=1,k1)
-      read(ifinput)  (  initial_presh (    k)                            ,k=1,k1)
-      read(ifinput)  ps,thls,qts,thvs,oblav
-      read(ifinput)  dtheta,dqt,timee,dt,tres
-      read(ifinput)   ((obl (i,j  ),i=1,i2      ),j=1,j2      )
-      read(ifinput)   ((tskin(i,j ),i=1,i2      ),j=1,j2      )
-      read(ifinput)   ((qskin(i,j ),i=1,i2      ),j=1,j2      )
+    call run_restart_reader('state', ifinput)
 
-!!!!! radiation quantities
-      read(ifinput)  tnext_radiation
-      read(ifinput)  (((thlprad (i,j,k),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1)
-      read(ifinput)  (((swd     (i,j,k),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1)
-      read(ifinput)  (((swu     (i,j,k),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1)
-      read(ifinput)  (((lwd     (i,j,k),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1)
-      read(ifinput)  (((lwu     (i,j,k),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1)
-      read(ifinput)  (((swdca   (i,j,k),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1)
-      read(ifinput)  (((swuca   (i,j,k),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1)
-      read(ifinput)  (((lwdca   (i,j,k),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1)
-      read(ifinput)  (((lwuca   (i,j,k),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1)
-      read(ifinput)  (((swdir   (i,j,k),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1)
-      read(ifinput)  (((swdif   (i,j,k),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1)
-      read(ifinput)  (((lwc     (i,j,k),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1)
-
-      read(ifinput)  ((SW_up_TOA    (i,j ),i=1,i2),j=1,j2)
-      read(ifinput)  ((SW_dn_TOA    (i,j ),i=1,i2),j=1,j2)
-      read(ifinput)  ((LW_up_TOA    (i,j ),i=1,i2),j=1,j2)
-      read(ifinput)  ((LW_dn_TOA    (i,j ),i=1,i2),j=1,j2)
-      read(ifinput)  ((SW_up_ca_TOA (i,j ),i=1,i2),j=1,j2)
-      read(ifinput)  ((SW_dn_ca_TOA (i,j ),i=1,i2),j=1,j2)
-      read(ifinput)  ((LW_up_ca_TOA (i,j ),i=1,i2),j=1,j2)
-      read(ifinput)  ((LW_dn_ca_TOA (i,j ),i=1,i2),j=1,j2)
-!!!!! end of radiation quantities
-
-    close(ifinput)
+    call close_restart_file(name)
 
     if (nsv>0) then
       name(5:5) = 's'
       if (myid == 0) write(6,*) 'loading ',name
-      open(unit=ifinput,file=trim(output_prefix)//name,form='unformatted')
-      read(ifinput) ((((sv0(i,j,k,n),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1),n=1,nsv)
-      read(ifinput) (((svflux(i,j,n),i=1,i2),j=1,j2),n=1,nsv)
-      read(ifinput) (dsv(n),n=1,nsv)
-      read(ifinput)  timee
-      close(ifinput)
+      call open_restart_file(name, ifinput, action='read')
+      call run_restart_reader('scalar', ifinput)
+      call close_restart_file(name)
     end if
 
     if (isurf == 1) then
       name(5:5) = 'l'
       if (myid == 0) write(6,*) 'loading ',name
-      open(unit=ifinput,file=trim(output_prefix)//name,form='unformatted')
-      read(ifinput) (((tsoil(i,j,k),i=1,i2),j=1,j2),k=1,ksoilmax)
-      read(ifinput) (((phiw(i,j,k),i=1,i2),j=1,j2),k=1,ksoilmax)
-      read(ifinput) ((tskin(i,j),i=1,i2),j=1,j2)
-      read(ifinput) ((Wl(i,j),i=1,i2),j=1,j2)
-      read(ifinput) ((Qnet(i,j),i=1,i2),j=1,j2)
-      if(iradiation == 1 .and. useMcICA) then
-        read(ifinput) (((swdavn(i,j,n),i=1,i2),j=1,j2),n=1,nradtime)
-        read(ifinput) (((swuavn(i,j,n),i=1,i2),j=1,j2),n=1,nradtime)
-        read(ifinput) (((lwdavn(i,j,n),i=1,i2),j=1,j2),n=1,nradtime)
-        read(ifinput) (((lwuavn(i,j,n),i=1,i2),j=1,j2),n=1,nradtime)
-      end if
-      read(ifinput)  timee
-      close(ifinput)
+      call open_restart_file(name, ifinput, action='read')
+      call run_restart_reader('surface', ifinput)
+      call close_restart_file(name)
 
     else if (isurf == 11) then
       name(5:5) = 'l'
       if (myid == 0) write(6,*) 'loading ',name
-      open(unit=ifinput,file=trim(output_prefix)//name,form='unformatted')
-      read(ifinput) (((tsoil(i,j,k), i=1,i2), j=1,j2), k=1,kmax_soil)
-      read(ifinput) (((phiw (i,j,k), i=1,i2), j=1,j2), k=1,kmax_soil)
-      read(ifinput) ((tskin (i,j),   i=1,i2), j=1,j2)
-      read(ifinput) ((Wl    (i,j),   i=1,i2), j=1,j2)
-
-      do ilu=1,nlu
-        read(ifinput) ((tile(ilu)%thlskin(i,j), i=1,i2), j=1,j2)
-        read(ifinput) ((tile(ilu)%qtskin(i,j), i=1,i2), j=1,j2)
-        read(ifinput) ((tile(ilu)%obuk(i,j), i=1,i2), j=1,j2)
-      end do
-
-      if (enable_slurb) then
-        read(ifinput) ((slurb_tile%t_can_0(i,j), i=1,i2), j=1,j2)
-        read(ifinput) ((slurb_tile%t_can_m(i,j), i=1,i2), j=1,j2)
-        read(ifinput) (((slurb_tile%t_wall_a_0(k,i,j), i=1,i2), j=1,j2), k=1,size(slurb_tile%t_wall_a_0,1))
-        read(ifinput) (((slurb_tile%t_wall_a_m(k,i,j), i=1,i2), j=1,j2), k=1,size(slurb_tile%t_wall_a_m,1))
-        read(ifinput) (((slurb_tile%t_wall_b_0(k,i,j), i=1,i2), j=1,j2), k=1,size(slurb_tile%t_wall_b_0,1))
-        read(ifinput) (((slurb_tile%t_wall_b_m(k,i,j), i=1,i2), j=1,j2), k=1,size(slurb_tile%t_wall_b_m,1))
-        read(ifinput) (((slurb_tile%t_win_a_0(k,i,j), i=1,i2), j=1,j2), k=1,size(slurb_tile%t_win_a_0,1))
-        read(ifinput) (((slurb_tile%t_win_a_m(k,i,j), i=1,i2), j=1,j2), k=1,size(slurb_tile%t_win_a_m,1))
-        read(ifinput) (((slurb_tile%t_win_b_0(k,i,j), i=1,i2), j=1,j2), k=1,size(slurb_tile%t_win_b_0,1))
-        read(ifinput) (((slurb_tile%t_win_b_m(k,i,j), i=1,i2), j=1,j2), k=1,size(slurb_tile%t_win_b_m,1))
-        read(ifinput) (((slurb_tile%t_roof_0(k,i,j), i=1,i2), j=1,j2), k=1,size(slurb_tile%t_roof_0,1))
-        read(ifinput) (((slurb_tile%t_roof_m(k,i,j), i=1,i2), j=1,j2), k=1,size(slurb_tile%t_roof_m,1))
-        read(ifinput) (((slurb_tile%t_road_0(k,i,j), i=1,i2), j=1,j2), k=1,size(slurb_tile%t_road_0,1))
-        read(ifinput) (((slurb_tile%t_road_m(k,i,j), i=1,i2), j=1,j2), k=1,size(slurb_tile%t_road_m,1))
-        read(ifinput) ((slurb_tile%q_can_0(i,j), i=1,i2), j=1,j2)
-        read(ifinput) ((slurb_tile%q_can_m(i,j), i=1,i2), j=1,j2)
-        read(ifinput) ((slurb_tile%m_liq_roof_0(i,j), i=1,i2), j=1,j2)
-        read(ifinput) ((slurb_tile%m_liq_roof_m(i,j), i=1,i2), j=1,j2)
-        read(ifinput) ((slurb_tile%m_liq_road_0(i,j), i=1,i2), j=1,j2)
-        read(ifinput) ((slurb_tile%m_liq_road_m(i,j), i=1,i2), j=1,j2)
-      end if
-
-      read(ifinput) timee
-
-      close(ifinput)
+      call open_restart_file(name, ifinput, action='read')
+      call run_restart_reader('surface', ifinput)
+      call close_restart_file(name)
     end if
 
   end subroutine readrestartfiles
@@ -1343,11 +1231,14 @@ contains
   ! determines when to write a restart file, then calls do_writerestartfiles to do the work
   !  if trestart = 0, no periodic restart files will be written.
   subroutine writerestartfiles
-    use modglobal, only : trestart,itrestart,tnextrestart,dt_lim,timee,timeleft,rk3step
+    use modglobal, only : trestart,itrestart,tnextrestart,dt_lim,timee,timeleft,rk3step,rtimee,cexpnr
+    use modmpi, only : cmyid
 #if defined(_OPENACC)
     use modgpu, only: update_host
 #endif
     implicit none
+    character(50) :: restart_name
+    integer :: ihour, imin
 
     if (timee == 0) return
     if (rk3Step/=3) return
@@ -1359,10 +1250,17 @@ contains
     ! if trestart < 0, don't write any restart files
     if ((timee>=tnextrestart .and. trestart > 0) .or. (timeleft==0 .and. trestart >= 0)) then
       tnextrestart = tnextrestart+itrestart
+      ihour = floor(rtimee/3600)
+      imin  = floor((rtimee-ihour * 3600) /3600. * 60.)
+      restart_name = 'initdXXXXhXXmXXXXXXXX.XXX'
+      write (restart_name(6:9)  ,'(i4.4)') ihour
+      write (restart_name(11:12),'(i2.2)') imin
+      restart_name(14:21)= cmyid
+      restart_name(23:25)= cexpnr
 #if defined(_OPENACC)
       call update_host
 #endif
-      call do_writerestartfiles
+      call do_writerestartfiles(restart_name)
     end if
   end subroutine writerestartfiles
 
@@ -1420,187 +1318,294 @@ contains
 
   ! this function writes a restart file
   ! separated from writerestartfiles to be callable from the library interface
-  subroutine do_writerestartfiles
-    use modsurfdata,only: ustar,thlflux,qtflux,svflux,dthldz,dqtdz,ps,thls,qts,thvs,oblav,&
-                          tsoil,phiw,tskin,Wl,ksoilmax,isurf,ksoilmax,Qnet,swdavn,swuavn,lwdavn,lwuavn,nradtime,&
-                          obl,qskin
-    use modraddata, only: iradiation,useMcICA, tnext_radiation => tnext, &
-                          thlprad,swd,swu,lwd,lwu,swdca,swuca,lwdca,lwuca,swdir,swdif,lwc,&
-                          SW_up_TOA,SW_dn_TOA,LW_up_TOA,LW_dn_TOA,&
-                          SW_up_ca_TOA,SW_dn_ca_TOA,LW_up_ca_TOA,LW_dn_ca_TOA
-
-    use modfields, only : u0,v0,w0,thl0,qt0,ql0,ql0h,e120,dthvdz,presf,presh,initial_presf,initial_presh,sv0,tmp0,esl,qvsl,qvsi
-    use modglobal, only : i1,i2,ih,j1,j2,jh,k1,cexpnr,ifoutput,timee,rtimee,tres,nsv,dt,output_prefix
-    use modboundary, only: dqt, dtheta, dsv
-    use modmpi,    only : cmyid,myid
-    use modsubgriddata, only : ekm,ekh
-    use modlsm,    only : kmax_soil, tile, nlu
-    use modslurb,  only : enable_slurb, slurb_tile
-    use modslurbdata, only : moist_physics
+  subroutine do_writerestartfiles(restart_name)
+    use modmpi, only : myid
+    use modrestart_registry, only : run_restart_writers
 
     implicit none
-    integer imin,ihour
-    integer i,j,k,n, ilu
-    character(50) name,linkname
-
-      ihour = floor(rtimee/3600)
-      imin  = floor((rtimee-ihour * 3600) /3600. * 60.)
-      name = 'initdXXXXhXXmXXXXXXXX.XXX'
-      write (name(6:9)  ,'(i4.4)') ihour
-      write (name(11:12),'(i2.2)') imin
-      name(14:21)= cmyid
-      name(23:25)= cexpnr
-      open  (ifoutput,file=trim(output_prefix)//name,form='unformatted',status='replace')
-
-      write(ifoutput)  (((u0 (i,j,k),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1)
-      write(ifoutput)  (((v0 (i,j,k),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1)
-      write(ifoutput)  (((w0    (i,j,k),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1)
-      write(ifoutput)  (((thl0  (i,j,k),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1)
-      write(ifoutput)  (((qt0   (i,j,k),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1)
-      write(ifoutput)  (((ql0   (i,j,k),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1)
-      write(ifoutput)  (((ql0h  (i,j,k),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1)
-      write(ifoutput)  (((e120  (i,j,k),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1)
-      write(ifoutput)  (((dthvdz(i,j,k),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1)
-      write(ifoutput)  (((ekm   (i,j,k),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1)
-      write(ifoutput)  (((ekh   (i,j,k),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1)
-      write(ifoutput)  (((tmp0   (i,j,k),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1)
-      write(ifoutput)  (((esl   (i,j,k),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1)
-      write(ifoutput)  (((qvsl   (i,j,k),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1)
-      write(ifoutput)  (((qvsi   (i,j,k),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1)
-      write(ifoutput)   ((ustar (i,j  ),i=1,i2      ),j=1,j2      )
-      write(ifoutput)   ((thlflux (i,j  ),i=1,i2      ),j=1,j2      )
-      write(ifoutput)   ((qtflux  (i,j  ),i=1,i2      ),j=1,j2      )
-      write(ifoutput)   ((dthldz(i,j  ),i=1,i2      ),j=1,j2      )
-      write(ifoutput)   ((dqtdz (i,j  ),i=1,i2      ),j=1,j2      )
-      write(ifoutput)  (  presf (    k)                            ,k=1,k1)
-      write(ifoutput)  (  presh (    k)                            ,k=1,k1)
-      write(ifoutput)  (  initial_presf (    k)                            ,k=1,k1)
-      write(ifoutput)  (  initial_presh (    k)                            ,k=1,k1)
-      write(ifoutput)  ps,thls,qts,thvs,oblav
-      write(ifoutput)  dtheta,dqt,timee,  dt,tres
-      write(ifoutput)   ((obl (i,j  ),i=1,i2      ),j=1,j2      )
-      write(ifoutput)   ((tskin(i,j ),i=1,i2      ),j=1,j2      )
-      write(ifoutput)   ((qskin(i,j ),i=1,i2      ),j=1,j2      )
-
-!!!!! radiation quantities
-      write(ifoutput)  tnext_radiation
-      write(ifoutput)  (((thlprad (i,j,k),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1)
-      write(ifoutput)  (((swd     (i,j,k),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1)
-      write(ifoutput)  (((swu     (i,j,k),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1)
-      write(ifoutput)  (((lwd     (i,j,k),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1)
-      write(ifoutput)  (((lwu     (i,j,k),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1)
-      write(ifoutput)  (((swdca   (i,j,k),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1)
-      write(ifoutput)  (((swuca   (i,j,k),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1)
-      write(ifoutput)  (((lwdca   (i,j,k),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1)
-      write(ifoutput)  (((lwuca   (i,j,k),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1)
-      write(ifoutput)  (((swdir   (i,j,k),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1)
-      write(ifoutput)  (((swdif   (i,j,k),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1)
-      write(ifoutput)  (((lwc     (i,j,k),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1)
-
-      write(ifoutput)  ((SW_up_TOA    (i,j ),i=1,i2),j=1,j2)
-      write(ifoutput)  ((SW_dn_TOA    (i,j ),i=1,i2),j=1,j2)
-      write(ifoutput)  ((LW_up_TOA    (i,j ),i=1,i2),j=1,j2)
-      write(ifoutput)  ((LW_dn_TOA    (i,j ),i=1,i2),j=1,j2)
-      write(ifoutput)  ((SW_up_ca_TOA (i,j ),i=1,i2),j=1,j2)
-      write(ifoutput)  ((SW_dn_ca_TOA (i,j ),i=1,i2),j=1,j2)
-      write(ifoutput)  ((LW_up_ca_TOA (i,j ),i=1,i2),j=1,j2)
-      write(ifoutput)  ((LW_dn_ca_TOA (i,j ),i=1,i2),j=1,j2)
-!!!!! end of radiation quantities
-
-      close (ifoutput)
-      linkname = name
-      linkname(6:13) = "_latest_"
-      call system("ln -s -f "//name //" "//trim(output_prefix)//linkname)
-
-      if (nsv>0) then
-        name(5:5)='s'
-        open  (ifoutput,file=trim(output_prefix)//name,form='unformatted')
-        write(ifoutput) ((((sv0(i,j,k,n),i=2-ih,i1+ih),j=2-jh,j1+jh),k=1,k1),n=1,nsv)
-        write(ifoutput) (((svflux(i,j,n),i=1,i2),j=1,j2),n=1,nsv)
-        write(ifoutput) (dsv(n),n=1,nsv)
-        write(ifoutput)  timee
-
-        close (ifoutput)
-        linkname = name
-        linkname(6:13) = "_latest_"
-        call system("ln -s -f "//name //" "//trim(output_prefix)//linkname)
-
-      end if
-
-      if (isurf == 1) then
-        name(5:5)='l'
-        open  (ifoutput,file=trim(output_prefix)//name,form='unformatted')
-        write(ifoutput) (((tsoil(i,j,k),i=1,i2),j=1,j2),k=1,ksoilmax)
-        write(ifoutput) (((phiw(i,j,k),i=1,i2),j=1,j2),k=1,ksoilmax)
-        write(ifoutput) ((tskin(i,j),i=1,i2),j=1,j2)
-        write(ifoutput) ((Wl(i,j),i=1,i2),j=1,j2)
-        write(ifoutput) ((Qnet(i,j),i=1,i2),j=1,j2)
-        if(iradiation == 1 .and. useMcICA) then
-          write(ifoutput) (((swdavn(i,j,n),i=1,i2),j=1,j2),n=1,nradtime)
-          write(ifoutput) (((swuavn(i,j,n),i=1,i2),j=1,j2),n=1,nradtime)
-          write(ifoutput) (((lwdavn(i,j,n),i=1,i2),j=1,j2),n=1,nradtime)
-          write(ifoutput) (((lwuavn(i,j,n),i=1,i2),j=1,j2),n=1,nradtime)
-        end if
-        write(ifoutput)  timee
-
-        close (ifoutput)
-        linkname = name
-        linkname(6:13) = "_latest_"
-        call system("ln -s -f "//name //" "//trim(output_prefix)//linkname)
-      else if (isurf == 11) then
-        name(5:5)='l'
-        open  (ifoutput,file=trim(output_prefix)//name,form='unformatted')
-        write(ifoutput) (((tsoil(i,j,k), i=1,i2), j=1,j2), k=1,kmax_soil)
-        write(ifoutput) (((phiw (i,j,k), i=1,i2), j=1,j2), k=1,kmax_soil)
-        write(ifoutput) ((tskin (i,j),   i=1,i2), j=1,j2)
-        write(ifoutput) ((Wl    (i,j),   i=1,i2), j=1,j2)
-
-        ! Sub-grid tiles
-        do ilu=1,nlu
-          write(ifoutput) ((tile(ilu)%thlskin(i,j), i=1,i2), j=1,j2)
-          write(ifoutput) ((tile(ilu)%qtskin(i,j), i=1,i2), j=1,j2)
-          write(ifoutput) ((tile(ilu)%obuk(i,j), i=1,i2), j=1,j2)
-        end do
-
-        write(ifoutput)  timee
-
-        if (enable_slurb) then
-          write(ifoutput) ((slurb_tile%t_can_0(i,j), i=1,i2), j=1,j2)
-          write(ifoutput) ((slurb_tile%t_can_m(i,j), i=1,i2), j=1,j2)
-          write(ifoutput) (((slurb_tile%t_wall_a_0(k,i,j), i=1,i2), j=1,j2), k=1,size(slurb_tile%t_wall_a_0,1))
-          write(ifoutput) (((slurb_tile%t_wall_a_m(k,i,j), i=1,i2), j=1,j2), k=1,size(slurb_tile%t_wall_a_m,1))
-          write(ifoutput) (((slurb_tile%t_wall_b_0(k,i,j), i=1,i2), j=1,j2), k=1,size(slurb_tile%t_wall_b_0,1))
-          write(ifoutput) (((slurb_tile%t_wall_b_m(k,i,j), i=1,i2), j=1,j2), k=1,size(slurb_tile%t_wall_b_m,1))
-          write(ifoutput) (((slurb_tile%t_win_a_0(k,i,j), i=1,i2), j=1,j2), k=1,size(slurb_tile%t_win_a_0,1))
-          write(ifoutput) (((slurb_tile%t_win_a_m(k,i,j), i=1,i2), j=1,j2), k=1,size(slurb_tile%t_win_a_m,1))
-          write(ifoutput) (((slurb_tile%t_win_b_0(k,i,j), i=1,i2), j=1,j2), k=1,size(slurb_tile%t_win_b_0,1))
-          write(ifoutput) (((slurb_tile%t_win_b_m(k,i,j), i=1,i2), j=1,j2), k=1,size(slurb_tile%t_win_b_m,1))
-          write(ifoutput) (((slurb_tile%t_roof_0(k,i,j), i=1,i2), j=1,j2), k=1,size(slurb_tile%t_roof_0,1))
-          write(ifoutput) (((slurb_tile%t_roof_m(k,i,j), i=1,i2), j=1,j2), k=1,size(slurb_tile%t_roof_m,1))
-          write(ifoutput) (((slurb_tile%t_road_0(k,i,j), i=1,i2), j=1,j2), k=1,size(slurb_tile%t_road_0,1))
-          write(ifoutput) (((slurb_tile%t_road_m(k,i,j), i=1,i2), j=1,j2), k=1,size(slurb_tile%t_road_m,1))
-
-          if (moist_physics) then
-            write(ifoutput) ((slurb_tile%q_can_0(i,j), i=1,i2), j=1,j2)
-            write(ifoutput) ((slurb_tile%q_can_m(i,j), i=1,i2), j=1,j2)
-            write(ifoutput) ((slurb_tile%m_liq_roof_0(i,j), i=1,i2), j=1,j2)
-            write(ifoutput) ((slurb_tile%m_liq_roof_m(i,j), i=1,i2), j=1,j2)
-            write(ifoutput) ((slurb_tile%m_liq_road_0(i,j), i=1,i2), j=1,j2)
-            write(ifoutput) ((slurb_tile%m_liq_road_m(i,j), i=1,i2), j=1,j2)
-          end if
-        end if
-
-        close (ifoutput)
-        linkname = name
-        linkname(6:13) = "_latest_"
-        call system("ln -s -f "//name //" "//trim(output_prefix)//linkname)
-      end if
+    character(50), intent(in) :: restart_name
+      call run_restart_writers(restart_name)
 
       if (myid==0) then
         write(*,'(A,F15.7,A,I4)') 'dump at time = ',rtimee,' unit = ',ifoutput
       end if
 
   end subroutine do_writerestartfiles
+
+  subroutine write_restart_state_handler(iunit)
+    use modsurfdata,only: ustar,thlflux,qtflux,dthldz,dqtdz,ps,thls,qts,thvs,oblav,&
+                          tskin,obl,ps_patch,thls_patch,qts_patch,thvs_patch,oblpatch,lhetero,qskin
+    use modraddata, only: iradiation,useMcICA, tnext_radiation => tnext, &
+                          thlprad,swd,swu,lwd,lwu,swdca,swuca,lwdca,lwuca,swdir,swdif,lwc,&
+                          SW_up_TOA,SW_dn_TOA,LW_up_TOA,LW_dn_TOA,&
+                          SW_up_ca_TOA,SW_dn_ca_TOA,LW_up_ca_TOA,LW_dn_ca_TOA
+    use modfields, only : u0,v0,w0,thl0,qt0,ql0,ql0h,e120,dthvdz,presf,presh,initial_presf,initial_presh,tmp0,esl,qvsl,qvsi
+    use modglobal, only : timee,tres,dt
+    use modboundary, only: dqt, dtheta
+    use modsubgriddata, only : ekm,ekh
+    use modrestart_registry, only : write_restart_field
+
+    implicit none
+    integer, intent(in) :: iunit
+
+    call write_restart_field(iunit, 'u0', u0)
+    call write_restart_field(iunit, 'v0', v0)
+    call write_restart_field(iunit, 'w0', w0)
+    call write_restart_field(iunit, 'thl0', thl0)
+    call write_restart_field(iunit, 'qt0', qt0)
+    call write_restart_field(iunit, 'ql0', ql0)
+    call write_restart_field(iunit, 'ql0h', ql0h)
+    call write_restart_field(iunit, 'e120', e120)
+    call write_restart_field(iunit, 'dthvdz', dthvdz)
+    call write_restart_field(iunit, 'ekm', ekm)
+    call write_restart_field(iunit, 'ekh', ekh)
+    call write_restart_field(iunit, 'tmp0', tmp0)
+    call write_restart_field(iunit, 'esl', esl)
+    call write_restart_field(iunit, 'qvsl', qvsl)
+    call write_restart_field(iunit, 'qvsi', qvsi)
+    call write_restart_field(iunit, 'ustar', ustar)
+    call write_restart_field(iunit, 'thlflux', thlflux)
+    call write_restart_field(iunit, 'qtflux', qtflux)
+    call write_restart_field(iunit, 'dthldz', dthldz)
+    call write_restart_field(iunit, 'dqtdz', dqtdz)
+    call write_restart_field(iunit, 'presf', presf)
+    call write_restart_field(iunit, 'presh', presh)
+    call write_restart_field(iunit, 'initial_presf', initial_presf)
+    call write_restart_field(iunit, 'initial_presh', initial_presh)
+    call write_restart_field(iunit, 'ps', ps)
+    call write_restart_field(iunit, 'thls', thls)
+    call write_restart_field(iunit, 'qts', qts)
+    call write_restart_field(iunit, 'thvs', thvs)
+    call write_restart_field(iunit, 'oblav', oblav)
+    call write_restart_field(iunit, 'dtheta', dtheta)
+    call write_restart_field(iunit, 'dqt', dqt)
+    call write_restart_field(iunit, 'timee', timee)
+    call write_restart_field(iunit, 'dt', dt)
+    call write_restart_field(iunit, 'tres', tres)
+    call write_restart_field(iunit, 'obl', obl)
+    call write_restart_field(iunit, 'tskin', tskin)
+    call write_restart_field(iunit, 'qskin', qskin)
+
+    call write_restart_field(iunit, 'tnext_radiation', tnext_radiation)
+    call write_restart_field(iunit, 'thlprad', thlprad)
+    call write_restart_field(iunit, 'swd', swd)
+    call write_restart_field(iunit, 'swu', swu)
+    call write_restart_field(iunit, 'lwd', lwd)
+    call write_restart_field(iunit, 'lwu', lwu)
+    call write_restart_field(iunit, 'swdca', swdca)
+    call write_restart_field(iunit, 'swuca', swuca)
+    call write_restart_field(iunit, 'lwdca', lwdca)
+    call write_restart_field(iunit, 'lwuca', lwuca)
+    call write_restart_field(iunit, 'swdir', swdir)
+    call write_restart_field(iunit, 'swdif', swdif)
+    call write_restart_field(iunit, 'lwc', lwc)
+
+    call write_restart_field(iunit, 'SW_up_TOA', SW_up_TOA)
+    call write_restart_field(iunit, 'SW_dn_TOA', SW_dn_TOA)
+    call write_restart_field(iunit, 'LW_up_TOA', LW_up_TOA)
+    call write_restart_field(iunit, 'LW_dn_TOA', LW_dn_TOA)
+    call write_restart_field(iunit, 'SW_up_ca_TOA', SW_up_ca_TOA)
+    call write_restart_field(iunit, 'SW_dn_ca_TOA', SW_dn_ca_TOA)
+    call write_restart_field(iunit, 'LW_up_ca_TOA', LW_up_ca_TOA)
+    call write_restart_field(iunit, 'LW_dn_ca_TOA', LW_dn_ca_TOA)
+
+    if (lhetero) then
+      call write_restart_field(iunit, 'ps_patch', ps_patch)
+      call write_restart_field(iunit, 'thls_patch', thls_patch)
+      call write_restart_field(iunit, 'qts_patch', qts_patch)
+      call write_restart_field(iunit, 'thvs_patch', thvs_patch)
+      call write_restart_field(iunit, 'oblpatch', oblpatch)
+    end if
+
+  end subroutine write_restart_state_handler
+
+  subroutine write_restart_scalar_handler(iunit)
+    use modfields, only : sv0
+    use modsurfdata, only : svflux
+    use modglobal, only : timee
+    use modboundary, only : dsv
+    use modrestart_registry, only : write_restart_field
+
+    implicit none
+    integer, intent(in) :: iunit
+
+    call write_restart_field(iunit, 'sv0', sv0)
+    call write_restart_field(iunit, 'svflux', svflux)
+    call write_restart_field(iunit, 'dsv', dsv)
+    call write_restart_field(iunit, 'timee', timee)
+  end subroutine write_restart_scalar_handler
+
+  subroutine write_restart_surface_handler(iunit)
+    use modsurfdata, only: tsoil,phiw,tskin,Wl,Qnet,isurf,swdavn,swuavn,lwdavn,lwuavn,nradtime
+    use modraddata, only: iradiation,useMcICA
+    use modglobal, only : timee
+    use modlsm, only : tile,nlu
+    use modrestart_registry, only : write_restart_field
+
+    implicit none
+    integer, intent(in) :: iunit
+    integer :: ilu
+
+    call write_restart_field(iunit, 'tsoil', tsoil)
+    call write_restart_field(iunit, 'phiw', phiw)
+    call write_restart_field(iunit, 'tskin', tskin)
+    call write_restart_field(iunit, 'Wl', Wl)
+
+    if (isurf == 1) then
+      call write_restart_field(iunit, 'Qnet', Qnet)
+      if (iradiation == 1 .and. useMcICA) then
+        call write_restart_field(iunit, 'swdavn', swdavn)
+        call write_restart_field(iunit, 'swuavn', swuavn)
+        call write_restart_field(iunit, 'lwdavn', lwdavn)
+        call write_restart_field(iunit, 'lwuavn', lwuavn)
+      end if
+    else if (isurf == 11) then
+      do ilu = 1, nlu
+        call write_restart_field(iunit, 'tile_thlskin', tile(ilu)%thlskin)
+        call write_restart_field(iunit, 'tile_qtskin', tile(ilu)%qtskin)
+        call write_restart_field(iunit, 'tile_obuk', tile(ilu)%obuk)
+      end do
+    end if
+
+    call write_restart_field(iunit, 'timee', timee)
+  end subroutine write_restart_surface_handler
+
+  subroutine read_restart_state_handler(iunit)
+    use modsurfdata, only : ustar,thlflux,qtflux,dthldz,dqtdz,ps,thls,qts,thvs,oblav,&
+                            obl,tskin,ps_patch,thls_patch,qts_patch,thvs_patch,oblpatch,lhetero,qskin
+    use modraddata, only: tnext_radiation => tnext, &
+                          thlprad,swd,swu,lwd,lwu,swdca,swuca,lwdca,lwuca,swdir,swdif,lwc,&
+                          SW_up_TOA,SW_dn_TOA,LW_up_TOA,LW_dn_TOA,&
+                          SW_up_ca_TOA,SW_dn_ca_TOA,LW_up_ca_TOA,LW_dn_ca_TOA
+    use modfields,  only : u0,v0,w0,thl0,qt0,ql0,ql0h,e120,dthvdz,presf,presh,initial_presf,initial_presh,tmp0,esl,qvsl,qvsi
+    use modglobal,  only : timee,tres,dt
+    use modboundary, only: dqt, dtheta
+    use modsubgriddata, only : ekm,ekh
+    use modrestart_registry, only : read_restart_field
+
+    implicit none
+    integer, intent(in) :: iunit
+
+    call read_restart_field(iunit, 'u0', u0)
+    call read_restart_field(iunit, 'v0', v0)
+    call read_restart_field(iunit, 'w0', w0)
+    call read_restart_field(iunit, 'thl0', thl0)
+    call read_restart_field(iunit, 'qt0', qt0)
+    call read_restart_field(iunit, 'ql0', ql0)
+    call read_restart_field(iunit, 'ql0h', ql0h)
+    call read_restart_field(iunit, 'e120', e120)
+    call read_restart_field(iunit, 'dthvdz', dthvdz)
+    call read_restart_field(iunit, 'ekm', ekm)
+    call read_restart_field(iunit, 'ekh', ekh)
+    call read_restart_field(iunit, 'tmp0', tmp0)
+    call read_restart_field(iunit, 'esl', esl)
+    call read_restart_field(iunit, 'qvsl', qvsl)
+    call read_restart_field(iunit, 'qvsi', qvsi)
+    call read_restart_field(iunit, 'ustar', ustar)
+    call read_restart_field(iunit, 'thlflux', thlflux)
+    call read_restart_field(iunit, 'qtflux', qtflux)
+    call read_restart_field(iunit, 'dthldz', dthldz)
+    call read_restart_field(iunit, 'dqtdz', dqtdz)
+    call read_restart_field(iunit, 'presf', presf)
+    call read_restart_field(iunit, 'presh', presh)
+    call read_restart_field(iunit, 'initial_presf', initial_presf)
+    call read_restart_field(iunit, 'initial_presh', initial_presh)
+    call read_restart_field(iunit, 'ps', ps)
+    call read_restart_field(iunit, 'thls', thls)
+    call read_restart_field(iunit, 'qts', qts)
+    call read_restart_field(iunit, 'thvs', thvs)
+    call read_restart_field(iunit, 'oblav', oblav)
+    call read_restart_field(iunit, 'dtheta', dtheta)
+    call read_restart_field(iunit, 'dqt', dqt)
+    call read_restart_field(iunit, 'timee', timee)
+    call read_restart_field(iunit, 'dt', dt)
+    call read_restart_field(iunit, 'tres', tres)
+    call read_restart_field(iunit, 'obl', obl)
+    call read_restart_field(iunit, 'tskin', tskin)
+    call read_restart_field(iunit, 'qskin', qskin)
+
+    call read_restart_field(iunit, 'tnext_radiation', tnext_radiation)
+    call read_restart_field(iunit, 'thlprad', thlprad)
+    call read_restart_field(iunit, 'swd', swd)
+    call read_restart_field(iunit, 'swu', swu)
+    call read_restart_field(iunit, 'lwd', lwd)
+    call read_restart_field(iunit, 'lwu', lwu)
+    call read_restart_field(iunit, 'swdca', swdca)
+    call read_restart_field(iunit, 'swuca', swuca)
+    call read_restart_field(iunit, 'lwdca', lwdca)
+    call read_restart_field(iunit, 'lwuca', lwuca)
+    call read_restart_field(iunit, 'swdir', swdir)
+    call read_restart_field(iunit, 'swdif', swdif)
+    call read_restart_field(iunit, 'lwc', lwc)
+
+    call read_restart_field(iunit, 'SW_up_TOA', SW_up_TOA)
+    call read_restart_field(iunit, 'SW_dn_TOA', SW_dn_TOA)
+    call read_restart_field(iunit, 'LW_up_TOA', LW_up_TOA)
+    call read_restart_field(iunit, 'LW_dn_TOA', LW_dn_TOA)
+    call read_restart_field(iunit, 'SW_up_ca_TOA', SW_up_ca_TOA)
+    call read_restart_field(iunit, 'SW_dn_ca_TOA', SW_dn_ca_TOA)
+    call read_restart_field(iunit, 'LW_up_ca_TOA', LW_up_ca_TOA)
+    call read_restart_field(iunit, 'LW_dn_ca_TOA', LW_dn_ca_TOA)
+
+    if (lhetero) then
+      call read_restart_field(iunit, 'ps_patch', ps_patch)
+      call read_restart_field(iunit, 'thls_patch', thls_patch)
+      call read_restart_field(iunit, 'qts_patch', qts_patch)
+      call read_restart_field(iunit, 'thvs_patch', thvs_patch)
+      call read_restart_field(iunit, 'oblpatch', oblpatch)
+    end if
+  end subroutine read_restart_state_handler
+
+  subroutine read_restart_scalar_handler(iunit)
+    use modfields, only : sv0
+    use modsurfdata, only : svflux
+    use modglobal, only : timee
+    use modboundary, only : dsv
+    use modrestart_registry, only : read_restart_field
+
+    implicit none
+    integer, intent(in) :: iunit
+
+    call read_restart_field(iunit, 'sv0', sv0)
+    call read_restart_field(iunit, 'svflux', svflux)
+    call read_restart_field(iunit, 'dsv', dsv)
+    call read_restart_field(iunit, 'timee', timee)
+  end subroutine read_restart_scalar_handler
+
+  subroutine read_restart_surface_handler(iunit)
+    use modsurfdata, only: tsoil,phiw,tskin,Wl,Qnet,isurf,swdavn,swuavn,lwdavn,lwuavn
+    use modraddata, only: iradiation,useMcICA
+    use modglobal, only : timee
+    use modlsm, only : tile,nlu
+    use modrestart_registry, only : read_restart_field
+
+    implicit none
+    integer, intent(in) :: iunit
+    integer :: ilu
+
+    call read_restart_field(iunit, 'tsoil', tsoil)
+    call read_restart_field(iunit, 'phiw', phiw)
+    call read_restart_field(iunit, 'tskin', tskin)
+    call read_restart_field(iunit, 'Wl', Wl)
+
+    if (isurf == 1) then
+      call read_restart_field(iunit, 'Qnet', Qnet)
+      if (iradiation == 1 .and. useMcICA) then
+        call read_restart_field(iunit, 'swdavn', swdavn)
+        call read_restart_field(iunit, 'swuavn', swuavn)
+        call read_restart_field(iunit, 'lwdavn', lwdavn)
+        call read_restart_field(iunit, 'lwuavn', lwuavn)
+      end if
+    else if (isurf == 11) then
+      do ilu = 1, nlu
+        call read_restart_field(iunit, 'tile_thlskin', tile(ilu)%thlskin)
+        call read_restart_field(iunit, 'tile_qtskin', tile(ilu)%qtskin)
+        call read_restart_field(iunit, 'tile_obuk', tile(ilu)%obuk)
+      end do
+    end if
+
+    call read_restart_field(iunit, 'timee', timee)
+  end subroutine read_restart_surface_handler
 
   subroutine testwctime
     use iso_fortran_env, only : real32
@@ -1624,8 +1629,8 @@ contains
 
   subroutine exitmodules
     use modfields,         only : exitfields
-    use modglobal,         only : exitglobal,lopenbc
-    use modmpi,            only : exitmpi
+    use modglobal,         only : exitglobal,lopenbc,rtimee,cexpnr
+    use modmpi,            only : exitmpi,cmyid
     use modboundary,       only : exitboundary
     use modmicrophysics,   only : exitmicrophysics
     use modpois,           only : exitpois
@@ -1643,6 +1648,7 @@ contains
     use modibm,            only : exitibm
     use modchecksim,       only : exitchecksim
     use tstep,             only : exittstep
+    
 
     call exittimedep
     call exitthermodynamics
