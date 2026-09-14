@@ -269,9 +269,7 @@ contains
     counts = 0
     do i = 1, dt_reason_history_count
       val = dt_reason_history(i)
-      if (val >= lbound(counts, 1) .and. val <= ubound(counts, 1)) then
-        counts(val) = counts(val) + 1
-      end if
+      counts(val) = counts(val) + 1
     end do
 
     reason = dt_reason
