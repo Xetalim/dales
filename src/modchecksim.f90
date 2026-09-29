@@ -145,10 +145,6 @@ contains
     tnext = itcheck + btime
 
     allocate(courx(kmax), coury(kmax), courz(kmax), courtot(kmax), peclettot(kmax))
-    allocate(dt_reason_history(dt_reason_history_len))
-    dt_reason_history = 0
-    dt_reason_history_count = 0
-    dt_reason_history_idx = 0
 
     !$acc enter data create(courx, coury, courz, courtot, peclettot)
 
@@ -171,7 +167,6 @@ contains
     !$acc exit data delete(courx, coury, courz, courtot, peclettot)
 
     deallocate(courx, coury, courz, courtot, peclettot)
-    deallocate(dt_reason_history)
 
   end subroutine exitchecksim
 
