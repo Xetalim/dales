@@ -85,14 +85,11 @@ module modchecksim
 
     integer :: prevntrun
 
-  integer, parameter :: dt_reason_history_len = 100
-  integer, allocatable :: dt_reason_history(:)
-  integer :: dt_reason_history_count = 0
-  integer :: dt_reason_history_idx = 0
 
   ! explanations for dt_limit, determined in tstep_update()
   character (len=15) :: dt_reasons(0:5) = [character(len=15) :: &
     "initial step", "timee", "dt_lim" , "idtmax", "velocity", "diffusion"]
+  integer :: dt_reason_counts(0:5) = 0
 
   logical :: lchecktend = .false.
   logical :: lstop      = .false.
@@ -218,6 +215,8 @@ contains
     call calccourantandpeclet
     call chkdiv
 
+    call reset_dt_reason_counts
+
     dtmn  = 0.
     ndt   = 0.
 
@@ -225,36 +224,30 @@ contains
 
   end subroutine checksim
 
-  !> Store dt_reason in a rolling history buffer.
+  !> Store dt_reason in the dt_reason_counts array.
   subroutine push_dt_reason(reason)
 
     integer, intent(in) :: reason
 
-    dt_reason_history_idx = mod(dt_reason_history_idx, dt_reason_history_len) + 1
-    dt_reason_history(dt_reason_history_idx) = reason
-    dt_reason_history_count = min(dt_reason_history_count + 1, dt_reason_history_len)
+    dt_reason_counts(reason) = dt_reason_counts(reason) + 1
 
   end subroutine push_dt_reason
 
-  !> Return the most common dt_reason in the history buffer.
+  subroutine reset_dt_reason_counts
+    dt_reason_counts = 0
+  end subroutine reset_dt_reason_counts
+
+  !>  Return the most common dt_reason based on dt_reason_counts
   integer function most_common_dt_reason() result(reason)
 
     integer :: i
     integer :: max_count
-    integer :: counts(0:5)
-    integer :: val
-
-    counts = 0
-    do i = 1, dt_reason_history_count
-      val = dt_reason_history(i)
-      counts(val) = counts(val) + 1
-    end do
 
     reason = dt_reason
     max_count = -1
-    do i = lbound(counts, 1), ubound(counts, 1)
-      if (counts(i) > max_count) then
-        max_count = counts(i)
+    do i = lbound(dt_reason_counts, 1), ubound(dt_reason_counts, 1)
+      if (dt_reason_counts(i) > max_count) then
+        max_count = dt_reason_counts(i)
         reason = i
       end if
     end do
