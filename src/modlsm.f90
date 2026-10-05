@@ -2518,7 +2518,9 @@ subroutine init_homogeneous
             tile(ilu_ap)%base_frac(:,:) + &
             tile(ilu_bs)%base_frac(:,:)) / land_frac(:,:)
     where (wl_max == 0) wl_max = eps1
-
+    do ilu=1,nlu
+        tile(ilu)%frac(:,:) = tile(ilu)%base_frac(:,:)
+    end do
     ! Cleanup!
     deallocate(t_soil_p, theta_soil_p, soil_index_p)
 
