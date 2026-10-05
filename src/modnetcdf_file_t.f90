@@ -2,8 +2,9 @@
 module modnetcdf_file_t
 
   use fortran_support, only: finish
+  use mpi_f08,         only: MPI_Comm_split, MPI_Comm_free
   use modglobal,       only: imax, jmax, kmax, itot, jtot, rtimee, cexpnr
-  use modmpi,          only: comm3d, myidx, myidy, cmyid, nprocx, nprocy, &
+  use modmpi,          only: comm3d, myid, myidx, myidy, cmyid, nprocx, nprocy, mpierr, &
                              mpi_comm, commrow, commcol
   use modprecision,    only: field_r
   use modstat_nc
@@ -99,6 +100,9 @@ module modnetcdf_file_t
     private
     integer :: npoints = 0 !< Number of measurement points.
     integer :: nlocal_points = 0 !< Number of points owned by this rank.
+    logical :: has_active_comm = .false. !< Whether active_comm has been created.
+    logical :: is_active_rank = .true. !< True when this rank owns at least one point.
+    type(mpi_comm) :: active_comm !< Communicator for ranks with nlocal_points > 0.
     integer, allocatable :: point_ids(:) !< Global contiguous point ids owned by this rank.
     real(field_r), allocatable :: locx(:) !< X-location metadata for each point.
     real(field_r), allocatable :: locy(:) !< Y-location metadata for each point.
@@ -106,6 +110,7 @@ module modnetcdf_file_t
   contains
     procedure :: open => multi_timeseries_file_open
     procedure :: write => multi_timeseries_file_write
+    procedure :: close => multi_timeseries_file_close
     procedure :: get_pointer => multi_timeseries_file_get_pointer
   end type multi_timeseries_file_t
   type, extends(netcdf_file_t) :: profiles_file_t
@@ -126,6 +131,9 @@ module modnetcdf_file_t
     integer :: nzs = 0 !< Number of vertical levels in soil grid.
     integer :: nprofiles = 0 !< Number of profiles/columns.
     integer :: nlocal_profiles = 0 !< Number of profiles owned by this rank.
+    logical :: has_active_comm = .false. !< Whether active_comm has been created.
+    logical :: is_active_rank = .true. !< True when this rank owns at least one profile.
+    type(mpi_comm) :: active_comm !< Communicator for ranks with nlocal_profiles > 0.
     integer, allocatable :: profile_ids(:) !< Global profile ids owned by this rank.
     real(field_r), allocatable :: locx(:) !< X-location metadata for each profile.
     real(field_r), allocatable :: locy(:) !< Y-location metadata for each profile.
@@ -133,6 +141,7 @@ module modnetcdf_file_t
   contains
     procedure :: open => multi_profile_file_open
     procedure :: write => multi_profile_file_write
+    procedure :: close => multi_profile_file_close
     procedure :: get_pointer => multi_profile_file_get_pointer
   end type multi_profile_file_t
   type, extends(netcdf_file_t) :: cross_section_file_t
@@ -439,14 +448,30 @@ contains
 
     class(multi_timeseries_file_t), intent(inout) :: this
 
-    integer :: ip
+    integer :: ip, color
+    character(len=*), parameter :: routine = modname//'/multi_timeseries_file_open'
     real(field_r), allocatable :: xcoord(:), ycoord(:)
 
     if (NC_HAVE_PARALLEL) then
+      if (this%has_active_comm) then
+        call MPI_Comm_free(this%active_comm, mpierr)
+        this%has_active_comm = .false.
+      end if
+
+      color = merge(1, 0, this%nlocal_points > 0)
+      call MPI_Comm_split(comm3d, color, myid, this%active_comm, mpierr)
+      if (mpierr /= 0) call finish(routine, 'MPI_Comm_split failed')
+
+      this%has_active_comm = .true.
+      this%is_active_rank = (color == 1)
+
+      if (.not. this%is_active_rank) return
+
       call open_nc(this%filename, this%ncid, this%nrec, nindex=this%npoints, &
                    n1=merge(1, 0, allocated(this%locx)), &
-                   n2=merge(1, 0, allocated(this%locy)), comm=comm3d)
+                   n2=merge(1, 0, allocated(this%locy)), comm=this%active_comm)
     else
+      this%is_active_rank = .true.
       call open_nc(this%filename, this%ncid, this%nrec, nindex=this%nlocal_points, &
                    n1=merge(1, 0, allocated(this%locx)), &
                    n2=merge(1, 0, allocated(this%locy)))
@@ -495,16 +520,14 @@ contains
 
     integer :: ip, ivar, point_start
 
+    if (NC_HAVE_PARALLEL .and. .not. this%is_active_rank) return
+
     !$acc update host(this%buffer) if(this%lgpu)
 
     call writestat_nc(this%ncid, 1, this%timeinfo, [rtimee], this%nrec, lraise=.true.)
 
     if (NC_HAVE_PARALLEL) then
-      if (this%nlocal_points > 0) then
-        point_start = this%point_ids(1)
-      else
-        point_start = 1
-      end if
+      point_start = this%point_ids(1)
       call writestat_nc(this%ncid, this%nvar, this%names, this%buffer, this%nrec, &
                         dim1=this%nlocal_points, offsets=[point_start])
     else
@@ -520,6 +543,23 @@ contains
     end do
 
   end subroutine multi_timeseries_file_write
+
+  subroutine multi_timeseries_file_close(this)
+
+    class(multi_timeseries_file_t), intent(inout) :: this
+
+    character(len=*), parameter :: routine = modname//'/multi_timeseries_file_close'
+
+    if (this%ncid /= 0) call exitstat_nc(this%ncid)
+    this%ncid = 0
+
+    if (NC_HAVE_PARALLEL .and. this%has_active_comm) then
+      call MPI_Comm_free(this%active_comm, mpierr)
+      if (mpierr /= 0) call finish(routine, 'MPI_Comm_free failed')
+      this%has_active_comm = .false.
+    end if
+
+  end subroutine multi_timeseries_file_close
 
   !> Setup a pointer to the buffer of a variable for a specific point.
   subroutine multi_timeseries_file_get_pointer(this, name, point_idx, ptr)
@@ -712,7 +752,8 @@ contains
 
     class(multi_profile_file_t), intent(inout) :: this
 
-    integer :: k, nlevels
+    integer :: k, nlevels, color
+    character(len=*), parameter :: routine = modname//'/multi_profile_file_open'
     real(field_r), allocatable :: xcoord(:), ycoord(:)
 
     if (this%nz > 0) then
@@ -724,8 +765,23 @@ contains
     end if
 
     if (NC_HAVE_PARALLEL) then
-      call open_nc(this%filename, this%ncid, this%nrec, nindex=this%nprofiles, n1=this%nprofiles, n2=this%nprofiles, n3=nlevels, comm=comm3d)
+      if (this%has_active_comm) then
+        call MPI_Comm_free(this%active_comm, mpierr)
+        this%has_active_comm = .false.
+      end if
+
+      color = merge(1, 0, this%nlocal_profiles > 0)
+      call MPI_Comm_split(comm3d, color, myid, this%active_comm, mpierr)
+      if (mpierr /= 0) call finish(routine, 'MPI_Comm_split failed')
+
+      this%has_active_comm = .true.
+      this%is_active_rank = (color == 1)
+
+      if (.not. this%is_active_rank) return
+
+      call open_nc(this%filename, this%ncid, this%nrec, nindex=this%nprofiles, n1=this%nprofiles, n2=this%nprofiles, n3=nlevels, comm=this%active_comm)
     else
+      this%is_active_rank = .true.
       call open_nc(this%filename, this%ncid, this%nrec, nindex=this%nlocal_profiles, n1=this%nlocal_profiles, n2=this%nlocal_profiles, n3=nlevels)
     end if
 
@@ -776,17 +832,15 @@ contains
 
     integer :: k, ip, ivar, profile_start
 
+    if (NC_HAVE_PARALLEL .and. .not. this%is_active_rank) return
+
     !$acc update host(this%buffer) if(this%lgpu)
 
     call writestat_nc(this%ncid, 1, this%timeinfo, [rtimee], this%nrec, lraise=.true.)
 
     if (NC_HAVE_PARALLEL) then
       ! Each rank writes one contiguous profile slice.
-      if (this%nlocal_profiles > 0) then
-        profile_start = this%profile_ids(1)
-      else
-        profile_start = 1
-      end if
+      profile_start = this%profile_ids(1)
       call writestat_nc(this%ncid, this%nvar, this%names, this%buffer, this%nrec, &
                         dim1=this%nlocal_profiles, dim2=size(this%buffer, dim=2), &
                         offsets=[profile_start, 1])
@@ -805,6 +859,23 @@ contains
     end do
 
   end subroutine multi_profile_file_write
+
+  subroutine multi_profile_file_close(this)
+
+    class(multi_profile_file_t), intent(inout) :: this
+
+    character(len=*), parameter :: routine = modname//'/multi_profile_file_close'
+
+    if (this%ncid /= 0) call exitstat_nc(this%ncid)
+    this%ncid = 0
+
+    if (NC_HAVE_PARALLEL .and. this%has_active_comm) then
+      call MPI_Comm_free(this%active_comm, mpierr)
+      if (mpierr /= 0) call finish(routine, 'MPI_Comm_free failed')
+      this%has_active_comm = .false.
+    end if
+
+  end subroutine multi_profile_file_close
 
   !> Setup a pointer to the buffer of a variable for a specific profile.
   subroutine multi_profile_file_get_pointer(this, name, profile_idx, ptr)

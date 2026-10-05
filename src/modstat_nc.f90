@@ -157,7 +157,7 @@ contains
       else
         call warning(routine, 'Using parallel I/O for NetCDF output. Please note that DALES may hang or crash when run in the same folder as a run without parallel netcdf, or different dimensions/chunk sizes.')
         if (deflate > 0) then
-          call warning(routine, "Using parallel I/O with compression (deflate > 0) may lead to degraded performance! Please also test with deflate=0, or even (if you're able) test different chunk sizes.")
+          call warning(routine, 'Parallel NetCDF with compression (deflate > 0) can fail with HDF5 collective chunk writes on some stacks! Also, performance can be degraded.')
         end if
       end if
     else

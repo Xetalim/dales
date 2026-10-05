@@ -22,7 +22,7 @@ module modstat_nc_files
   public :: close_output_files
   public :: stats_limit_timestep
 
-  integer, parameter :: MAX_FILES = 15 !< Max number of NetCDF files.
+  integer, parameter :: MAX_FILES = 30 !< Max number of NetCDF files.
 
   type netcdf_file_list_entry_t
     class(netcdf_file_t), pointer :: file => null()

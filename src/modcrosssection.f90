@@ -30,7 +30,7 @@ module modcrosssection
   use modthermodynamics, only: calc_virt_pot_temp
   use modmpi,            only: D_MPI_BCAST, commwrld, mpierr, myid, myidx, &
                                myidy
-  use modfields,         only: u0, v0, w0, thl0, qt0, ql0, thvf, e120, exnf
+  use modfields,         only: u0, v0, w0, thl0, qt0, ql0, thvf, e120, exnf, sv0
 
   implicit none
 
@@ -114,7 +114,7 @@ contains
 
     character(len=*), parameter :: routine = modname//'/initcrosssection'
 
-    integer          :: k, ifile
+    integer          :: k, n, ifile
     integer, allocatable :: crossplane_j_all(:), crossortho_i_all(:)
     real(field_r)    :: loc
     character(len=4) :: cloc
@@ -180,6 +180,9 @@ contains
       call xy_files(ifile)%add_var('thv',  'xy crosssection of the virtual potential temperature',     'K',       'tt0t')
       call xy_files(ifile)%add_var('qt',   'xy crosssection of the total water specific humidity',     'kg/kg',   'tt0t')
       call xy_files(ifile)%add_var('ql',   'xy crosssection of the liquid water specific humidity',    'kg/kg',   'tt0t')
+      do n = 1, nsv
+        call xy_files(ifile)%add_var(trim(tracer_prop(n)%tracname), trim(tracer_prop(n)%traclong), trim(tracer_prop(n)%unit), 'tt0t')
+      end do
       call xy_files(ifile)%add_var('buoy', 'xy crosssection of the buoyancy',                          'K',       'tt0t')
       call xy_files(ifile)%add_var('e120', 'xy crosssection of the sqrt(turbulent kinetic energy',     'm^2/s^2', 'tt0t')
     end do
@@ -209,6 +212,9 @@ contains
       call xz_files(ifile)%add_var('thv',  'xz crosssection of the virtual potential temperature',     'K',       't0tt')
       call xz_files(ifile)%add_var('qt',   'xz crosssection of the total water specific humidity',     'kg/kg',   't0tt')
       call xz_files(ifile)%add_var('ql',   'xz crosssection of the liquid water specific humidity',    'kg/kg',   't0tt')
+      do n = 1, nsv
+        call xz_files(ifile)%add_var(trim(tracer_prop(n)%tracname), trim(tracer_prop(n)%traclong), trim(tracer_prop(n)%unit), 't0tt')
+      end do
       call xz_files(ifile)%add_var('buoy', 'xz crosssection of the buoyancy',                          'K',       't0tt')
       call xz_files(ifile)%add_var('e120', 'xz crosssection of the sqrt(turbulent kinetic energy',     'm^2/s^2', 't0tt')
     end do
@@ -238,6 +244,9 @@ contains
       call yz_files(ifile)%add_var('thv',  'yz crosssection of the virtual potential temperature',     'K',       '0ttt')
       call yz_files(ifile)%add_var('qt',   'yz crosssection of the total water specific humidity',     'kg/kg',   '0ttt')
       call yz_files(ifile)%add_var('ql',   'yz crosssection of the liquid water specific humidity',    'kg/kg',   '0ttt')
+      do n = 1, nsv
+        call yz_files(ifile)%add_var(trim(tracer_prop(n)%tracname), trim(tracer_prop(n)%traclong), trim(tracer_prop(n)%unit), '0ttt')
+      end do
       call yz_files(ifile)%add_var('buoy', 'yz crosssection of the buoyancy',                          'K',       '0ttt')
       call yz_files(ifile)%add_var('e120', 'yz crosssection of the sqrt(turbulent kinetic energy',     'm^2/s^2', '0ttt')
     end do
@@ -270,6 +279,7 @@ contains
     real(field_r), pointer :: ql(:,:)
     real(field_r), pointer :: buoy(:,:)
     real(field_r), pointer :: e12(:,:)
+    real(field_r), pointer :: svcross(:,:)
 
     if (nxz > 0) then
       if (is_sampling_timestep(xz_file_ids(1))) then
@@ -288,6 +298,13 @@ contains
           call xz_files(cross)%get_pointer('e120', e12)
 
           j = crossplane_local(cross)  ! 2-indexed local array index
+
+          do n = 1, nsv
+            call xz_files(cross)%get_pointer(trim(tracer_prop(n)%tracname), svcross)
+            !$acc kernels default(present) async
+            svcross(:,:) = sv0(2:i1,j,1:kmax,n)
+            !$acc end kernels
+          end do
 
           !$acc kernels default(present) async
           u(:,:) = u0(2:i1,j,1:kmax) + cu
@@ -327,6 +344,7 @@ contains
     real(field_r), pointer :: ql(:,:)
     real(field_r), pointer :: buoy(:,:)
     real(field_r), pointer :: e12(:,:)
+    real(field_r), pointer :: svcross(:,:)
 
     if (is_sampling_timestep(xy_file_ids(1))) then
       do cross = 1, nxy
@@ -341,6 +359,13 @@ contains
         call xy_files(cross)%get_pointer('e120', e12)
 
         k = crossheight(cross)
+
+        do n = 1, nsv
+          call xy_files(cross)%get_pointer(trim(tracer_prop(n)%tracname), svcross)
+          !$acc kernels default(present) async
+          svcross(:,:) = sv0(2:i1,2:j1,k,n)
+          !$acc end kernels
+        end do
 
         !$acc kernels default(present) async
         u(:,:) = u0(2:i1,2:j1,k) + cu
@@ -379,6 +404,7 @@ contains
     real(field_r), pointer :: ql(:,:)
     real(field_r), pointer :: buoy(:,:)
     real(field_r), pointer :: e12(:,:)
+    real(field_r), pointer :: svcross(:,:)
 
     if (nyz > 0) then
       if (is_sampling_timestep(yz_file_ids(1))) then
@@ -394,6 +420,13 @@ contains
           call yz_files(cross)%get_pointer('e120', e12)
 
           i = crossortho_local(cross)  ! 2-indexed local array index
+
+          do n = 1, nsv
+            call yz_files(cross)%get_pointer(trim(tracer_prop(n)%tracname), svcross)
+            !$acc kernels default(present) async
+            svcross(:,:) = sv0(i,2:j1,1:kmax,n)
+            !$acc end kernels
+          end do
 
           !$acc kernels default(present) async
           u(:,:) = u0(i,2:j1,1:kmax) + cu
