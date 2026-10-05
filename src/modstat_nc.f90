@@ -33,7 +33,7 @@ module modstat_nc
     use modglobal,    only: imax, jmax, itot, jtot
     use modprecision, only: field_r
     use modmpi,       only: myid, comm3d, myidx, myidy, mpi_info_null, mpi_comm
-    use modlogging, only: finish
+    use modlogging, only: finish, warning
     implicit none
 
     character(len=*), parameter :: modname = 'modstat_nc'
@@ -1827,12 +1827,18 @@ contains
     integer, intent(in) :: ncid
     integer, intent(in) :: status
 
+    integer, parameter :: NC_ERANGE = -60
+
     if(status /= nf90_noerr) then
 #if defined(USE_NETCDF_DEBUG_ERRORS)
       ! in collective calls, this netcdf print info function can hang....
       if (.not.NC_HAVE_PARALLEL) call print_netcdf_info(ncid)
+      if (status /= NC_ERANGE) then
+        call warning("modstat:", trim(nf90_strerror(status)))
+      else
+        call finish("modstat:", trim(nf90_strerror(status)))
+      end if
 #endif
-      call finish("modstat:", trim(nf90_strerror(status)))
     end if
 
   end subroutine nchandle_error_print
