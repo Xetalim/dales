@@ -199,7 +199,7 @@ contains
     integer :: status, mode
 
     if (file_status == 'replace') then
-      status = nf90_create(trim(output_prefix)//trim(file_name), nf90_clobber, iunit)
+      status = nf90_create(trim(output_prefix)//trim(file_name), ior(nf90_clobber, nf90_netcdf4), iunit)
       call handle_netcdf_status(modname//'/open_restart_file', status, file_name)
       return
     end if
@@ -209,7 +209,7 @@ contains
 
     status = nf90_open(trim(output_prefix)//trim(file_name), mode, iunit)
     if (status == nf90_noerr .and. file_status /= 'old' .and. file_action /= 'read') then
-      status = nf90_create(trim(output_prefix)//trim(file_name), nf90_clobber, iunit)
+      status = nf90_create(trim(output_prefix)//trim(file_name), ior(nf90_clobber, nf90_netcdf4), iunit)
     end if
     call handle_netcdf_status(modname//'/open_restart_file', status, file_name)
   end subroutine open_restart_file_netcdf
