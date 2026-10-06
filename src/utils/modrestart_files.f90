@@ -17,7 +17,7 @@ module modrestart_files
   integer, parameter :: field_nc_type = merge(nf90_float, nf90_double, field_r == real32)
   character(len=*), parameter :: magic = 'DALES_STAT_RESTART'
 
-  character, parameter :: modname = 'modrestart_files'
+  character(len=*), parameter :: modname = 'modrestart_files'
 
   abstract interface
     subroutine restart_writer(iunit)
@@ -115,7 +115,7 @@ contains
         ! call write_restart_field(entries(i)%unit, 'fmt_version', fmt_version_l)
         call run_restart_writer(entries(i))
 
-        call close_restart_file(name)
+        call close_restart_file(entries(i)%unit)
     end do
   end subroutine run_restart_writers
   subroutine run_restart_readers(restart_name)
@@ -131,7 +131,7 @@ contains
         call open_restart_file(name, entries(i)%unit, action='read')
 
         call run_restart_reader(entries(i))
-        call close_restart_file(name)
+        call close_restart_file(entries(i)%unit)
     end do
   end subroutine run_restart_readers
 
@@ -154,25 +154,20 @@ contains
     if (lrestart_netcdf) then
       call open_restart_file_netcdf(storage_name, iunit, file_status, file_action)
     else
-      open(unit=iunit, file=trim(output_prefix)//storage_name, form='unformatted', status=file_status, action=file_action)
+      open(newunit=iunit, file=trim(output_prefix)//storage_name, form='unformatted', status=file_status, action=file_action)
     end if
   end subroutine open_restart_file
 
-  subroutine close_restart_file(name)
-    character(len=*), intent(in) :: name
-
-    integer :: idx
-
-    idx = find_entry(name)
+  subroutine close_restart_file(iunit)
+    integer, intent(inout) :: iunit
 
     if (lrestart_netcdf) then
-      call handle_netcdf_status(modname//'/close_restart_file', nf90_close(entries(idx)%unit), name)
+      call handle_netcdf_status(modname//'/close_restart_file', nf90_close(iunit), 'restart file')
     else
-      close(entries(idx)%unit)
+      close(iunit)
     end if
 
-    entries(idx)%unit = -1
-    entries(idx)%open = .false.
+    iunit = -1
   end subroutine close_restart_file
 
   subroutine create_latest_symlink(file_name)
