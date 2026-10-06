@@ -355,8 +355,12 @@ contains
     call initslurb
 
     call register_restart_handlers('state', 'd', reader=read_restart_state_handler, writer=write_restart_state_handler)
-    call register_restart_handlers('scalar', 's', reader=read_restart_scalar_handler, writer=write_restart_scalar_handler)
-    call register_restart_handlers('surface', 'l', reader=read_restart_surface_handler, writer=write_restart_surface_handler)
+    if (nsv > 0) then
+      call register_restart_handlers('scalar', 's', reader=read_restart_scalar_handler, writer=write_restart_scalar_handler)
+    end if
+    if (isurf == 1 .or. isurf == 11) then
+      call register_restart_handlers('surface', 'l', reader=read_restart_surface_handler, writer=write_restart_surface_handler)
+    end if
 
     if (loutdirs) then
        output_prefix(1:3) = cmyidy
