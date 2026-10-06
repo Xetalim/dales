@@ -112,7 +112,7 @@ contains
 
         call open_restart_file(name, entries(i)%unit, status='replace', action='write')
 
-        call write_restart_field(entries(i)%unit, 'fmt_version', fmt_version_l)
+        ! call write_restart_field(entries(i)%unit, 'fmt_version', fmt_version_l)
         call run_restart_writer(entries(i))
 
         call close_restart_file(name)
