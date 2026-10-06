@@ -46,7 +46,7 @@ save
   real :: randthl= 0.1,randqt=1e-5                 !    * thl and qt amplitude of randomnization
   real :: randu = 0.5
   real :: wctime=8640000.   !<     * The maximum wall clock time of a simulation (set to 100 days by default)
-  integer(kind=longint), save :: tnextstopcheck = 0_longint
+  integer(kind=longint) :: tnextstopcheck = 0_longint
 
 interface ! interface to use UNIX C mkdir function. Otherwise different compilers have different incompatible variants
    function mkdir(path,mode) bind(c,name="mkdir")
@@ -1180,7 +1180,7 @@ contains
     use modsurfdata, only : isurf
     use modglobal,  only : startfile,ifinput,nsv
     use modmpi,     only : myid, cmyid
-    use modrestart_files, only : close_restart_file, open_restart_file, run_restart_reader, run_restart_readers
+    use modrestart_files, only : run_restart_readers
 
 
     character(len=*), parameter :: routine = modname//'/readrestartfiles'
@@ -1292,6 +1292,7 @@ contains
   ! this function writes a restart file
   ! separated from writerestartfiles to be callable from the library interface
   subroutine do_writerestartfiles(restart_name)
+    use modglobal, only : rtimee
     use modmpi, only : myid
     use modrestart_files, only : run_restart_writers
 
@@ -1300,14 +1301,14 @@ contains
       call run_restart_writers(restart_name)
 
       if (myid==0) then
-        write(*,'(A,F15.7,A,I4)') 'dump at time = ',rtimee,' unit = ',ifoutput
+        write(*,'(A,F15.7,A,A)') 'dump at time = ',rtimee,' file = ',trim(restart_name)
       end if
 
   end subroutine do_writerestartfiles
 
   subroutine write_restart_state_handler(iunit)
     use modsurfdata,only: ustar,thlflux,qtflux,dthldz,dqtdz,ps,thls,qts,thvs,oblav,&
-                          tskin,obl,ps_patch,thls_patch,qts_patch,thvs_patch,oblpatch,lhetero,qskin
+                          tskin,obl,qskin
     use modraddata, only: iradiation,useMcICA, tnext_radiation => tnext, &
                           thlprad,swd,swu,lwd,lwu,swdca,swuca,lwdca,lwuca,swdir,swdif,lwc,&
                           SW_up_TOA,SW_dn_TOA,LW_up_TOA,LW_dn_TOA,&
@@ -1382,14 +1383,6 @@ contains
     call write_restart_field(iunit, 'LW_up_ca_TOA', LW_up_ca_TOA)
     call write_restart_field(iunit, 'LW_dn_ca_TOA', LW_dn_ca_TOA)
 
-    if (lhetero) then
-      call write_restart_field(iunit, 'ps_patch', ps_patch)
-      call write_restart_field(iunit, 'thls_patch', thls_patch)
-      call write_restart_field(iunit, 'qts_patch', qts_patch)
-      call write_restart_field(iunit, 'thvs_patch', thvs_patch)
-      call write_restart_field(iunit, 'oblpatch', oblpatch)
-    end if
-
   end subroutine write_restart_state_handler
 
   subroutine write_restart_scalar_handler(iunit)
@@ -1445,7 +1438,7 @@ contains
 
   subroutine read_restart_state_handler(iunit)
     use modsurfdata, only : ustar,thlflux,qtflux,dthldz,dqtdz,ps,thls,qts,thvs,oblav,&
-                            obl,tskin,ps_patch,thls_patch,qts_patch,thvs_patch,oblpatch,lhetero,qskin
+                            obl,tskin,qskin
     use modraddata, only: tnext_radiation => tnext, &
                           thlprad,swd,swu,lwd,lwu,swdca,swuca,lwdca,lwuca,swdir,swdif,lwc,&
                           SW_up_TOA,SW_dn_TOA,LW_up_TOA,LW_dn_TOA,&
@@ -1520,13 +1513,6 @@ contains
     call read_restart_field(iunit, 'LW_up_ca_TOA', LW_up_ca_TOA)
     call read_restart_field(iunit, 'LW_dn_ca_TOA', LW_dn_ca_TOA)
 
-    if (lhetero) then
-      call read_restart_field(iunit, 'ps_patch', ps_patch)
-      call read_restart_field(iunit, 'thls_patch', thls_patch)
-      call read_restart_field(iunit, 'qts_patch', qts_patch)
-      call read_restart_field(iunit, 'thvs_patch', thvs_patch)
-      call read_restart_field(iunit, 'oblpatch', oblpatch)
-    end if
   end subroutine read_restart_state_handler
 
   subroutine read_restart_scalar_handler(iunit)

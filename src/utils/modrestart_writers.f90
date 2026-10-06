@@ -2,20 +2,21 @@
 module modrestart_writers
   use iso_fortran_env, only: real32
   use netcdf
-  use modglobal, only: output_prefix, nsv, lrestart_netcdf
+  use modglobal, only: lrestart_netcdf
   use modlogging, only: finish
   use modprecision, only: field_r
-  use modsurfdata, only: isurf
 
   implicit none
   private
+
+  public :: write_restart_field, read_restart_field, handle_netcdf_status
 
   integer, parameter :: max_entries = 128
   integer, parameter :: fmt_version = 1
   integer, parameter :: tag_len = 64
   integer, parameter :: field_nc_type = merge(nf90_float, nf90_double, field_r == real32)
   
-  character, parameter :: modname = 'modrestart_writers'
+  character(len=*), parameter :: modname = 'modrestart_writers'
 
   interface write_restart_field
     procedure :: write_restart_field_real_s
@@ -36,6 +37,15 @@ module modrestart_writers
   end interface
 
 contains
+  subroutine handle_netcdf_status(context, status, name)
+    character(len=*), intent(in) :: context
+    integer, intent(in) :: status
+    character(len=*), intent(in) :: name
+
+    if (status /= nf90_noerr) then
+      call finish(context, 'netcdf error for ', name, ': ', nf90_strerror(status))
+    end if
+  end subroutine handle_netcdf_status
   subroutine write_restart_tag(iunit, tag)
     integer, intent(in) :: iunit
     character(len=*), intent(in) :: tag

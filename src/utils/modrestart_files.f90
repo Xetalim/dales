@@ -7,9 +7,10 @@ module modrestart_files
   use modprecision, only: field_r
   use modsurfdata, only: isurf
 
-  implicit none
-  private
+  use modrestart_writers, only: write_restart_field, read_restart_field, handle_netcdf_status
 
+  implicit none
+  private    
   integer, parameter :: max_entries = 128
   integer, parameter :: fmt_version = 1
   integer, parameter :: nc_name_len = 128
@@ -40,16 +41,13 @@ module modrestart_files
   type(restart_entry), save :: entries(max_entries)
   integer, save :: nentries = 0
 
-  integer, save :: nfiles = 0
-
   public :: register_restart_handlers
   public :: open_restart_file
   public :: close_restart_file
-  public :: write_restart_field
-  public :: read_restart_field
   public :: run_restart_writers
   public :: run_restart_writer
   public :: run_restart_reader
+  public :: run_restart_readers
 
 contains
 
@@ -101,34 +99,39 @@ contains
   subroutine run_restart_writers(restart_name)
     use modprecision, only: longint
     character(len=*), intent(in) :: restart_name
+    character(len=64) :: name
 
     integer :: i
     integer(kind=longint) :: fmt_version_l
     fmt_version_l = int(fmt_version, kind=longint)
 
-    do i = 1, nentries
-        restart_name(5:5) = entries(i)%char_identifier
+    name = restart_name
 
-        call open_restart_file(restart_name, entries(i)%unit, status='replace', action='write')
+    do i = 1, nentries
+        name(5:5) = entries(i)%char_identifier
+
+        call open_restart_file(name, entries(i)%unit, status='replace', action='write')
 
         call write_restart_field(entries(i)%unit, 'fmt_version', fmt_version_l)
         call run_restart_writer(entries(i))
 
-        call close_restart_file(restart_name)
+        call close_restart_file(name)
     end do
   end subroutine run_restart_writers
   subroutine run_restart_readers(restart_name)
     character(len=*), intent(in) :: restart_name
+    character(len=64) :: name
 
     integer :: i
 
     do i = 1, nentries
-        restart_name(5:5) = entries(i)%char_identifier
+        name = restart_name
+        name(5:5) = entries(i)%char_identifier
 
-        call open_restart_file(restart_name, entries(i)%unit, action='read')
+        call open_restart_file(name, entries(i)%unit, action='read')
 
         call run_restart_reader(entries(i))
-        call close_restart_file(restart_name)
+        call close_restart_file(name)
     end do
   end subroutine run_restart_readers
 
@@ -160,22 +163,16 @@ contains
 
     integer :: idx
 
-    idx = find_file(name)
-    if (idx == 0) then
-      call finish(modname//'/close_restart_file', 'unknown restart file handle: ', name)
-    end if
-    if (.not. files(idx)%open) then
-      call finish(modname//'/close_restart_file', 'restart file is not open: ', name)
-    end if
+    idx = find_entry(name)
 
     if (lrestart_netcdf) then
-      call handle_netcdf_status(modname//'/close_restart_file', nf90_close(files(idx)%unit), name)
+      call handle_netcdf_status(modname//'/close_restart_file', nf90_close(entries(idx)%unit), name)
     else
-      close(files(idx)%unit)
+      close(entries(idx)%unit)
     end if
 
-    files(idx)%unit = -1
-    files(idx)%open = .false.
+    entries(idx)%unit = -1
+    entries(idx)%open = .false.
   end subroutine close_restart_file
 
   subroutine create_latest_symlink(file_name)
@@ -193,6 +190,7 @@ contains
   end subroutine create_latest_symlink
 
   subroutine open_restart_file_netcdf(file_name, iunit, file_status, file_action)
+    use netcdf, only: nf90_noerr
     character(len=*), intent(in) :: file_name
     integer, intent(inout) :: iunit
     character(len=*), intent(in) :: file_status
@@ -210,21 +208,11 @@ contains
     if (file_action == 'read') mode = nf90_nowrite
 
     status = nf90_open(trim(output_prefix)//trim(file_name), mode, iunit)
-    if (status == nf90_enoent .and. file_status /= 'old' .and. file_action /= 'read') then
+    if (status == nf90_noerr .and. file_status /= 'old' .and. file_action /= 'read') then
       status = nf90_create(trim(output_prefix)//trim(file_name), nf90_clobber, iunit)
     end if
     call handle_netcdf_status(modname//'/open_restart_file', status, file_name)
   end subroutine open_restart_file_netcdf
-
-  subroutine handle_netcdf_status(context, status, name)
-    character(len=*), intent(in) :: context
-    integer, intent(in) :: status
-    character(len=*), intent(in) :: name
-
-    if (status /= nf90_noerr) then
-      call finish(context, 'netcdf error for ', name, ': ', nf90_strerror(status))
-    end if
-  end subroutine handle_netcdf_status
 
   function restart_storage_name(name) result(storage_name)
     character(len=*), intent(in) :: name
@@ -254,18 +242,5 @@ contains
       end if
     end do
   end function find_entry
-
-  integer function find_file(name)
-    character(len=*), intent(in) :: name
-    integer :: i
-
-    find_file = 0
-    do i = 1, nfiles
-      if (files(i)%name == name) then
-        find_file = i
-        return
-      end if
-    end do
-  end function find_file
 
 end module modrestart_files
