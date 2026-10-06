@@ -20,7 +20,8 @@ set( dales_srcs
 	modaerosol_mode_t.f90
 	modaerosol_scavenging.f90
 	modboundary.f90
-	modrestart_registry.f90
+	utils/modrestart_files.f90
+	utils/modrestart_writers.f90
 	modbudget.f90
 	modbulkmicro.f90
 	modbulkmicro3.f90

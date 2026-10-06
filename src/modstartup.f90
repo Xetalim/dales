@@ -113,7 +113,7 @@ contains
     use modchecksim,       only : chkdiv
     use modnamelist,       only : read_namelists
     use modspraying,       only : initspraying
-    use modrestart_registry, only : register_restart_handlers
+    use modrestart_files, only : register_restart_handlers
     use fortran_support,   only: nnml_output
 
     implicit none
@@ -354,9 +354,9 @@ contains
     call initsubgrid
     call initslurb
 
-    call register_restart_handlers('state', reader=read_restart_state_handler, writer=write_restart_state_handler, include_in_cleanup=.false.)
-    call register_restart_handlers('scalar', reader=read_restart_scalar_handler, writer=write_restart_scalar_handler, include_in_cleanup=.false.)
-    call register_restart_handlers('surface', reader=read_restart_surface_handler, writer=write_restart_surface_handler, include_in_cleanup=.false.)
+    call register_restart_handlers('state', 'd', reader=read_restart_state_handler, writer=write_restart_state_handler)
+    call register_restart_handlers('scalar', 's', reader=read_restart_scalar_handler, writer=write_restart_scalar_handler)
+    call register_restart_handlers('surface', 'l', reader=read_restart_surface_handler, writer=write_restart_surface_handler)
 
     if (loutdirs) then
        output_prefix(1:3) = cmyidy
@@ -1180,7 +1180,7 @@ contains
     use modsurfdata, only : isurf
     use modglobal,  only : startfile,ifinput,nsv
     use modmpi,     only : myid, cmyid
-    use modrestart_registry, only : close_restart_file, open_restart_file, run_restart_reader
+    use modrestart_files, only : close_restart_file, open_restart_file, run_restart_reader, run_restart_readers
 
 
     character(len=*), parameter :: routine = modname//'/readrestartfiles'
@@ -1194,34 +1194,7 @@ contains
     name(5:5) = 'd'
     name(14:21)=cmyid
     if (myid == 0) write(6,*) 'loading ',name
-    call open_restart_file(name, ifinput, status='old', action='read')
-
-    call run_restart_reader('state', ifinput)
-
-    call close_restart_file(name)
-
-    if (nsv>0) then
-      name(5:5) = 's'
-      if (myid == 0) write(6,*) 'loading ',name
-      call open_restart_file(name, ifinput, action='read')
-      call run_restart_reader('scalar', ifinput)
-      call close_restart_file(name)
-    end if
-
-    if (isurf == 1) then
-      name(5:5) = 'l'
-      if (myid == 0) write(6,*) 'loading ',name
-      call open_restart_file(name, ifinput, action='read')
-      call run_restart_reader('surface', ifinput)
-      call close_restart_file(name)
-
-    else if (isurf == 11) then
-      name(5:5) = 'l'
-      if (myid == 0) write(6,*) 'loading ',name
-      call open_restart_file(name, ifinput, action='read')
-      call run_restart_reader('surface', ifinput)
-      call close_restart_file(name)
-    end if
+    call run_restart_readers(name)
 
   end subroutine readrestartfiles
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -1320,7 +1293,7 @@ contains
   ! separated from writerestartfiles to be callable from the library interface
   subroutine do_writerestartfiles(restart_name)
     use modmpi, only : myid
-    use modrestart_registry, only : run_restart_writers
+    use modrestart_files, only : run_restart_writers
 
     implicit none
     character(50), intent(in) :: restart_name
@@ -1343,7 +1316,7 @@ contains
     use modglobal, only : timee,tres,dt
     use modboundary, only: dqt, dtheta
     use modsubgriddata, only : ekm,ekh
-    use modrestart_registry, only : write_restart_field
+    use modrestart_writers, only : write_restart_field
 
     implicit none
     integer, intent(in) :: iunit
@@ -1424,7 +1397,7 @@ contains
     use modsurfdata, only : svflux
     use modglobal, only : timee
     use modboundary, only : dsv
-    use modrestart_registry, only : write_restart_field
+    use modrestart_writers, only : write_restart_field
 
     implicit none
     integer, intent(in) :: iunit
@@ -1440,7 +1413,7 @@ contains
     use modraddata, only: iradiation,useMcICA
     use modglobal, only : timee
     use modlsm, only : tile,nlu
-    use modrestart_registry, only : write_restart_field
+    use modrestart_writers, only : write_restart_field
 
     implicit none
     integer, intent(in) :: iunit
@@ -1481,7 +1454,7 @@ contains
     use modglobal,  only : timee,tres,dt
     use modboundary, only: dqt, dtheta
     use modsubgriddata, only : ekm,ekh
-    use modrestart_registry, only : read_restart_field
+    use modrestart_writers, only : read_restart_field
 
     implicit none
     integer, intent(in) :: iunit
@@ -1561,7 +1534,7 @@ contains
     use modsurfdata, only : svflux
     use modglobal, only : timee
     use modboundary, only : dsv
-    use modrestart_registry, only : read_restart_field
+    use modrestart_writers, only : read_restart_field
 
     implicit none
     integer, intent(in) :: iunit
@@ -1577,7 +1550,7 @@ contains
     use modraddata, only: iradiation,useMcICA
     use modglobal, only : timee
     use modlsm, only : tile,nlu
-    use modrestart_registry, only : read_restart_field
+    use modrestart_writers, only : read_restart_field
 
     implicit none
     integer, intent(in) :: iunit
