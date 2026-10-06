@@ -57,7 +57,7 @@ save
       integer(kind=longint) :: itrestart !<     * each trestart sec. a restart file is written to disk
       integer(kind=longint)    :: tnextrestart    !<     * each trestart sec. a restart file is written to disk
       character(50) :: startfile    !<    * name of the restart file
-      logical :: lrestart_netcdf = .false. !< if true, use NetCDF restart files instead of unformatted files
+      logical :: lrestart_netcdf = .true. !< if true, use NetCDF restart files instead of unformatted files
 
       ! Format of input files
       integer, parameter :: input_ascii = 1      !< Classic DALES ASCII input
