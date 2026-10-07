@@ -920,8 +920,8 @@ contains
       call readrestartfiles
       call baseprofs
 
-      um(:,:,:) = u0(:,:,:)
-      vm(:,:,:) = v0(:,:,:)
+      ! um(:,:,:) = u0(:,:,:)
+      ! vm(:,:,:) = v0(:,:,:)
       wm(:,:,:) = w0(:,:,:)
       thlm(:,:,:) = thl0(:,:,:)
       qtm(:,:,:)  = qt0(:,:,:)
