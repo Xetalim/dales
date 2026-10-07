@@ -116,6 +116,8 @@ contains
         call run_restart_writer(entries(i))
 
         call close_restart_file(entries(i)%unit)
+
+        call create_latest_symlink(name)
     end do
   end subroutine run_restart_writers
   subroutine run_restart_readers(restart_name)
