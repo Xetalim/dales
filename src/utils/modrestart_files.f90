@@ -36,6 +36,7 @@ module modrestart_files
     logical :: open = .false.
     procedure(restart_writer), pointer, nopass :: writer => null()
     procedure(restart_reader), pointer, nopass :: reader => null()
+    logical :: read_at_register = .false.
   end type restart_entry
 
   type(restart_entry), save :: entries(max_entries)
@@ -51,9 +52,15 @@ module modrestart_files
 
 contains
 
-  subroutine register_restart_handlers(name, character_identifier, reader, writer)
+  subroutine register_restart_handlers(name, character_identifier, reader, writer, read_at_register)
+
+    use modglobal,  only : startfile
+    use modmpi,     only : cmyid
+
     character(len=*), intent(in) :: name
+    character(50) :: filename
     character, intent(in) :: character_identifier
+    logical, intent(in), optional :: read_at_register
     procedure(restart_reader), optional :: reader
     procedure(restart_writer), optional :: writer
 
@@ -66,10 +73,22 @@ contains
       idx = nentries
       entries(idx)%name = name
       entries(idx)%char_identifier = character_identifier
+      entries(idx)%read_at_register = .false.
+      if (present(read_at_register)) then
+        entries(idx)%read_at_register = read_at_register
+      end if
     end if
 
     if (present(reader)) entries(idx)%reader => reader
     if (present(writer)) entries(idx)%writer => writer
+
+    if (entries(idx)%read_at_register) then
+      filename = startfile
+      filename(5:5) = 'd'
+      filename(14:21)=cmyid
+      call run_restart_reader(entries(idx), filename)
+    end if
+
   end subroutine register_restart_handlers
 
   subroutine run_restart_writer(entry)
@@ -84,16 +103,26 @@ contains
     call entry%writer(entry%unit)
   end subroutine run_restart_writer
 
-  subroutine run_restart_reader(entry)
-    type(restart_entry), intent(in) :: entry
+  subroutine run_restart_reader(entry, restart_name)
+    character(len=*), intent(in) :: restart_name
+    type(restart_entry), intent(inout) :: entry
+    character(len=64) :: name
 
     integer :: idx
+    name = restart_name
+    name(5:5) = entry%char_identifier
+
+    call open_restart_file(name, entry%unit, action='read')
 
     if (.not. associated(entry%reader)) then
       call finish(modname//'/run_restart_reader', 'restart reader not registered: ', entry%name)
     end if
 
     call entry%reader(entry%unit)
+    
+    call close_restart_file(entry%unit)
+
+
   end subroutine run_restart_reader
 
   subroutine run_restart_writers(restart_name)
@@ -102,8 +131,6 @@ contains
     character(len=64) :: name
 
     integer :: i
-    integer(kind=longint) :: fmt_version_l
-    fmt_version_l = int(fmt_version, kind=longint)
 
     name = restart_name
 
@@ -112,7 +139,6 @@ contains
 
         call open_restart_file(name, entries(i)%unit, status='replace', action='write')
 
-        ! call write_restart_field(entries(i)%unit, 'fmt_version', fmt_version_l)
         call run_restart_writer(entries(i))
 
         call close_restart_file(entries(i)%unit)
@@ -122,18 +148,13 @@ contains
   end subroutine run_restart_writers
   subroutine run_restart_readers(restart_name)
     character(len=*), intent(in) :: restart_name
-    character(len=64) :: name
 
     integer :: i
 
     do i = 1, nentries
-        name = restart_name
-        name(5:5) = entries(i)%char_identifier
-
-        call open_restart_file(name, entries(i)%unit, action='read')
-
-        call run_restart_reader(entries(i))
-        call close_restart_file(entries(i)%unit)
+      if (.not.entries(i)%read_at_register) then
+        call run_restart_reader(entries(i), restart_name)
+      end if
     end do
   end subroutine run_restart_readers
 

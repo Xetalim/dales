@@ -84,6 +84,7 @@ contains
     use modraddata, only : iradiation
     use modlsm, only : lags
     use fortran_support, only: nnml_output
+    use modrestart_files, only: register_restart_handlers
     implicit none
 
     character(len=*), parameter :: routine = modname//'/inittimestat'
@@ -294,6 +295,8 @@ contains
         if(nrec==0) call define_nc( ncid, NVar, ncname)
       end if
     end if
+
+    call register_restart_handlers('timestat', 't', reader=read_restart_timestat_handler, writer=write_restart_timestat_handler, read_at_register=.true.)
 
     !$acc enter data copyin(blh_fld, sv0h, profile, gradient, dgrad)
 
@@ -1165,6 +1168,25 @@ contains
     !$acc wait
 
   end subroutine calcblheight
+
+
+  subroutine read_restart_timestat_handler(iunit)
+    use modrestart_writers, only : read_restart_field
+
+    implicit none
+    integer, intent(in) :: iunit
+
+    call read_restart_field(iunit, 'ziold', ziold)
+  end subroutine read_restart_timestat_handler
+
+  subroutine write_restart_timestat_handler(iunit)
+    use modrestart_writers, only : write_restart_field
+
+    implicit none
+    integer, intent(in) :: iunit
+
+    call write_restart_field(iunit, 'ziold', ziold)
+  end subroutine write_restart_timestat_handler
 
 !> Clean up when leaving the run
   subroutine exittimestat
