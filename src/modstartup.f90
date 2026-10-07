@@ -1316,7 +1316,7 @@ contains
                           thlprad,swd,swu,lwd,lwu,swdca,swuca,lwdca,lwuca,swdir,swdif,lwc,&
                           SW_up_TOA,SW_dn_TOA,LW_up_TOA,LW_dn_TOA,&
                           SW_up_ca_TOA,SW_dn_ca_TOA,LW_up_ca_TOA,LW_dn_ca_TOA
-    use modfields, only : u0,v0,w0,thl0,qt0,ql0,ql0h,e120,dthvdz,presf,presh,initial_presf,initial_presh,tmp0,esl,qvsl,qvsi
+    use modfields, only : um,vm,u0,v0,w0,thl0,qt0,ql0,ql0h,e120,dthvdz,presf,presh,initial_presf,initial_presh,tmp0,esl,qvsl,qvsi
     use modglobal, only : timee,tres,dt
     use modboundary, only: dqt, dtheta
     use modsubgriddata, only : ekm,ekh
@@ -1325,6 +1325,8 @@ contains
     implicit none
     integer, intent(in) :: iunit
 
+    call write_restart_field(iunit, 'um', um)
+    call write_restart_field(iunit, 'vm', vm)
     call write_restart_field(iunit, 'u0', u0)
     call write_restart_field(iunit, 'v0', v0)
     call write_restart_field(iunit, 'w0', w0)
@@ -1446,7 +1448,7 @@ contains
                           thlprad,swd,swu,lwd,lwu,swdca,swuca,lwdca,lwuca,swdir,swdif,lwc,&
                           SW_up_TOA,SW_dn_TOA,LW_up_TOA,LW_dn_TOA,&
                           SW_up_ca_TOA,SW_dn_ca_TOA,LW_up_ca_TOA,LW_dn_ca_TOA
-    use modfields,  only : u0,v0,w0,thl0,qt0,ql0,ql0h,e120,dthvdz,presf,presh,initial_presf,initial_presh,tmp0,esl,qvsl,qvsi
+    use modfields,  only : um,vm,u0,v0,w0,thl0,qt0,ql0,ql0h,e120,dthvdz,presf,presh,initial_presf,initial_presh,tmp0,esl,qvsl,qvsi
     use modglobal,  only : timee,tres,dt
     use modboundary, only: dqt, dtheta
     use modsubgriddata, only : ekm,ekh
@@ -1455,6 +1457,8 @@ contains
     implicit none
     integer, intent(in) :: iunit
 
+    call read_restart_field(iunit, 'um', um)
+    call read_restart_field(iunit, 'vm', vm)
     call read_restart_field(iunit, 'u0', u0)
     call read_restart_field(iunit, 'v0', v0)
     call read_restart_field(iunit, 'w0', w0)
