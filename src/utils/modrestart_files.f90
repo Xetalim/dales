@@ -54,7 +54,7 @@ contains
 
   subroutine register_restart_handlers(name, character_identifier, reader, writer, read_at_register)
 
-    use modglobal,  only : startfile
+    use modglobal,  only : startfile, lwarmstart
     use modmpi,     only : cmyid
 
     character(len=*), intent(in) :: name
@@ -82,7 +82,7 @@ contains
     if (present(reader)) entries(idx)%reader => reader
     if (present(writer)) entries(idx)%writer => writer
 
-    if (entries(idx)%read_at_register) then
+    if (entries(idx)%read_at_register.and.lwarmstart) then
       filename = startfile
       filename(5:5) = 'd'
       filename(14:21)=cmyid
