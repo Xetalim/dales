@@ -969,8 +969,8 @@ contains
       sv0av(:,:) = 0.0
 
       if (.not.(lapply_ibm)) then
-        call slabsum(thvh,1,k1,thv0h,2-ih,i1+ih,2-jh,j1+jh,1,k1,2,i1,2,j1,1,k1) ! redefine halflevel thv using calculated thv
-        call slabsum(thvf,1,k1,thv0,2-ih,i1+ih,2-jh,j1+jh,1,k1,2,i1,2,j1,1,k1)
+        call slabavg(thv0h, ih, thvh) ! redefine halflevel thv using calculated thv
+        call slabavg(thv0, ih, thvf) ! use slabavg instead of slabsum to match normal init from thermo
 
         call slabsum(u0av  ,1,k1,u0  ,2-ih,i1+ih,2-jh,j1+jh,1,k1,2,i1,2,j1,1,k1)
         call slabsum(v0av  ,1,k1,v0  ,2-ih,i1+ih,2-jh,j1+jh,1,k1,2,i1,2,j1,1,k1)
@@ -981,8 +981,6 @@ contains
           call slabsum(sv0av(1:1,n),1,k1,sv0(:,:,:,n),2-ih,i1+ih,2-jh,j1+jh,1,k1,2,i1,2,j1,1,k1)
         end do
 
-        thvh(:) = thvh(:) / ijtot
-        thvf(:) = thvf(:) / ijtot
         u0av(:) = u0av(:) / ijtot + cu
         v0av(:) = v0av(:) / ijtot + cv
         thl0av(:) = thl0av(:) / ijtot
