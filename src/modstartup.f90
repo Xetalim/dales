@@ -82,6 +82,7 @@ contains
                                   rdt,rk3step,i1,j1,k1,ih,jh,lboundary,iinput,dzf
     use modforces,         only : lforce_user
     use modsurface,        only : initsurface
+    use modsurfdata,       only : isurf
     use moddatetime,       only : initdatetime
     use modemission,       only : initemission
     use modlsm,            only : initlsm, kmax_soil
