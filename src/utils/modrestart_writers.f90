@@ -1,6 +1,6 @@
 !> Global registry for restart read/write callbacks and tagged restart field I/O.
 module modrestart_writers
-  use iso_fortran_env, only: real32
+  use iso_fortran_env, only: real32, real64
   use netcdf
   use modglobal, only: lrestart_netcdf
   use modlogging, only: finish
@@ -14,16 +14,20 @@ module modrestart_writers
   integer, parameter :: max_entries = 128
   integer, parameter :: fmt_version = 1
   integer, parameter :: tag_len = 64
-  integer, parameter :: field_nc_type = merge(nf90_float, nf90_double, field_r == real32)
   
   character(len=*), parameter :: modname = 'modrestart_writers'
 
   interface write_restart_field
-    procedure :: write_restart_field_real_s
-    procedure :: write_restart_field_real_r1
-    procedure :: write_restart_field_real_r2
-    procedure :: write_restart_field_real_r3
-    procedure :: write_restart_field_real_r4
+    procedure :: write_restart_field_real_sp_s
+    procedure :: write_restart_field_real_dp_s
+    procedure :: write_restart_field_real_sp_r1
+    procedure :: write_restart_field_real_dp_r1
+    procedure :: write_restart_field_real_sp_r2
+    procedure :: write_restart_field_real_dp_r2
+    procedure :: write_restart_field_real_sp_r3
+    procedure :: write_restart_field_real_dp_r3
+    procedure :: write_restart_field_real_sp_r4
+    procedure :: write_restart_field_real_dp_r4
     procedure :: write_restart_field_longint_s
   end interface
 
@@ -75,80 +79,157 @@ contains
     end if
   end subroutine read_restart_tag
 
-  subroutine write_restart_field_real_s(iunit, tag, field)
+  subroutine write_restart_field_real_sp_s(iunit, tag, field)
     integer, intent(in) :: iunit
     character(len=*), intent(in) :: tag
-    real(kind=field_r), intent(in) :: field
+    real(kind=real32), intent(in) :: field
     integer :: varid
 
     if (lrestart_netcdf) then
-      call define_restart_var_netcdf(iunit, tag, field_nc_type, varid)
+      call define_restart_var_netcdf(iunit, tag, nf90_float, varid)
       call handle_netcdf_status(modname//'/write_restart_field', nf90_put_var(iunit, varid, field), tag)
     else
       call write_restart_tag(iunit, tag)
       write(iunit) field
     end if
-  end subroutine write_restart_field_real_s
+  end subroutine write_restart_field_real_sp_s
 
-  subroutine write_restart_field_real_r1(iunit, tag, field)
+  subroutine write_restart_field_real_dp_s(iunit, tag, field)
     integer, intent(in) :: iunit
     character(len=*), intent(in) :: tag
-    real(kind=field_r), intent(in) :: field(:)
+    real(kind=real64), intent(in) :: field
     integer :: varid
 
     if (lrestart_netcdf) then
-      call define_restart_var_netcdf(iunit, tag, field_nc_type, varid, [size(field,1)])
+      call define_restart_var_netcdf(iunit, tag, nf90_double, varid)
       call handle_netcdf_status(modname//'/write_restart_field', nf90_put_var(iunit, varid, field), tag)
     else
       call write_restart_tag(iunit, tag)
       write(iunit) field
     end if
-  end subroutine write_restart_field_real_r1
+  end subroutine write_restart_field_real_dp_s
 
-  subroutine write_restart_field_real_r2(iunit, tag, field)
+  subroutine write_restart_field_real_sp_r1(iunit, tag, field)
     integer, intent(in) :: iunit
     character(len=*), intent(in) :: tag
-    real(kind=field_r), intent(in) :: field(:,:)
+    real(kind=real32), intent(in) :: field(:)
     integer :: varid
 
     if (lrestart_netcdf) then
-      call define_restart_var_netcdf(iunit, tag, field_nc_type, varid, [size(field,1), size(field,2)])
+      call define_restart_var_netcdf(iunit, tag, nf90_float, varid, [size(field,1)])
       call handle_netcdf_status(modname//'/write_restart_field', nf90_put_var(iunit, varid, field), tag)
     else
       call write_restart_tag(iunit, tag)
       write(iunit) field
     end if
-  end subroutine write_restart_field_real_r2
+  end subroutine write_restart_field_real_sp_r1
 
-  subroutine write_restart_field_real_r3(iunit, tag, field)
+  subroutine write_restart_field_real_dp_r1(iunit, tag, field)
     integer, intent(in) :: iunit
     character(len=*), intent(in) :: tag
-    real(kind=field_r), intent(in) :: field(:,:,:)
+    real(kind=real64), intent(in) :: field(:)
     integer :: varid
 
     if (lrestart_netcdf) then
-      call define_restart_var_netcdf(iunit, tag, field_nc_type, varid, [size(field,1), size(field,2), size(field,3)])
+      call define_restart_var_netcdf(iunit, tag, nf90_double, varid, [size(field,1)])
       call handle_netcdf_status(modname//'/write_restart_field', nf90_put_var(iunit, varid, field), tag)
     else
       call write_restart_tag(iunit, tag)
       write(iunit) field
     end if
-  end subroutine write_restart_field_real_r3
+  end subroutine write_restart_field_real_dp_r1
 
-  subroutine write_restart_field_real_r4(iunit, tag, field)
+  subroutine write_restart_field_real_sp_r2(iunit, tag, field)
     integer, intent(in) :: iunit
     character(len=*), intent(in) :: tag
-    real(kind=field_r), intent(in) :: field(:,:,:,:)
+    real(kind=real32), intent(in) :: field(:,:)
     integer :: varid
 
     if (lrestart_netcdf) then
-      call define_restart_var_netcdf(iunit, tag, field_nc_type, varid, [size(field,1), size(field,2), size(field,3), size(field,4)])
+      call define_restart_var_netcdf(iunit, tag, nf90_float, varid, [size(field,1), size(field,2)])
       call handle_netcdf_status(modname//'/write_restart_field', nf90_put_var(iunit, varid, field), tag)
     else
       call write_restart_tag(iunit, tag)
       write(iunit) field
     end if
-  end subroutine write_restart_field_real_r4
+  end subroutine write_restart_field_real_sp_r2
+
+  subroutine write_restart_field_real_dp_r2(iunit, tag, field)
+    integer, intent(in) :: iunit
+    character(len=*), intent(in) :: tag
+    real(kind=real64), intent(in) :: field(:,:)
+    integer :: varid
+
+    if (lrestart_netcdf) then
+      call define_restart_var_netcdf(iunit, tag, nf90_double, varid, [size(field,1), size(field,2)])
+      call handle_netcdf_status(modname//'/write_restart_field', nf90_put_var(iunit, varid, field), tag)
+    else
+      call write_restart_tag(iunit, tag)
+      write(iunit) field
+    end if
+  end subroutine write_restart_field_real_dp_r2
+
+  subroutine write_restart_field_real_sp_r3(iunit, tag, field)
+    integer, intent(in) :: iunit
+    character(len=*), intent(in) :: tag
+    real(kind=real32), intent(in) :: field(:,:,:)
+    integer :: varid
+
+    if (lrestart_netcdf) then
+      call define_restart_var_netcdf(iunit, tag, nf90_float, varid, [size(field,1), size(field,2), size(field,3)])
+      call handle_netcdf_status(modname//'/write_restart_field', nf90_put_var(iunit, varid, field), tag)
+    else
+      call write_restart_tag(iunit, tag)
+      write(iunit) field
+    end if
+  end subroutine write_restart_field_real_sp_r3
+
+  subroutine write_restart_field_real_dp_r3(iunit, tag, field)
+    integer, intent(in) :: iunit
+    character(len=*), intent(in) :: tag
+    real(kind=real64), intent(in) :: field(:,:,:)
+    integer :: varid
+
+    if (lrestart_netcdf) then
+      call define_restart_var_netcdf(iunit, tag, nf90_double, varid, [size(field,1), size(field,2), size(field,3)])
+      call handle_netcdf_status(modname//'/write_restart_field', nf90_put_var(iunit, varid, field), tag)
+    else
+      call write_restart_tag(iunit, tag)
+      write(iunit) field
+    end if
+  end subroutine write_restart_field_real_dp_r3
+
+  subroutine write_restart_field_real_sp_r4(iunit, tag, field)
+    integer, intent(in) :: iunit
+    character(len=*), intent(in) :: tag
+    real(kind=real32), intent(in) :: field(:,:,:,:)
+    integer :: varid
+
+    if (lrestart_netcdf) then
+      call define_restart_var_netcdf(iunit, tag, nf90_float, varid, &
+                                     [size(field,1), size(field,2), size(field,3), size(field,4)])
+      call handle_netcdf_status(modname//'/write_restart_field', nf90_put_var(iunit, varid, field), tag)
+    else
+      call write_restart_tag(iunit, tag)
+      write(iunit) field
+    end if
+  end subroutine write_restart_field_real_sp_r4
+
+  subroutine write_restart_field_real_dp_r4(iunit, tag, field)
+    integer, intent(in) :: iunit
+    character(len=*), intent(in) :: tag
+    real(kind=real64), intent(in) :: field(:,:,:,:)
+    integer :: varid
+
+    if (lrestart_netcdf) then
+      call define_restart_var_netcdf(iunit, tag, nf90_double, varid, &
+                                     [size(field,1), size(field,2), size(field,3), size(field,4)])
+      call handle_netcdf_status(modname//'/write_restart_field', nf90_put_var(iunit, varid, field), tag)
+    else
+      call write_restart_tag(iunit, tag)
+      write(iunit) field
+    end if
+  end subroutine write_restart_field_real_dp_r4
 
   subroutine write_restart_field_longint_s(iunit, tag, field)
     use modprecision, only : longint
