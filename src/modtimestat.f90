@@ -296,8 +296,7 @@ contains
       end if
     end if
 
-    call register_restart_handlers('timestat', 't', reader=read_restart_timestat_handler, &
-      writer=write_restart_timestat_handler, read_at_register=.true.)
+    call register_restart_handlers('timestat', 't', reader=read_restart_timestat_handler, writer=write_restart_timestat_handler, read_at_register=.true.)
 
     !$acc enter data copyin(blh_fld, sv0h, profile, gradient, dgrad)
 
@@ -1173,16 +1172,12 @@ contains
 
   subroutine read_restart_timestat_handler(iunit)
     use modrestart_writers, only : read_restart_field
-    use modglobal, only : loutput_restart, dt_lim
 
     implicit none
     integer, intent(in) :: iunit
-    integer(kind=longint) :: saved_tnext
 
-    call read_restart_field(iunit, 'tnext', saved_tnext)
-    if (loutput_restart) tnext = saved_tnext
+    call read_restart_field(iunit, 'tnext', tnext)
     call read_restart_field(iunit, 'ziold', ziold)
-    dt_lim = min(dt_lim, tnext)
   end subroutine read_restart_timestat_handler
 
   subroutine write_restart_timestat_handler(iunit)
