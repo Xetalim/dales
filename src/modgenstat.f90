@@ -69,6 +69,7 @@ module modgenstat
   use modprecision
   use modtimer
   use modlogging, only: finish
+  use modrestart_files, only: register_restart_handlers
 
   implicit none
   character(len=*), parameter :: modname = 'modgenstat'
@@ -230,8 +231,6 @@ contains
     if(.not.(lstat)) return
 
     call timer_tic('modgenstat/initgenstat', 0)
-
-    dt_lim = min(dt_lim,tnext)
 
     if (abs(timeav/dtav-nsamples)>1e-4) then
       call finish(routine, 'timeav must be a integer multiple of dtav')
@@ -486,6 +485,11 @@ contains
 
     end if
 
+    ! Register the restart handlers for genstat
+    call register_restart_handlers('genstat', 'g', reader=read_restart_genstat_handler, &
+      writer=write_restart_genstat_handler, read_at_register=.true.)
+    dt_lim = min(dt_lim,tnext)
+
     !$acc enter data copyin(umn, vmn, wmn, thlmn, thvmn, qtmn, qlmn, qlhmn, cfracmn, wthlsmn, wthlrmn, wthltmn, &
     !$acc&                  wthvsmn, wthvrmn, wthvtmn, wqtsmn, wqtrmn, wqttmn, wqlsmn, wqlrmn, wqltmn, &
     !$acc&                  uwtmn, vwtmn, uwrmn, vwrmn, uwsmn, vwsmn, u2mn, v2mn, w2mn, w2submn, skewmn, &
@@ -530,6 +534,32 @@ contains
     call timer_toc('modgenstat/genstat')
 
   end subroutine genstat
+
+  subroutine read_restart_genstat_handler(iunit)
+    use modrestart_writers, only : read_restart_field
+    use modglobal, only : loutput_restart
+
+    implicit none
+    integer, intent(in) :: iunit
+    integer(kind=longint) :: saved_tnext, saved_tnextwrite
+
+    call read_restart_field(iunit, 'tnext', saved_tnext)
+    call read_restart_field(iunit, 'tnextwrite', saved_tnextwrite)
+    if (loutput_restart) then
+      tnext = saved_tnext
+      tnextwrite = saved_tnextwrite
+    end if
+  end subroutine read_restart_genstat_handler
+
+  subroutine write_restart_genstat_handler(iunit)
+    use modrestart_writers, only : write_restart_field
+
+    implicit none
+    integer, intent(in) :: iunit
+
+    call write_restart_field(iunit, 'tnext', tnext)
+    call write_restart_field(iunit, 'tnextwrite', tnextwrite)
+  end subroutine write_restart_genstat_handler
 
   subroutine do_genstat
 
