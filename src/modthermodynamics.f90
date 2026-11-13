@@ -551,6 +551,7 @@ contains
     integer i, j, k
     real(field_r)    qs
     real(field_r)    a_surf,b_surf,dq,dth,dthv,temp
+    real(field_r)    thl_surf
     real(field_r)    thl_k, thl_kp1, thl_km1
     real(field_r)    a_dry, b_dry, a_moist, b_moist, c_liquid, chi_sat, chi
     real(field_r)    del_thv_sat, del_thv_dry
