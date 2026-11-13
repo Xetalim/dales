@@ -336,8 +336,14 @@ contains
     do k = 1, k1
       do j = 2, j1
         do i = 2, i1
-          thv0(i,j,k) = calc_virt_pot_temp(thl0(i,j,k), qt0(i,j,k), &
-                                           ql0(i,j,k), exnf(k))
+          if (ltliq) then
+            thv0(i,j,k) = (calc_virt_pot_temp_from_tliq( &
+              tliq0(i,j,k), qt0(i,j,k), ql0(i,j,k), exnf(k), zf(k)) &
+              - gravocp * zf(k) * (1 + ep2 * qt0(i,j,k) - ql0(i,j,k) / ep)) / exnf(k)
+          else
+            thv0(i,j,k) = calc_virt_pot_temp(thl0(i,j,k), qt0(i,j,k), &
+                                             ql0(i,j,k), exnf(k))
+          end if
         end do
       end do
     end do

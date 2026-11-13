@@ -522,7 +522,8 @@ contains
     use modlsm,            only : init_lsm_tiles
     use modboundary,       only : boundary
     use modmpi,            only : slabsum,myid,comm3d,mpierr,D_MPI_BCAST, print_info_stderr
-    use modthermodynamics, only : thermodynamics,calc_halflev, lmoist
+    use modthermodynamics, only : thermodynamics,calc_halflev,calc_virt_pot_temp, &
+                    calc_virt_pot_temp_from_tliq,lmoist
     use moduser,           only : initsurf_user
     use modibmdata,        only : thlibm, qtibm, lapply_ibm, fluid_mask  !cstep not yet done for tliq
     use modtestbed,        only : ltestbed,tb_ps,tb_thl,tb_qt,tb_u,tb_v,tb_w,tb_ug,tb_vg,&  !cstep not yet done for tliq
@@ -986,8 +987,15 @@ contains
       do k = 1, k1
         do j = 2, j1
           do i = 2 ,i1
-            thv0(i,j,k) = (thl0(i,j,k)+rlv*ql0(i,j,k)/(cp*exnf(k))) &
-                          *(1+(rv/rd-1)*qt0(i,j,k)-rv/rd*ql0(i,j,k))
+            if (ltliq) then
+              thv0(i,j,k) = (calc_virt_pot_temp_from_tliq( &
+                thl0(i,j,k), qt0(i,j,k), ql0(i,j,k), exnf(k), zf(k)) &
+                - gravocp * zf(k) * (1 + (rv/rd-1) * qt0(i,j,k) &
+                                      - rv/rd * ql0(i,j,k))) / exnf(k)
+            else
+              thv0(i,j,k) = calc_virt_pot_temp(thl0(i,j,k), qt0(i,j,k), &
+                                               ql0(i,j,k), exnf(k))
+            end if
           end do
         end do
       end do
