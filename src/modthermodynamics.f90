@@ -602,7 +602,7 @@ contains
             dthv = del_thv_dry
 
 !cstep               temp = thl0(i,j,k)*exnf(k)+(rlv/cp)*ql0(i,j,k)
-            temp = tliq0(i,j,k) - gravocp * zf(k) - rlvocp * ql0(i,j,k)
+            temp = tliq0(i,j,k) - gravocp * zf(k) + rlvocp * ql0(i,j,k)
             tmp0(i,j,k) = temp !stored for statistics
 
             if  (ql0(i,j,k)> 0) then  !include moist thermodynamics
