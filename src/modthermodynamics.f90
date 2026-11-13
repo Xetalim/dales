@@ -636,7 +636,8 @@ contains
       do j=2,j1
         do i=2,i1
           if(ql0(i,j,1)>0) then
-            temp = thl0(i,j,1)*exnf(1)+(rlv/cp)*ql0(i,j,1)
+            temp = tliq0(i,j,1) - gravocp * zf(1) + rlvocp * ql0(i,j,1)
+            ! temp = thl0(i,j,1)*exnf(1)+(rlv/cp)*ql0(i,j,1)
             tmp0(i,j,1) = temp !stored for statistics
             qs   = qt0(i,j,1) - ql0(i,j,1)
             a_surf   = (1-qt0(i,j,1)+rv/rd*qs*(1+rlv/(rv*temp))) &
