@@ -33,7 +33,7 @@ module modthermodynamics
                              thv0h, qt0av, ql0av, thvf, rhof, ql0h, presh, exnh, &
                              u0, v0, sv0, u0av, v0av, thl0av, ql0av, sv0av, &
                              tmp0, dthvdz, esl, qvsl, qvsi, &
-                             tliq0, tliqm, tliqp, tliq0h  !cstep
+                             tliq0, tliqm, tliqp, tliq0h, tliq0av  !cstep
   use modsurfdata,     only: qts, thls, ps, dthldz, dqtdz, tliq_skin_av
   use modmpi,          only: myid, d_mpi_bcast, commwrld, slabsum
   use modmicrodata,    only: imicro, imicro_bulk3, imicro_none
@@ -735,6 +735,11 @@ contains
 
     !$acc parallel loop gang(static:1) default(present) async wait(1)
     do k = 1, k1
+      tliq0av(k) = 0.0_field_r
+    end do
+
+    !$acc parallel loop gang(static:1) default(present) async wait(1)
+    do k = 1, k1
       th0av(k) = 0.0_field_r
     end do
 
@@ -761,7 +766,21 @@ contains
     if (.not. lapply_ibm) then
       call slabavg(u0,ih,u0av)
       call slabavg(v0,ih,v0av)
-      call slabavg(thl0,ih,thl0av)
+      if (ltliq) then
+        call slabavg(tliq0,ih,tliq0av)
+        !$acc parallel loop collapse(3) default(present) async(1)
+        do k = 1, k1
+          do j = 2-jh, j1+jh
+            do i = 2-ih, i1+ih
+              thv0(i,j,k) = (tliq0(i,j,k) - gravocp * zf(k)) / exnf(k)
+            end do
+          end do
+        end do
+        !$acc wait(1)
+        call slabavg(thv0,ih,thl0av)
+      else
+        call slabavg(thl0,ih,thl0av)
+      end if
       call slabavg(qt0,ih,qt0av)
       call slabavg(ql0,ih,ql0av)
       do n=1,nsv
@@ -770,7 +789,21 @@ contains
     else
       call slabavg(u0,fluid_mask,ih,u0av)
       call slabavg(v0,fluid_mask,ih,v0av)
-      call slabavg(thl0,fluid_mask,ih,thl0av)
+      if (ltliq) then
+        call slabavg(tliq0,fluid_mask,ih,tliq0av)
+        !$acc parallel loop collapse(3) default(present) async(1)
+        do k = 1, k1
+          do j = 2-jh, j1+jh
+            do i = 2-ih, i1+ih
+              thv0(i,j,k) = (tliq0(i,j,k) - gravocp * zf(k)) / exnf(k)
+            end do
+          end do
+        end do
+        !$acc wait(1)
+        call slabavg(thv0,fluid_mask,ih,thl0av)
+      else
+        call slabavg(thl0,fluid_mask,ih,thl0av)
+      end if
       call slabavg(qt0,fluid_mask,ih,qt0av)
       call slabavg(ql0,fluid_mask,ih,ql0av)
       do n=1,nsv
