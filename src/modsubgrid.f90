@@ -188,8 +188,9 @@ contains
 
     if (ltliq) then
        call diffc(tliq0, tliqp, tliqflux)
+     else
+       call diffc(thl0, thlp, thlflux)
     endif
-    call diffc(thl0, thlp, thlflux)
 
     if (lmoist) call diffc( qt0, qtp, qtflux)
     if (nsv > 0 ) then

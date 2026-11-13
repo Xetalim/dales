@@ -140,7 +140,7 @@ subroutine advection
   end select
 
   istart = 2; iend = i1; jstart = 2; jend = j1
-  !if (ltliq) then ! tliq used as temperature variable
+  if (ltliq) then ! tliq used as temperature variable
      select case(iadv_tliq)  !cstep iadv_tliq
      case(iadv_cd2)
         call hadvecc_2nd(tliq0,tliqp,istart,iend,jstart,jend)
@@ -178,7 +178,7 @@ subroutine advection
      case default
         call finish(routine, "Unknown advection scheme ")
      end select
-  !else ! thl used as temperature variable
+  else ! thl used as temperature variable
      select case(iadv_thl)
      case(iadv_cd2)
         call hadvecc_2nd(thl0,thlp,istart,iend,jstart,jend)
@@ -216,7 +216,7 @@ subroutine advection
      case default
         call finish(routine, "Unknown advection scheme ")
      end select
-  !end if
+  end if
 
   if (lmoist) then
     istart = 2; iend = i1; jstart = 2; jend = j1

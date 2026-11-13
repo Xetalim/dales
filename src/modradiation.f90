@@ -224,8 +224,9 @@ contains
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   subroutine radiation
     use modmpi, only: myid, MPI_Wtime
-    use modglobal, only : timee, dt_lim,rk3step
-    use modfields, only : thlp
+    use modglobal, only : timee, dt_lim,rk3step,i1,j1,kmax
+    use modfields, only : thlp, tliqp, exnf
+    use modthermodynamics, only: ltliq
     use moduser,   only : rad_user
     use modradfull,only : radfull
     use modradrrtmg, only : radrrtmg
@@ -235,6 +236,7 @@ contains
     use modprecursor, only: swap
     implicit none
     real wtime
+    integer i, j, k
 
     if(timee<tnext .and. rk3step==3) then
       dt_lim = min(dt_lim,tnext-timee)
@@ -291,9 +293,21 @@ contains
       end if
     end if
     
-    !$acc kernels default(present)
-    thlp = thlp + thlprad
-    !$acc end kernels
+    if (ltliq) then
+      !$acc parallel loop collapse(3) default(present) async(1)
+      do k = 1, kmax
+        do j = 2, j1
+          do i = 2, i1
+            tliqp(i,j,k) = tliqp(i,j,k) + exnf(k) * thlprad(i,j,k)
+          end do
+        end do
+      end do
+      !$acc wait(1)
+    else
+      !$acc kernels default(present)
+      thlp = thlp + thlprad
+      !$acc end kernels
+    end if
 
     call timer_toc('modradiation/radiation')
 

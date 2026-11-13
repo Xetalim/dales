@@ -292,32 +292,52 @@ contains
                         rlv,cp,&
                         dx,dy,dzf
   use modfields, only : up,vp,thlp,qtp,svp,&
-                        whls, u0av,v0av,thl0,qt0,sv0,u0,v0,&
+                        whls, u0av,v0av,thl0,tliq0,tliqp,qt0,sv0,u0,v0,&
                         dudxls,dudyls,dvdxls,dvdyls,dthldxls,dthldyls,dqtdxls,dqtdyls, &
                         dqtdtls, dthldtls, dudtls, dvdtls, dsvdtls, &
                         exnf,rhobf,ql0
+  use modthermodynamics, only: ltliq
   implicit none
 
   integer i, j, k, n
 
   call timer_tic('modforces/lstend', 0)
 
-  !$acc parallel loop collapse(3) default(present) async(1)
-  do k = 1, kmax
-    do j = 2, j1
-      do i = 2, i1
-        if (whls(k+1) < 0) then   !downwind scheme for subsidence
-          thlp(i,j,k) = thlp(i,j,k) - whls(k+1) * (thl0(i,j,k+1) - thl0(i,j,k))/dzh(k+1)
-          qtp (i,j,k) = qtp (i,j,k) - whls(k+1) * (qt0 (i,j,k+1) - qt0 (i,j,k))/dzh(k+1)
-        else                      !downwind scheme for mean upward motions
-          if (k > 1) then !neglect effect of mean ascending on tendencies at the lowest full level
-            thlp(i,j,k) = thlp(i,j,k) - whls(k) * (thl0(i,j,k) - thl0(i,j,k-1))/dzh(k)
-            qtp (i,j,k) = qtp (i,j,k) - whls(k) * (qt0 (i,j,k) - qt0 (i,j,k-1))/dzh(k)
+  if (ltliq) then
+    !$acc parallel loop collapse(3) default(present) async(1)
+    do k = 1, kmax
+      do j = 2, j1
+        do i = 2, i1
+          if (whls(k+1) < 0) then   !downwind scheme for subsidence
+            tliqp(i,j,k) = tliqp(i,j,k) - whls(k+1) * (tliq0(i,j,k+1) - tliq0(i,j,k))/dzh(k+1)
+            qtp(i,j,k) = qtp(i,j,k) - whls(k+1) * (qt0(i,j,k+1) - qt0(i,j,k))/dzh(k+1)
+          else                      !downwind scheme for mean upward motions
+            if (k > 1) then !neglect effect of mean ascending on tendencies at the lowest full level
+              tliqp(i,j,k) = tliqp(i,j,k) - whls(k) * (tliq0(i,j,k) - tliq0(i,j,k-1))/dzh(k)
+              qtp(i,j,k) = qtp(i,j,k) - whls(k) * (qt0(i,j,k) - qt0(i,j,k-1))/dzh(k)
+            endif
           endif
-        endif
+        end do
       end do
     end do
-  end do
+  else
+    !$acc parallel loop collapse(3) default(present) async(1)
+    do k = 1, kmax
+      do j = 2, j1
+        do i = 2, i1
+          if (whls(k+1) < 0) then   !downwind scheme for subsidence
+            thlp(i,j,k) = thlp(i,j,k) - whls(k+1) * (thl0(i,j,k+1) - thl0(i,j,k))/dzh(k+1)
+            qtp(i,j,k) = qtp(i,j,k) - whls(k+1) * (qt0(i,j,k+1) - qt0(i,j,k))/dzh(k+1)
+          else                      !downwind scheme for mean upward motions
+            if (k > 1) then !neglect effect of mean ascending on tendencies at the lowest full level
+              thlp(i,j,k) = thlp(i,j,k) - whls(k) * (thl0(i,j,k) - thl0(i,j,k-1))/dzh(k)
+              qtp(i,j,k) = qtp(i,j,k) - whls(k) * (qt0(i,j,k) - qt0(i,j,k-1))/dzh(k)
+            endif
+          endif
+        end do
+      end do
+    end do
+  end if
 
   if (lmomsubs) then
     !$acc parallel loop collapse(3) default(present) async(2)
@@ -343,7 +363,12 @@ contains
   do k = 1, kmax
     do j = 2, j1
       do i = 2, i1
-        thlp(i,j,k) = thlp(i,j,k) - u0av(k)*dthldxls(k) - v0av(k)*dthldyls(k) + dthldtls(k)
+        if (ltliq) then
+          tliqp(i,j,k) = tliqp(i,j,k) + exnf(k) * &
+            (-u0av(k)*dthldxls(k) - v0av(k)*dthldyls(k) + dthldtls(k))
+        else
+          thlp(i,j,k) = thlp(i,j,k) - u0av(k)*dthldxls(k) - v0av(k)*dthldyls(k) + dthldtls(k)
+        end if
         qtp (i,j,k) = qtp (i,j,k) - u0av(k)*dqtdxls (k) - v0av(k)*dqtdyls (k) + dqtdtls(k)
         up  (i,j,k) = up  (i,j,k) - u0av(k)*dudxls  (k) - v0av(k)*dudyls  (k) + dudtls(k)
         vp  (i,j,k) = vp  (i,j,k) - u0av(k)*dvdxls  (k) - v0av(k)*dvdyls  (k) + dvdtls(k)
