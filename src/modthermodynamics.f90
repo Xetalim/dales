@@ -108,6 +108,32 @@ contains
 
   end function calc_virt_pot_temp_from_tliq
 
+  elemental pure function calc_tliq_from_thl(thl, ql, exn, z) result(tliq)
+
+    real(field_r), intent(in) :: thl  !< Liquid water potential temperature [K]
+    real(field_r), intent(in) :: ql   !< Liquid water specific humidity [kg/kg]
+    real(field_r), intent(in) :: exn  !< Exner function [-]
+    real(field_r), intent(in) :: z    !< height [m]
+
+    real(field_r) :: tliq !< Liquid water temperature [K]
+
+    tliq = thl * exn - rlvocp * ql + gravocp * z
+
+  end function calc_tliq_from_thl
+
+  elemental pure function calc_thl_from_tliq(tliq, ql, exn, z) result(thl)
+
+    real(field_r), intent(in) :: tliq !< Liquid static energy divided by cp [K]
+    real(field_r), intent(in) :: ql   !< Liquid water specific humidity [kg/kg]
+    real(field_r), intent(in) :: exn  !< Exner function [-]
+    real(field_r), intent(in) :: z    !< height [m]
+
+    real(field_r) :: thl !< Liquid water potential temperature [K]
+
+    thl = (tliq + rlvocp * ql - gravocp * z) / exn
+
+  end function calc_thl_from_tliq
+
 
   !> Read thermodynamics namelist.
   subroutine thermodynamics_read_namelist(nml_filename)

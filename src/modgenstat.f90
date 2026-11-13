@@ -540,11 +540,11 @@ contains
     use modsurfdata,only: thls,qts,ustar,thlflux,qtflux,svflux
     use modsubgriddata,only : ekm, ekh, csz
     use modglobal, only : i1,ih,j1,jh,k1,kmax,nsv,dzf,dzh,rlv,rv,rd,cp,dzhi, &
-                          ijtot,cu,cv,iadv_sv,iadv_kappa,eps1,dxi,dyi,tup,tdn,lopenbc
+                          ijtot,cu,cv,iadv_sv,iadv_kappa,eps1,dxi,dyi,tup,tdn,lopenbc,zf,zh
     use modmpi,    only : comm3d,mpi_sum,mpierr,slabsum,D_MPI_ALLREDUCE
     use advec_kappa, only : halflev_kappa
     use modsimpleice_data, only: tuprsg, tdnrsg
-    use modthermodynamics, only: qsat_tab
+    use modthermodynamics, only: qsat_tab, ltliq, calc_thl_from_tliq
     use modtracers, only: get_tracer_index
     use modmicrodata, only : imicro, imicro_sice, imicro_sice2
 
@@ -636,7 +636,18 @@ contains
     !------------------------------------------
     ! 2.1 SLAB AVERAGES OF PROGNOSTIC VARIABLES
     !------------------------------------------
-
+    if (ltliq) then
+      !$acc parallel loop collapse(3) default(present) async(1)
+      do k = 1, k1
+        do j = 2-jh, j1+jh
+          do i = 2-ih, i1+ih
+            thlm(i,j,k) = calc_thl_from_tliq(thlm(i,j,k), ql0(i,j,k), exnf(k), zf(k))
+            thl0(i,j,k) = calc_thl_from_tliq(thl0(i,j,k), ql0(i,j,k), exnf(k), zf(k))
+          end do
+        end do
+      end do
+    end if
+    
     !$acc parallel loop collapse(3) default(present) async(1)
     do k = 1, k1
       do j = 2, j1
