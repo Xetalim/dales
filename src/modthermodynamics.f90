@@ -645,7 +645,8 @@ contains
             b_surf   = a_surf*rlv/(temp*cp)-1
 
           else
-            tmp0(i,j,1) = thl0(i,j,1)*exnf(1) !stored for statistics
+            tmp0(i,j,1) = tliq0(i,j,1) - gravocp * zf(1)! + rlvocp * ql0(i,j,1)
+            ! tmp0(i,j,1) = thl0(i,j,1)*exnf(1) !stored for statistics
             a_surf = 1+(rv/rd-1)*qt0(i,j,1)
             b_surf = rv/rd-1
 
