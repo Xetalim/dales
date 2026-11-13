@@ -506,7 +506,7 @@ contains
   subroutine sources
     use modglobal,      only : i1,j1,kmax,dxi,dyi,dzfi,dzhi,grav,cu,cv,deltai,rv,rd
     use modfields,      only : u0,v0,w0,e120,e12p,dthvdz,thvf,exnh
-    use modsurfdata,    only : dudz,dvdz,ustar,thlflux,qtflux,tliqflux,thls,qts,dtliqdz,dqtdz
+    use modsurfdata,    only : dudz,dvdz,ustar,thlflux,qtflux,tliqflux,thls,qts
     use modthermodynamics, only : ltliq
     use modsubgriddata, only : sgs_surface_fix
     implicit none
@@ -613,15 +613,14 @@ contains
           sbshr(i,j,1)  = ekm(i,j,1)*tdef2/ ( 2*e120(i,j,1))
 
           ! Replace the -ekh *  dthvdz by the surface flux of thv
-          ! (but we only have the thlflux , which seems at the surface to be
-          ! equivalent
           if (ltliq) then
             surface_thv_flux = (1 + (rv/rd - 1) * qts) * tliqflux(i,j) / exnh(1) &
                                + (rv/rd - 1) * thls * qtflux(i,j)
-            local_dthvdz = -surface_thv_flux / ekh(i,j,1)
           else
-            local_dthvdz = -thlflux(i,j)/ekh(i,j,1)
+            surface_thv_flux = (1 + (rv/rd - 1) * qts) * thlflux(i,j) &
+                               + (rv/rd - 1) * thls * qtflux(i,j)
           end if
+          local_dthvdz = -surface_thv_flux / ekh(i,j,1)
           sbbuo(i,j,1)  = -ekh(i,j,1)*grav/thvf(1)*local_dthvdz/ ( 2*e120(i,j,1))
           sbdiss(i,j,1) = - (ce1 + ce2*zlt(i,j,1)*deltai(1)) * e120(i,j,1)**2 /(2.*zlt(i,j,1))
           e12p(i,j,1) = e12p(i,j,1) + sbshr(i,j,1) + sbbuo(i,j,1) + sbdiss(i,j,1)
@@ -655,8 +654,7 @@ contains
 
           sbshr(i,j,1)  = ekm(i,j,1)*tdef2/ ( 2*e120(i,j,1))
           if (ltliq) then
-            local_dthvdz = (1 + (rv/rd - 1) * qts) * dtliqdz(i,j) / exnh(1) &
-                           + (rv/rd - 1) * thls * dqtdz(i,j)
+            local_dthvdz = dthvdz(i,j,1)
           else
             local_dthvdz = dthvdz(i,j,1)
           end if

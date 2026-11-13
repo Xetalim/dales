@@ -34,7 +34,7 @@ module modthermodynamics
                              u0, v0, sv0, u0av, v0av, thl0av, ql0av, sv0av, &
                              tmp0, dthvdz, esl, qvsl, qvsi, &
                              tliq0, tliqm, tliqp, tliq0h  !cstep
-  use modsurfdata,     only: qts, thls, ps, dthldz, dqtdz,tliq_skin_av
+  use modsurfdata,     only: qts, thls, ps, dthldz, dqtdz, dtliqdz, tliq_skin_av
   use modmpi,          only: myid, d_mpi_bcast, commwrld, slabsum
   use modmicrodata,    only: imicro, imicro_bulk3, imicro_none
   use modibmdata,      only: lapply_ibm, fluid_mask
@@ -655,9 +655,14 @@ contains
             ! tmp0(i,j,1) = thl0(i,j,1)*exnf(1) !stored for statistics
             a_surf = 1+(rv/rd-1)*qt0(i,j,1)
             b_surf = rv/rd-1
+            dthvdz(i,j,1) = a_surf * dtliqdz(i,j) / exnh(1) &
+                            + b_surf * calc_thl_from_tliq( &
+                              tliq0(i,j,1), ql0(i,j,1), exnf(1), zf(1)) * dqtdz(i,j)
 
           end if
-          dthvdz(i,j,1) = a_surf*dthldz(i,j) + b_surf*thl0(i,j,1)*dqtdz(i,j)
+          if (ql0(i,j,1) > 0) then
+            dthvdz(i,j,1) = a_surf*dthldz(i,j) + b_surf*thl0(i,j,1)*dqtdz(i,j)
+          end if
         end do
       end do
 
