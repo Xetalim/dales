@@ -712,7 +712,7 @@ contains
 
     character(len=*), parameter :: routine = modname//'/diagfld'
 
-    integer :: k,n
+    integer :: i,j,k,n
 
     call timer_tic(routine, 1)
 
