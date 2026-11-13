@@ -34,7 +34,7 @@ module modthermodynamics
                              u0, v0, sv0, u0av, v0av, thl0av, ql0av, sv0av, &
                              tmp0, dthvdz, esl, qvsl, qvsi, &
                              tliq0, tliqm, tliqp, tliq0h  !cstep
-  use modsurfdata,     only: qts, thls, ps, dthldz, dqtdz, dtliqdz, tliq_skin_av
+  use modsurfdata,     only: qts, thls, ps, dthldz, dqtdz, tliq_skin_av
   use modmpi,          only: myid, d_mpi_bcast, commwrld, slabsum
   use modmicrodata,    only: imicro, imicro_bulk3, imicro_none
   use modibmdata,      only: lapply_ibm, fluid_mask
@@ -108,29 +108,27 @@ contains
 
   end function calc_virt_pot_temp_from_tliq
 
-  elemental pure function calc_tliq_from_thl(thl, ql, exn, z) result(tliq)
+  elemental pure function calc_tliq_from_thl(thl, exn, z) result(tliq)
 
     real(field_r), intent(in) :: thl  !< Liquid water potential temperature [K]
-    real(field_r), intent(in) :: ql   !< Liquid water specific humidity [kg/kg]
     real(field_r), intent(in) :: exn  !< Exner function [-]
     real(field_r), intent(in) :: z    !< height [m]
 
     real(field_r) :: tliq !< Liquid water temperature [K]
 
-    tliq = thl * exn - rlvocp * ql + gravocp * z
+    tliq = thl * exn + gravocp * z
 
   end function calc_tliq_from_thl
 
-  elemental pure function calc_thl_from_tliq(tliq, ql, exn, z) result(thl)
+  elemental pure function calc_thl_from_tliq(tliq, exn, z) result(thl)
 
     real(field_r), intent(in) :: tliq !< Liquid static energy divided by cp [K]
-    real(field_r), intent(in) :: ql   !< Liquid water specific humidity [kg/kg]
     real(field_r), intent(in) :: exn  !< Exner function [-]
     real(field_r), intent(in) :: z    !< height [m]
 
     real(field_r) :: thl !< Liquid water potential temperature [K]
 
-    thl = (tliq + rlvocp * ql - gravocp * z) / exn
+    thl = (tliq - gravocp * z) / exn
 
   end function calc_thl_from_tliq
 
@@ -414,6 +412,7 @@ contains
     integer i, j, k
     real(field_r)    qs
     real(field_r)    a_surf,b_surf,dq,dth,dthv,temp
+    real(field_r)    thl_surf
     real(field_r)    a_dry, b_dry, a_moist, b_moist, c_liquid, epsilon, eps_I, chi_sat, chi
     real(field_r)    del_thv_sat, del_thv_dry
 
@@ -552,6 +551,7 @@ contains
     integer i, j, k
     real(field_r)    qs
     real(field_r)    a_surf,b_surf,dq,dth,dthv,temp
+    real(field_r)    thl_k, thl_kp1, thl_km1
     real(field_r)    a_dry, b_dry, a_moist, b_moist, c_liquid, chi_sat, chi
     real(field_r)    del_thv_sat, del_thv_dry
 
@@ -565,8 +565,9 @@ contains
             !cstep thv0h(i,j,k) = calc_virt_pot_temp(thl0h(i,j,k), qt0h(i,j,k), &
             !cstep                                  ql0h(i,j,k), exnh(k))
 
-             thv0h(i,j,k) = calc_virt_pot_temp_from_tliq (tliq0h(i,j,k), qt0h(i,j,k), &   !cstep: thetav needed for w-equation
-                                              ql0h(i,j,k), exnh(k) , zf(k))               !maybe replace by new variable like svirtual
+             thv0h(i,j,k) = (calc_virt_pot_temp_from_tliq( &
+               tliq0h(i,j,k), qt0h(i,j,k), ql0h(i,j,k), exnh(k), zh(k)) &
+               - gravocp * zh(k) * (1 + ep2 * qt0h(i,j,k) - ql0h(i,j,k) / ep)) / exnh(k)
 
 
           end do
@@ -576,7 +577,8 @@ contains
       !TODO: fix the branching in this loop
       !$acc parallel loop collapse(3) default(present) &
       !$acc private(a_dry, b_dry, a_moist, b_moist, c_liquid, &
-      !$acc         chi_sat, chi, dthv, del_thv_dry, del_thv_sat, temp, qs, dq, dth) &
+      !$acc         chi_sat, chi, dthv, del_thv_dry, del_thv_sat, temp, qs, dq, dth, &
+      !$acc         thl_k, thl_kp1, thl_km1) &
       !$acc async(1)
       do k = 2, kmax
         do j = 2 , j1
@@ -591,8 +593,10 @@ contains
             !cstep ep2   =>    eps_I = 1/ep - 1  !cstep approx 0.608
 
 
-!cstep            dth = thl0(i,j,k+1)-thl0(i,j,k-1)
-            dth = tliq0(i,j,k+1)-tliq0(i,j,k-1)
+            thl_kp1 = calc_thl_from_tliq(tliq0(i,j,k+1), exnf(k+1), zf(k+1))
+            thl_k = calc_thl_from_tliq(tliq0(i,j,k), exnf(k), zf(k))
+            thl_km1 = calc_thl_from_tliq(tliq0(i,j,k-1), exnf(k-1), zf(k-1))
+            dth = thl_kp1 - thl_km1
             dq  = qt0(i,j,k+1)-qt0(i,j,k-1)
 
 
@@ -600,14 +604,12 @@ contains
 
 
             a_dry = 1 + ep2 * qt0(i,j,k)
-!cstep            b_dry = ep2 * thl0(i,j,k)
-            b_dry = ep2 * tliq0(i,j,k)
+            b_dry = ep2 * thl_k
 
 
             del_thv_dry = a_dry   * dth + b_dry * dq
             dthv = del_thv_dry
 
-!cstep               temp = thl0(i,j,k)*exnf(k)+(rlv/cp)*ql0(i,j,k)
             temp = tliq0(i,j,k) - gravocp * zf(k) + rlvocp * ql0(i,j,k)
             tmp0(i,j,k) = temp !stored for statistics
 
@@ -618,8 +620,7 @@ contains
                a_moist = (1-qt0(i,j,k)+qs/ep*(1+rlv/(rv*temp))) &
                         /(1+rlv**2*qs/(cp*rv*temp**2))
                b_moist = a_moist*rlv/cp-temp
-!cstep               c_liquid = a_dry * rlv / cp - thl0(i,j,k) / ep  !cstep Eq. (23) in Roode, Thermodynamics of cumulus clouds, 2007
-               c_liquid = a_dry * rlv / cp - tliq0(i,j,k) / ep
+               c_liquid = a_dry * rlv / cp - thl_k / ep
 
                del_thv_sat = a_moist * dth + b_moist * dq
 
@@ -638,7 +639,8 @@ contains
         end do
       end do
 
-      !$acc parallel loop collapse(2) default(present) private(temp, qs, a_surf, b_surf) async(1)   !cstep needs to be changed to include tliq0
+      !$acc parallel loop collapse(2) default(present) &
+      !$acc& private(temp, qs, a_surf, b_surf, thl_surf) async(1)
       do j=2,j1
         do i=2,i1
           if(ql0(i,j,1)>0) then
@@ -655,14 +657,10 @@ contains
             ! tmp0(i,j,1) = thl0(i,j,1)*exnf(1) !stored for statistics
             a_surf = 1+(rv/rd-1)*qt0(i,j,1)
             b_surf = rv/rd-1
-            dthvdz(i,j,1) = a_surf * dtliqdz(i,j) / exnh(1) &
-                            + b_surf * calc_thl_from_tliq( &
-                              tliq0(i,j,1), ql0(i,j,1), exnf(1), zf(1)) * dqtdz(i,j)
 
           end if
-          if (ql0(i,j,1) > 0) then
-            dthvdz(i,j,1) = a_surf*dthldz(i,j) + b_surf*thl0(i,j,1)*dqtdz(i,j)
-          end if
+          thl_surf = calc_thl_from_tliq(tliq0(i,j,1), exnf(1), zf(1))
+          dthvdz(i,j,1) = a_surf*dthldz(i,j) + b_surf*thl_surf*dqtdz(i,j)
         end do
       end do
 

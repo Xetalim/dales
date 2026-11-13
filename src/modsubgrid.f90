@@ -187,7 +187,7 @@ contains
     if (.not. lsmagorinsky) call diffe(e12p)
 
     if (ltliq) then
-       call diffc(tliq0, tliqp, tliqflux) ! TODO adapt thlflux
+       call diffc(tliq0, tliqp, tliqflux)
     endif
     call diffc(thl0, thlp, thlflux)
 

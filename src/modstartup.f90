@@ -523,7 +523,7 @@ contains
     use modboundary,       only : boundary
     use modmpi,            only : slabsum,myid,comm3d,mpierr,D_MPI_BCAST, print_info_stderr
     use modthermodynamics, only : thermodynamics,calc_halflev,calc_virt_pot_temp, &
-                    calc_virt_pot_temp_from_tliq,lmoist
+                    calc_virt_pot_temp_from_tliq,calc_tliq_from_thl,lmoist
     use moduser,           only : initsurf_user
     use modibmdata,        only : thlibm, qtibm, lapply_ibm, fluid_mask  !cstep not yet done for tliq
     use modtestbed,        only : ltestbed,tb_ps,tb_thl,tb_qt,tb_u,tb_v,tb_w,tb_ug,tb_vg,&  !cstep not yet done for tliq
@@ -911,10 +911,8 @@ contains
       if (ltliq) then
 
          do k=1,k1
-           tliq0(:,:,k) = thl0(:,:,k) * exnf(k) + gravocp * zf(k) - rlvocp * ql0(:,:,k)
-           tliqm(:,:,k) = thlm(:,:,k) * exnf(k) + gravocp * zf(k) - rlvocp * ql0(:,:,k) !cstep use ql, but is not known yet
-                                                                                   !cstep no problem because this is initialziation
-                                                                                   !cstep with random perturbations
+           tliq0(:,:,k) = calc_tliq_from_thl(thl0(:,:,k), exnf(k), zf(k))
+           tliqm(:,:,k) = calc_tliq_from_thl(thlm(:,:,k), exnf(k), zf(k))
            tliq0av(k) = thlprof(k) * exnf(k) + gravocp * zf(k)
            !write(6,*) 'modthermo', 1,1,k,thl0(1,1,k),tliq0(1,1,k)
          end do

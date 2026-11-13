@@ -536,7 +536,7 @@ contains
     use modfields, only : u0,v0,w0,thl0,qt0,qt0h, &
                           ql0,ql0h,thl0h,thv0h,sv0,exnf,exnh,tmp0,presf, &
                           um, vm, wm, svm, qtm, thlm, e12m  ,& !cstep
-                          tliq0,tliqm,help_arr
+                          tliq0,tliqm,tliq0h
     use modsurfdata,only: thls,qts,ustar,thlflux,qtflux,svflux
     use modsubgriddata,only : ekm, ekh, csz
     use modglobal, only : i1,ih,j1,jh,k1,kmax,nsv,dzf,dzh,rlv,rv,rd,cp,dzhi, &
@@ -544,7 +544,7 @@ contains
     use modmpi,    only : comm3d,mpi_sum,mpierr,slabsum,D_MPI_ALLREDUCE
     use advec_kappa, only : halflev_kappa
     use modsimpleice_data, only: tuprsg, tdnrsg
-    use modthermodynamics, only: qsat_tab, ltliq, calc_thl_from_tliq
+    use modthermodynamics, only: qsat_tab, ltliq, calc_thl_from_tliq, calc_virt_pot_temp
     use modtracers, only: get_tracer_index
     use modmicrodata, only : imicro, imicro_sice, imicro_sice2
 
@@ -565,6 +565,7 @@ contains
     real :: hurav_s, clwav_s, cliav_s, plwav_s, pliav_s
     real :: wsvsub_s, wsvres_s
     real :: a_dry, b_dry, a_moist, b_moist
+    real(field_r) :: thl_k, thl_km1, thl_half
 
     call timer_tic('modgenstat/do_genstat', 1)
 
@@ -572,9 +573,6 @@ contains
     !1.0    RESET ARRAYS FOR SLAB AVERAGES
     !---    ------------------------------
     !--------------------------------------------------------
-
-    !help_arr = thlm
-    !thlm = tliqm
 
     !$acc kernels default(present)
     qlhav = 0.0
@@ -641,19 +639,28 @@ contains
       do k = 1, k1
         do j = 2-jh, j1+jh
           do i = 2-ih, i1+ih
-            thlm(i,j,k) = calc_thl_from_tliq(thlm(i,j,k), ql0(i,j,k), exnf(k), zf(k))
-            thl0(i,j,k) = calc_thl_from_tliq(thl0(i,j,k), ql0(i,j,k), exnf(k), zf(k))
+            thlm(i,j,k) = calc_thl_from_tliq(tliqm(i,j,k), exnf(k), zf(k))
+            thl0(i,j,k) = calc_thl_from_tliq(tliq0(i,j,k), exnf(k), zf(k))
           end do
         end do
       end do
+      !$acc parallel loop collapse(3) default(present) async(1)
+      do k = 1, k1
+        do j = 2-jh, j1+jh
+          do i = 2-ih, i1+ih
+            thl0h(i,j,k) = calc_thl_from_tliq(tliq0h(i,j,k), exnh(k), zh(k))
+          end do
+        end do
+      end do
+      !$acc wait(1)
     end if
-    
+
     !$acc parallel loop collapse(3) default(present) async(1)
     do k = 1, k1
       do j = 2, j1
         do i = 2, i1
-          thv0(i,j,k) = (thl0(i,j,k)+rlv*ql0(i,j,k)/(cp*exnf(k))) &
-                        *(1+(rv/rd-1)*qt0(i,j,k)-rv/rd*ql0(i,j,k))
+          thv0(i,j,k) = calc_virt_pot_temp(thl0(i,j,k), qt0(i,j,k), &
+                                           ql0(i,j,k), exnf(k))
         enddo
       enddo
     enddo
@@ -783,6 +790,7 @@ contains
 
       !$acc loop collapse(2) &
       !$acc& private(qs0h, t0h, den, cthl, cqt, a_dry, b_dry, a_moist, b_moist, ekhalf, euhalf, evhalf, wthls, wthlr, &
+      !$acc&         thl_k, thl_km1, thl_half, &
       !$acc&         wqts, wqtr, wqls, wqlr, wthvs, wthvr, uwr, vwr, uws, vws, ilratio) &
       !$acc& reduction(+:qlhav_s, wqlsub_s, wqlres_s, wthlsub_s, wthlres_s, wthvsub_s, wthvres_s, &
       !$acc&             wqtsub_s, wqtres_s, uwres_s, vwres_s, uwsub_s, vwsub_s, &
@@ -798,8 +806,11 @@ contains
           ! Calculate prefactors for subgrid wthv and wql fluxes
           ! at half levels
           !-----------------------------------------------------------
+          thl_k = thl0(i,j,k)
+          thl_km1 = thl0(i,j,k-1)
+          thl_half = thl0h(i,j,k)
           qs0h  =  (qt0h(i,j,k) - ql0h(i,j,k))
-          t0h   =  exnh(k)*thl0h(i,j,k) + (rlv/cp)*ql0h(i,j,k)
+          t0h   =  exnh(k)*thl_half + (rlv/cp)*ql0h(i,j,k)
 
           den   = 1. + (rlv**2)*qs0h/(rv*cp*(t0h**2))
           cthl  = (exnh(k)*cp/rlv)*((1-den)/den)
@@ -824,8 +835,8 @@ contains
                      dzf(k  ) * ( ekm(i,j,k-1) + ekm(i,j-1,k-1) ) ) * &
                       ( 0.25 * dzhi(k) )
 
-          wthls  = -ekhalf*(thl0(i,j,k)-thl0(i,j,k-1))*dzhi(k)
-          wthlr  = (w0(i,j,k)-wmav(k))*thl0h(i,j,k)
+          wthls  = -ekhalf*(thl_k-thl_km1)*dzhi(k)
+          wthlr  = (w0(i,j,k)-wmav(k))*thl_half
 
           wqts   = -ekhalf*(qt0(i,j,k)-qt0(i,j,k-1))*dzhi(k)
           wqtr   = (w0(i,j,k)-wmav(k))*qt0h(i,j,k)
@@ -833,7 +844,7 @@ contains
           wqls   = cthl*wthls+ cqt*wqts
           wqlr   = (w0(i,j,k)-wmav(k))*ql0h(i,j,k)
 
-          wthvs  = c1*wthls + c2*thl0h(i,j,k)*wqts
+          wthvs  = c1*wthls + c2*thl_half*wqts
           wthvr  = (w0(i,j,k)-wmav(k))*thv0h(i,j,k)
 
           uwr    = (w0(i,j,k)+w0(i-1,j,k)-2*wmav(k)) &
@@ -1142,8 +1153,6 @@ contains
     !$acc end kernels
 
     call timer_toc('modgenstat/do_genstat')
-
-    !thlm = help_arr !cstep set it back
 
   end subroutine do_genstat
 
